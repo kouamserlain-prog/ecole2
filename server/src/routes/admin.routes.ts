@@ -64,12 +64,13 @@ import {
   normalizeTeacherEngagementKind,
 } from '../utils/teacher-engagement-kind.util';
 import { getMetricsSummary, getSlowEndpoints } from '../utils/performance-metrics.util';
+import { authorizeAdminOrStaffFinance } from '../middleware/authorize-admin-or-staff-finance.middleware';
 
 const router = express.Router();
 
-// Toutes les routes nécessitent une authentification et le rôle ADMIN
+// ADMIN complet, ou STAFF économat sur les routes financières / de suivi autorisées
 router.use(authenticate);
-router.use(authorize('ADMIN', 'SUPER_ADMIN'));
+router.use(authorizeAdminOrStaffFinance);
 router.use(staffAdminRoutes);
 router.use(parentAdminRoutes);
 router.use(tuitionCatalogRoutes);

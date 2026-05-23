@@ -175,7 +175,7 @@ export const authApi = {
 
 /** Formulaire public d'inscription et suivi de dossier (sans compte) */
 export const publicApi = {
-  submitAdmission: async (data: Record<string, unknown>) => {
+  submitAdmission: async (data: FormData | Record<string, unknown>) => {
     const response = await api.post('/public/admissions', data);
     return response.data;
   },

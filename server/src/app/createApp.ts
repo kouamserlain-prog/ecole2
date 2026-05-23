@@ -105,7 +105,7 @@ export function createApp(): express.Express {
       fallthrough: false,
       setHeaders(res, filePath) {
         const posix = filePath.replace(/\\/g, '/');
-        if (posix.includes('/identity-documents/')) {
+        if (posix.includes('/identity-documents/') || posix.includes('/admission-documents/')) {
           res.setHeader('Cache-Control', 'private, no-store, no-cache');
         } else {
           res.setHeader('Cache-Control', 'public, max-age=86400');

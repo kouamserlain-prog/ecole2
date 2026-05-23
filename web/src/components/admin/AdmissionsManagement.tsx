@@ -7,6 +7,8 @@ import Card from '../ui/Card';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
+import AdmissionGradesDisplay from '../admission/AdmissionGradesDisplay';
+import { admissionLevelRequiresGrades } from '@/utils/admissionGrades';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import toast from 'react-hot-toast';
@@ -385,6 +387,9 @@ const AdmissionsManagement = () => {
                 <p className="italic text-gray-700 border-l-2 border-indigo-300 pl-3">
                   {selected.motivation}
                 </p>
+              )}
+              {admissionLevelRequiresGrades(selected.desiredLevel) && (
+                <AdmissionGradesDisplay row={selected} />
               )}
             </div>
 

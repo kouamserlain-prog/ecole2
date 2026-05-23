@@ -132,30 +132,20 @@ function StudiesDirectorSpace({
         visibleModules={visibleModules}
         onOpenModule={onOpenModule}
         ids={[
+          'admissions',
+          'appointments',
+          'student_registry',
+          'validations',
+          'grading_mgmt',
+          'academic_overview',
+          'class_councils',
+          'parents_mgmt',
           'pedagogical_tracking',
           'discipline_mgmt',
           'extracurricular_mgmt',
           'orientation_mgmt',
           'communication_mgmt',
-          'library_mgmt',
-          'material_mgmt',
-          'reports_mgmt',
-          'analytics_mgmt',
-          'schedule_mgmt',
-          'pointage_mgmt',
-          'attendance_mgmt',
           'hr_mgmt',
-          'students_mgmt',
-          'academic_mgmt',
-          'grading_mgmt',
-          'classes_mgmt',
-          'teachers_mgmt',
-          'educators_mgmt',
-          'staff_mgmt',
-          'parents_mgmt',
-          'validations',
-          'academic_overview',
-          'class_councils',
         ]}
       />
       <div className="grid sm:grid-cols-2 gap-3">
@@ -209,7 +199,18 @@ function SecretarySpace({
       <QuickModuleNav
         visibleModules={visibleModules}
         onOpenModule={onOpenModule}
-        ids={['counter', 'admissions', 'appointments', 'student_registry']}
+        ids={[
+          'counter',
+          'admissions',
+          'appointments',
+          'student_registry',
+          'students_mgmt',
+          'classes_mgmt',
+          'parents_mgmt',
+          'class_councils',
+          'communication_mgmt',
+          'extracurricular_mgmt',
+        ]}
       />
       <div className="grid sm:grid-cols-2 gap-3">
         <Panel
@@ -269,7 +270,20 @@ function BursarSpace({
       <QuickModuleNav
         visibleModules={visibleModules}
         onOpenModule={onOpenModule}
-        ids={['counter', 'treasury']}
+        ids={
+          isBursar
+            ? [
+                'counter',
+                'fees_mgmt',
+                'payments_mgmt',
+                'tuition_fees_mgmt',
+                'admissions',
+                'treasury',
+                'reports_mgmt',
+                'notifications_mgmt',
+              ]
+            : ['counter', 'admissions', 'treasury', 'accounting_mgmt', 'payments_mgmt']
+        }
       />
       <div className="grid sm:grid-cols-2 gap-3">
         <Panel

@@ -1,7 +1,16 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
+import { admissionReportCardUpload } from '../middleware/upload.middleware';
 import { notifyAdminsOfNewAdmission } from '../utils/admission-notify.util';
+import {
+  admissionGradeDataForCreate,
+  admissionLevelRequiresGrades,
+  parseAdmissionGradeFields,
+  validateAdmissionGrades,
+  validateAdmissionTerm3ReportCard,
+} from '../utils/admission-grades.util';
+import { term3ReportCardDataFromUpload, unlinkUploadedFile } from '../utils/admission-upload.util';
 
 const router = express.Router();
 
@@ -20,21 +29,34 @@ async function generateUniqueReference(): Promise<string> {
 /**
  * Soumission publique d'une demande d'inscription
  */
+const admissionValidators = [
+  body('firstName').trim().notEmpty().withMessage('Prénom requis'),
+  body('lastName').trim().notEmpty().withMessage('Nom requis'),
+  body('email').isEmail().withMessage('Email invalide'),
+  body('dateOfBirth').isISO8601().withMessage('Date de naissance invalide'),
+  body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Genre invalide'),
+  body('desiredLevel').trim().notEmpty().withMessage('Niveau souhaité requis'),
+  body('academicYear').trim().notEmpty().withMessage('Année scolaire requise'),
+];
+
 router.post(
   '/',
-  [
-    body('firstName').trim().notEmpty().withMessage('Prénom requis'),
-    body('lastName').trim().notEmpty().withMessage('Nom requis'),
-    body('email').isEmail().withMessage('Email invalide'),
-    body('dateOfBirth').isISO8601().withMessage('Date de naissance invalide'),
-    body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Genre invalide'),
-    body('desiredLevel').trim().notEmpty().withMessage('Niveau souhaité requis'),
-    body('academicYear').trim().notEmpty().withMessage('Année scolaire requise'),
-  ],
+  (req, res, next) => {
+    admissionReportCardUpload.single('term3ReportCard')(req, res, (err: unknown) => {
+      if (err) {
+        const message =
+          err instanceof Error ? err.message : 'Échec du téléversement du bulletin.';
+        return res.status(400).json({ error: message });
+      }
+      next();
+    });
+  },
+  admissionValidators,
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        unlinkUploadedFile(req.file);
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -56,6 +78,28 @@ router.post(
       } = req.body;
 
       const emailNorm = String(email).trim().toLowerCase();
+      const levelTrim = String(desiredLevel).trim();
+
+      const grades = parseAdmissionGradeFields(req.body as Record<string, unknown>);
+      const gradeError = validateAdmissionGrades(levelTrim, grades);
+      if (gradeError) {
+        unlinkUploadedFile(req.file);
+        return res.status(400).json({ error: gradeError });
+      }
+
+      const bulletinError = validateAdmissionTerm3ReportCard(levelTrim, Boolean(req.file));
+      if (bulletinError) {
+        unlinkUploadedFile(req.file);
+        return res.status(400).json({ error: bulletinError });
+      }
+      if (!admissionLevelRequiresGrades(levelTrim) && req.file) {
+        unlinkUploadedFile(req.file);
+        return res.status(400).json({
+          error: 'Le bulletin du 3e trimestre n’est requis que pour les niveaux 2nde, 1ère et Terminale.',
+        });
+      }
+
+      const reportCard = term3ReportCardDataFromUpload(req);
 
       const openDuplicate = await prisma.admission.findFirst({
         where: {
@@ -66,6 +110,7 @@ router.post(
       });
 
       if (openDuplicate) {
+        unlinkUploadedFile(req.file);
         return res.status(409).json({
           error:
             'Une demande est déjà en cours pour cet email sur cette année scolaire. Utilisez le suivi avec votre numéro de dossier.',
@@ -84,7 +129,7 @@ router.post(
           phone: phone ? String(phone).trim() : undefined,
           dateOfBirth: new Date(dateOfBirth),
           gender,
-          desiredLevel: String(desiredLevel).trim(),
+          desiredLevel: levelTrim,
           academicYear: String(academicYear).trim(),
           previousSchool: previousSchool ? String(previousSchool).trim() : undefined,
           parentName: parentName ? String(parentName).trim() : undefined,
@@ -92,6 +137,8 @@ router.post(
           parentEmail: parentEmail ? String(parentEmail).trim().toLowerCase() : undefined,
           address: address ? String(address).trim() : undefined,
           motivation: motivation ? String(motivation).trim() : undefined,
+          ...admissionGradeDataForCreate(levelTrim, req.body as Record<string, unknown>),
+          ...(reportCard ?? {}),
         },
         select: {
           id: true,
@@ -125,6 +172,7 @@ router.post(
         console.error('notifyAdminsOfNewAdmission:', notifyError);
       });
     } catch (error: any) {
+      unlinkUploadedFile(req.file);
       console.error('admission.public POST:', error);
       res.status(500).json({ error: error.message || 'Erreur serveur' });
     }

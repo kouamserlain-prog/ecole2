@@ -48,6 +48,9 @@ export type AdminModuleId = (typeof ADMIN_MODULE_IDS)[number];
 
 const MODULE_SET = new Set<string>(ADMIN_MODULE_IDS);
 
+/** Modules toujours visibles pour les comptes administrateur (hors super-admin). */
+const ADMIN_ALWAYS_VISIBLE_MODULES: AdminModuleId[] = ['dashboard', 'workspaces', 'admissions'];
+
 export const ADMIN_MODULE_LABELS: Record<AdminModuleId, string> = {
   dashboard: 'Tableau de bord',
   workspaces: 'Espaces & modules',
@@ -186,13 +189,13 @@ export async function resolveAdminVisibleModules(
 
   if (memberships.length === 0) {
     return {
-      visibleModules: ['dashboard', 'workspaces'],
+      visibleModules: [...ADMIN_ALWAYS_VISIBLE_MODULES],
       unrestricted: false,
       workspaces: [],
     };
   }
 
-  const merged = new Set<AdminModuleId>(['dashboard']);
+  const merged = new Set<AdminModuleId>(ADMIN_ALWAYS_VISIBLE_MODULES);
   const workspaces: { id: string; name: string; slug: string }[] = [];
   for (const m of memberships) {
     workspaces.push({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug });
@@ -200,7 +203,6 @@ export async function resolveAdminVisibleModules(
       if (MODULE_SET.has(mod)) merged.add(mod as AdminModuleId);
     }
   }
-  merged.add('workspaces');
 
   return {
     visibleModules: [...merged],

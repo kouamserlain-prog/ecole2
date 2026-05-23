@@ -2396,6 +2396,18 @@ model Admission {
   motivation       String?
   adminNotes       String?
 
+  /// Moyennes (2nde, 1ère, Terminale) — formulaire d'inscription en ligne
+  gradeTerm1                 Float?
+  gradeTerm2                 Float?
+  gradeAnnualGeneral         Float?
+  gradeAnnualSpecific        Float?
+  gradeAnnualLiterary        Float?
+
+  /// Bulletin du 3e trimestre (PDF / image) — inscription en ligne lycée
+  term3ReportCardUrl         String?
+  term3ReportCardOriginalName String?
+  term3ReportCardMimeType    String?
+
   proposedClassId  String?   @db.ObjectId
   proposedClass    Class?    @relation(fields: [proposedClassId], references: [id])
 

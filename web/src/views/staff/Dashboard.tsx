@@ -42,6 +42,13 @@ import ScheduleManagement from '../../components/admin/ScheduleManagement';
 import PointageEleves from '../../components/admin/PointageEleves';
 import AttendanceManagementModule from '../../components/admin/AttendanceManagementModule';
 import HRManagementModule from '../../components/admin/hr/HRManagementModule';
+import FeesManagementModule from '../../components/admin/FeesManagementModule';
+import TuitionFeesManagement from '../../components/admin/TuitionFeesManagement';
+import PaymentsManagement from '../../components/admin/PaymentsManagement';
+import AccountingManagementModule from '../../components/admin/AccountingManagementModule';
+import AdministrativeManagement from '../../components/admin/AdministrativeManagement';
+import StaffFinanceShell from '../../components/staff/StaffFinanceShell';
+import AllNotifications from '../admin/AllNotifications';
 import StaffRoleWorkspaces from './StaffRoleWorkspaces';
 import { resolveStaffSupportKind, staffNavBadgeLabel } from './staffSpaceConfig';
 import { inactiveModuleIconClass } from '../../lib/navModuleIconClass';
@@ -107,6 +114,8 @@ const StaffDashboard = () => {
   const activeMeta = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   const ActiveTabIcon = activeMeta.icon;
   const hasOperationalModules = visibleModules.length > 1;
+  const isFinanceStaff = supportKind === 'BURSAR' || supportKind === 'ACCOUNTANT';
+  const staffAdminReadOnly = !isFinanceStaff;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -247,7 +256,7 @@ const StaffDashboard = () => {
         );
       case 'parents_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <ParentGuardiansModule />
           </StaffPedagogyShell>
         );
@@ -265,7 +274,7 @@ const StaffDashboard = () => {
         );
       case 'extracurricular_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <ExtracurricularAdminModule />
           </StaffPedagogyShell>
         );
@@ -277,7 +286,7 @@ const StaffDashboard = () => {
         );
       case 'communication_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <CommunicationHubModule />
           </StaffPedagogyShell>
         );
@@ -289,13 +298,13 @@ const StaffDashboard = () => {
         );
       case 'material_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <MaterialManagementModule />
           </StaffPedagogyShell>
         );
       case 'reports_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <ReportsStatisticsModule />
           </StaffPedagogyShell>
         );
@@ -319,15 +328,51 @@ const StaffDashboard = () => {
         );
       case 'attendance_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <AttendanceManagementModule />
           </StaffPedagogyShell>
         );
       case 'hr_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <HRManagementModule />
           </StaffPedagogyShell>
+        );
+      case 'notifications_mgmt':
+        return (
+          <StaffFinanceShell>
+            <AllNotifications />
+          </StaffFinanceShell>
+        );
+      case 'fees_mgmt':
+        return (
+          <StaffFinanceShell>
+            <FeesManagementModule />
+          </StaffFinanceShell>
+        );
+      case 'tuition_fees_mgmt':
+        return (
+          <StaffFinanceShell>
+            <TuitionFeesManagement />
+          </StaffFinanceShell>
+        );
+      case 'payments_mgmt':
+        return (
+          <StaffFinanceShell>
+            <PaymentsManagement />
+          </StaffFinanceShell>
+        );
+      case 'accounting_mgmt':
+        return (
+          <StaffFinanceShell>
+            <AccountingManagementModule />
+          </StaffFinanceShell>
+        );
+      case 'administrative_mgmt':
+        return (
+          <StaffFinanceShell>
+            <AdministrativeManagement />
+          </StaffFinanceShell>
         );
       default:
         return null;

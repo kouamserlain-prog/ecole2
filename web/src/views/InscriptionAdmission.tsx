@@ -7,6 +7,14 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Footer from '../components/Footer';
 import { getCurrentAcademicYear } from '../utils/academicYear';
+import {
+  admissionLevelRequiresGrades,
+  ADMISSION_GRADE_FIELD_LABELS,
+  type AdmissionGradeFieldKey,
+} from '../utils/admissionGrades';
+import AdmissionGradesDisplay from '../components/admission/AdmissionGradesDisplay';
+import { printAdmissionRegistrationForm } from '../lib/admissionFormPrint';
+import { TRANLEFET_SCHOOL } from '../data/tranlefetSchool';
 import toast from 'react-hot-toast';
 import {
   FiArrowLeft,
@@ -16,6 +24,8 @@ import {
   FiBook,
   FiUser,
   FiCalendar,
+  FiUpload,
+  FiPrinter,
 } from 'react-icons/fi';
 
 const LEVEL_SUGGESTIONS = [
@@ -51,7 +61,15 @@ const InscriptionAdmission = () => {
     parentEmail: '',
     address: '',
     motivation: '',
+    gradeTerm1: '',
+    gradeTerm2: '',
+    gradeAnnualGeneral: '',
+    gradeAnnualSpecific: '',
+    gradeAnnualLiterary: '',
   });
+
+  const showGrades = admissionLevelRequiresGrades(form.desiredLevel);
+  const [term3ReportCard, setTerm3ReportCard] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [successRef, setSuccessRef] = useState<string | null>(null);
 
@@ -66,15 +84,77 @@ const InscriptionAdmission = () => {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const parseGradeInput = (raw: string): number | null => {
+    const n = Number.parseFloat(raw.trim().replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0 || n > 20) return null;
+    return n;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (showGrades) {
+      const keys = Object.keys(ADMISSION_GRADE_FIELD_LABELS) as AdmissionGradeFieldKey[];
+      for (const key of keys) {
+        const raw = form[key];
+        if (!raw.trim()) {
+          toast.error(`Renseignez : ${ADMISSION_GRADE_FIELD_LABELS[key]}`);
+          return;
+        }
+        if (parseGradeInput(raw) === null) {
+          toast.error(`${ADMISSION_GRADE_FIELD_LABELS[key]} : note invalide (0 à 20).`);
+          return;
+        }
+      }
+      if (!term3ReportCard) {
+        toast.error('Joignez le bulletin du 3e trimestre (PDF ou image).');
+        return;
+      }
+    }
     setSubmitting(true);
     setSuccessRef(null);
     try {
-      const res = await publicApi.submitAdmission({
-        ...form,
-        dateOfBirth: new Date(form.dateOfBirth).toISOString(),
-      });
+      let res: { message?: string; admission?: { reference?: string } };
+      if (showGrades) {
+        const fd = new FormData();
+        const textFields = [
+          'firstName',
+          'lastName',
+          'email',
+          'phone',
+          'gender',
+          'desiredLevel',
+          'academicYear',
+          'previousSchool',
+          'parentName',
+          'parentPhone',
+          'parentEmail',
+          'address',
+          'motivation',
+        ] as const;
+        for (const key of textFields) {
+          const v = form[key];
+          if (v) fd.append(key, v);
+        }
+        fd.append('dateOfBirth', new Date(form.dateOfBirth).toISOString());
+        const keys = Object.keys(ADMISSION_GRADE_FIELD_LABELS) as AdmissionGradeFieldKey[];
+        for (const key of keys) {
+          const n = parseGradeInput(form[key]);
+          if (n !== null) fd.append(key, String(n));
+        }
+        fd.append('term3ReportCard', term3ReportCard!);
+        res = await publicApi.submitAdmission(fd);
+      } else {
+        const payload: Record<string, unknown> = {
+          ...form,
+          dateOfBirth: new Date(form.dateOfBirth).toISOString(),
+        };
+        delete payload.gradeTerm1;
+        delete payload.gradeTerm2;
+        delete payload.gradeAnnualGeneral;
+        delete payload.gradeAnnualSpecific;
+        delete payload.gradeAnnualLiterary;
+        res = await publicApi.submitAdmission(payload);
+      }
       const ref = res.admission?.reference;
       if (ref) setSuccessRef(ref);
       toast.success(res.message || 'Demande enregistrée');
@@ -91,7 +171,13 @@ const InscriptionAdmission = () => {
         parentEmail: '',
         address: '',
         motivation: '',
+        gradeTerm1: '',
+        gradeTerm2: '',
+        gradeAnnualGeneral: '',
+        gradeAnnualSpecific: '',
+        gradeAnnualLiterary: '',
       }));
+      setTerm3ReportCard(null);
     } catch (err: any) {
       if (err.response?.status === 409 && err.response?.data?.reference) {
         setSuccessRef(null);
@@ -102,6 +188,19 @@ const InscriptionAdmission = () => {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePrintForm = () => {
+    try {
+      printAdmissionRegistrationForm({
+        schoolName: TRANLEFET_SCHOOL.fullName,
+        academicYear: form.academicYear || defaultYear,
+        form,
+        bulletinFileName: term3ReportCard?.name,
+      });
+    } catch {
+      toast.error('Impossible d’imprimer. Autorisez les fenêtres pop-up pour ce site.');
     }
   };
 
@@ -175,14 +274,25 @@ const InscriptionAdmission = () => {
         )}
 
         <Card variant="premium" className="!p-6 sm:!p-8 shadow-lg ring-1 ring-stone-200/80">
-          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-stone-200/80">
-            <div className="p-2.5 rounded-xl bg-amber-100 text-amber-900 ring-1 ring-amber-200/60">
-              <FiUser className="w-6 h-6" aria-hidden />
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6 pb-4 border-b border-stone-200/80">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-amber-100 text-amber-900 ring-1 ring-amber-200/60 shrink-0">
+                <FiUser className="w-6 h-6" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-stone-900">Formulaire de pré-inscription</h2>
+                <p className="text-sm text-stone-600">Tous les champs marqués * sont obligatoires</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-stone-900">Formulaire de pré-inscription</h2>
-              <p className="text-sm text-stone-600">Tous les champs marqués * sont obligatoires</p>
-            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handlePrintForm}
+              className="inline-flex items-center gap-2 shrink-0 self-start"
+            >
+              <FiPrinter className="w-4 h-4" aria-hidden />
+              Imprimer le formulaire
+            </Button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -336,6 +446,68 @@ const InscriptionAdmission = () => {
               />
             </div>
 
+            {showGrades && (
+              <div className="rounded-2xl border border-indigo-200/70 bg-indigo-50/40 p-4 sm:p-5 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-indigo-950">Résultats scolaires (lycée)</h3>
+                  <p className="text-xs text-indigo-900/80 mt-1 leading-relaxed">
+                    Pour les candidatures en <strong>2nde</strong>, <strong>1ère</strong> ou{' '}
+                    <strong>Terminale</strong>, indiquez les moyennes sur 20 telles qu’elles figurent sur le
+                    bulletin ou le relevé de l’année en cours.
+                  </p>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {(Object.keys(ADMISSION_GRADE_FIELD_LABELS) as AdmissionGradeFieldKey[]).map((key) => (
+                    <div key={key}>
+                      <label htmlFor={`adm-${key}`} className="block text-sm font-medium text-stone-800 mb-1.5">
+                        {ADMISSION_GRADE_FIELD_LABELS[key]} *
+                      </label>
+                      <input
+                        id={`adm-${key}`}
+                        name={key}
+                        type="text"
+                        inputMode="decimal"
+                        required
+                        min={0}
+                        max={20}
+                        placeholder="Ex. 14,5"
+                        value={form[key]}
+                        onChange={handleChange}
+                        className={fieldClassName}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <label
+                    htmlFor="adm-term3ReportCard"
+                    className="flex items-center gap-2 text-sm font-medium text-stone-800 mb-1.5"
+                  >
+                    <FiUpload className="w-4 h-4 text-indigo-800 shrink-0" aria-hidden />
+                    Bulletin du 3e trimestre *
+                  </label>
+                  <input
+                    id="adm-term3ReportCard"
+                    name="term3ReportCard"
+                    type="file"
+                    required
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => setTerm3ReportCard(e.target.files?.[0] ?? null)}
+                    className={`${fieldClassName} file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-900`}
+                  />
+                  <p className="text-[11px] text-indigo-900/75 mt-1.5 leading-relaxed">
+                    Importez une copie numérique du bulletin du <strong>3e trimestre</strong> (PDF ou photo
+                    JPG/PNG, 10 Mo max). Ce document est indispensable pour traiter votre dossier.
+                  </p>
+                  {term3ReportCard && (
+                    <p className="text-xs text-stone-600 mt-1">
+                      Fichier sélectionné : <span className="font-medium">{term3ReportCard.name}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="grid sm:grid-cols-3 gap-4">
               <div>
                 <label htmlFor="adm-parentName" className="block text-sm font-medium text-stone-800 mb-1.5">
@@ -410,6 +582,15 @@ const InscriptionAdmission = () => {
                 {!submitting && <FiSend className="w-4 h-4 shrink-0" aria-hidden />}
                 Envoyer la demande
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handlePrintForm}
+                className="inline-flex items-center gap-2"
+              >
+                <FiPrinter className="w-4 h-4 shrink-0" aria-hidden />
+                Imprimer
+              </Button>
               <p className="text-xs text-stone-600 max-w-md leading-relaxed">
                 En soumettant ce formulaire, vous acceptez que l’établissement traite ces données dans le cadre de
                 la procédure d’admission. Consultez aussi nos{' '}
@@ -482,6 +663,7 @@ const InscriptionAdmission = () => {
                   {trackResult.proposedClass.name} ({trackResult.proposedClass.level})
                 </p>
               )}
+              <AdmissionGradesDisplay row={trackResult} className="mt-3" />
               {trackResult.enrolledStudent && (
                 <p className="text-emerald-700 font-medium">
                   Compte élève créé — identifiant : {trackResult.enrolledStudent.studentId}

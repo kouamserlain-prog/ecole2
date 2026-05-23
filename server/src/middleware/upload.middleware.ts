@@ -33,6 +33,8 @@ const storage = multer.diskStorage({
       folder = 'digital-library';
     } else if (file.fieldname === 'elearning') {
       folder = 'elearning';
+    } else if (file.fieldname === 'term3ReportCard') {
+      folder = 'admission-documents';
     }
     
     const dir = path.join(uploadsDir, folder);
@@ -145,6 +147,25 @@ export const identityUpload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter,
+});
+
+/** Bulletin 3e trimestre — formulaire public d’inscription (champ `term3ReportCard`). */
+export const admissionReportCardUpload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    const allowed = /pdf|jpe?g|png|webp/;
+    const extOk = allowed.test(path.extname(file.originalname).toLowerCase());
+    const mimeOk = !file.mimetype || /pdf|image\/(jpeg|png|webp)/i.test(file.mimetype);
+    if (extOk && mimeOk) return cb(null, true);
+    cb(
+      new Error(
+        'Format non autorisé pour le bulletin. Utilisez un PDF ou une image (JPG, PNG, WEBP).',
+      ),
+    );
+  },
 });
 
 // Middleware pour servir les fichiers statiques

@@ -9,6 +9,8 @@ import { staffApi } from '@/services/api/staff.api';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
+import AdmissionGradesDisplay from '../admission/AdmissionGradesDisplay';
+import { admissionLevelRequiresGrades } from '@/utils/admissionGrades';
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'En attente',
@@ -53,6 +55,11 @@ export default function StaffAdmissionsPanel() {
         proposedClassId?: string | null;
         createdAt: string;
         proposedClass?: { name: string; level: string } | null;
+        gradeTerm1?: number | null;
+        gradeTerm2?: number | null;
+        gradeAnnualGeneral?: number | null;
+        gradeAnnualSpecific?: number | null;
+        gradeAnnualLiterary?: number | null;
       }
     | undefined;
 
@@ -161,6 +168,9 @@ export default function StaffAdmissionsPanel() {
           <p className="text-xs text-stone-500">
             Niveau souhaité : {selected.desiredLevel} — {selected.academicYear}
           </p>
+          {admissionLevelRequiresGrades(selected.desiredLevel) && (
+            <AdmissionGradesDisplay row={selected} />
+          )}
           <label className="block text-xs font-medium text-stone-700">
             Statut
             <select

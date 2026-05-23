@@ -30,7 +30,11 @@ import {
 
   FiHeart,
 
+  FiInbox,
+
   FiLayers,
+
+  FiCreditCard,
 
   FiLayout,
 
@@ -125,6 +129,18 @@ export const STAFF_MODULE_IDS = [
   'attendance_mgmt',
 
   'hr_mgmt',
+
+  'notifications_mgmt',
+
+  'fees_mgmt',
+
+  'tuition_fees_mgmt',
+
+  'payments_mgmt',
+
+  'accounting_mgmt',
+
+  'administrative_mgmt',
 
 ] as const;
 
@@ -235,6 +251,18 @@ export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
 
   hr_mgmt: 'Ressources humaines',
 
+  notifications_mgmt: 'Notifications',
+
+  fees_mgmt: 'Gestion des frais',
+
+  tuition_fees_mgmt: 'Frais de scolarité',
+
+  payments_mgmt: 'Paiements',
+
+  accounting_mgmt: 'Comptabilité',
+
+  administrative_mgmt: 'Gestion administrative',
+
 };
 
 
@@ -310,6 +338,18 @@ export const STAFF_MODULE_DESCRIPTIONS: Record<StaffModuleId, string> = {
   attendance_mgmt: 'Appel, absences et rapports d’assiduité',
 
   hr_mgmt: 'Congés, évaluations et suivi du personnel',
+
+  notifications_mgmt: 'Alertes et notifications de l’établissement',
+
+  fees_mgmt: 'Facturation, relances, reçus et vue d’ensemble financière',
+
+  tuition_fees_mgmt: 'Catalogue, échéanciers et lignes de scolarité',
+
+  payments_mgmt: 'Paiements reçus et validation des espèces',
+
+  accounting_mgmt: 'Grand livre, budget, dépenses et petite caisse',
+
+  administrative_mgmt: 'Vue d’ensemble et indicateurs administratifs',
 
 };
 
@@ -753,6 +793,78 @@ const TAB_META: Record<StaffModuleId, Omit<StaffTabMeta, 'id'>> = {
 
   },
 
+  notifications_mgmt: {
+
+    label: STAFF_MODULE_LABELS.notifications_mgmt,
+
+    icon: FiInbox,
+
+    color: 'from-amber-500 to-orange-600',
+
+    description: STAFF_MODULE_DESCRIPTIONS.notifications_mgmt,
+
+  },
+
+  fees_mgmt: {
+
+    label: STAFF_MODULE_LABELS.fees_mgmt,
+
+    icon: FiCreditCard,
+
+    color: 'from-teal-500 to-teal-600',
+
+    description: STAFF_MODULE_DESCRIPTIONS.fees_mgmt,
+
+  },
+
+  tuition_fees_mgmt: {
+
+    label: STAFF_MODULE_LABELS.tuition_fees_mgmt,
+
+    icon: FiDollarSign,
+
+    color: 'from-amber-500 to-amber-600',
+
+    description: STAFF_MODULE_DESCRIPTIONS.tuition_fees_mgmt,
+
+  },
+
+  payments_mgmt: {
+
+    label: STAFF_MODULE_LABELS.payments_mgmt,
+
+    icon: FiDollarSign,
+
+    color: 'from-green-500 to-emerald-600',
+
+    description: STAFF_MODULE_DESCRIPTIONS.payments_mgmt,
+
+  },
+
+  accounting_mgmt: {
+
+    label: STAFF_MODULE_LABELS.accounting_mgmt,
+
+    icon: FiClipboard,
+
+    color: 'from-slate-600 to-slate-800',
+
+    description: STAFF_MODULE_DESCRIPTIONS.accounting_mgmt,
+
+  },
+
+  administrative_mgmt: {
+
+    label: STAFF_MODULE_LABELS.administrative_mgmt,
+
+    icon: FiBriefcase,
+
+    color: 'from-teal-500 to-cyan-600',
+
+    description: STAFF_MODULE_DESCRIPTIONS.administrative_mgmt,
+
+  },
+
 };
 
 
@@ -762,41 +874,76 @@ export function getEligibleModulesForSupportKind(kind: SupportStaffKindKey): Sta
 
     case 'SECRETARY':
 
-      return ['overview', 'counter', 'admissions', 'appointments', 'student_registry'];
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'appointments',
+        'student_registry',
+        'students_mgmt',
+        'classes_mgmt',
+        'parents_mgmt',
+        'class_councils',
+        'communication_mgmt',
+        'extracurricular_mgmt',
+      ];
 
     case 'BURSAR':
 
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'treasury',
+        'notifications_mgmt',
+        'reports_mgmt',
+        'extracurricular_mgmt',
+        'attendance_mgmt',
+        'parents_mgmt',
+        'hr_mgmt',
+        'fees_mgmt',
+        'tuition_fees_mgmt',
+        'payments_mgmt',
+        'accounting_mgmt',
+        'administrative_mgmt',
+        'communication_mgmt',
+        'material_mgmt',
+      ];
+
     case 'ACCOUNTANT':
 
-      return ['overview', 'counter', 'treasury'];
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'treasury',
+        'notifications_mgmt',
+        'reports_mgmt',
+        'fees_mgmt',
+        'tuition_fees_mgmt',
+        'payments_mgmt',
+        'accounting_mgmt',
+        'administrative_mgmt',
+        'communication_mgmt',
+      ];
 
     case 'STUDIES_DIRECTOR':
 
       return [
         'overview',
+        'admissions',
+        'appointments',
+        'student_registry',
         'validations',
+        'grading_mgmt',
         'academic_overview',
         'class_councils',
-        'students_mgmt',
-        'academic_mgmt',
-        'grading_mgmt',
-        'classes_mgmt',
-        'teachers_mgmt',
-        'educators_mgmt',
-        'staff_mgmt',
         'parents_mgmt',
         'pedagogical_tracking',
         'discipline_mgmt',
         'extracurricular_mgmt',
         'orientation_mgmt',
         'communication_mgmt',
-        'library_mgmt',
-        'material_mgmt',
-        'reports_mgmt',
-        'analytics_mgmt',
-        'schedule_mgmt',
-        'pointage_mgmt',
-        'attendance_mgmt',
         'hr_mgmt',
       ];
 
@@ -853,7 +1000,8 @@ export function resolveVisibleStaffModules(
   );
   if (!picked.includes('overview')) picked.unshift('overview');
 
-  return picked.length ? picked : eligible;
+  const merged = new Set<StaffModuleId>([...eligible, ...picked]);
+  return [...merged];
 }
 
 

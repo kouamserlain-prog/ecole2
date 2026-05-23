@@ -38,6 +38,12 @@ export const STAFF_MODULE_IDS = [
   'pointage_mgmt',
   'attendance_mgmt',
   'hr_mgmt',
+  'notifications_mgmt',
+  'fees_mgmt',
+  'tuition_fees_mgmt',
+  'payments_mgmt',
+  'accounting_mgmt',
+  'administrative_mgmt',
 ] as const;
 
 export type StaffModuleId = (typeof STAFF_MODULE_IDS)[number];
@@ -80,6 +86,12 @@ export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
   pointage_mgmt: 'Pointage des élèves',
   attendance_mgmt: 'Gestion des présences',
   hr_mgmt: 'Ressources humaines',
+  notifications_mgmt: 'Notifications',
+  fees_mgmt: 'Gestion des frais',
+  tuition_fees_mgmt: 'Frais de scolarité',
+  payments_mgmt: 'Paiements',
+  accounting_mgmt: 'Comptabilité',
+  administrative_mgmt: 'Gestion administrative',
 };
 
 /** Modules éligibles selon le métier (supportKind). */
@@ -89,36 +101,70 @@ export function getEligibleModulesForSupportKind(
   if (!supportKind) return ['overview'];
   switch (supportKind) {
     case 'SECRETARY':
-      return ['overview', 'counter', 'admissions', 'appointments', 'student_registry'];
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'appointments',
+        'student_registry',
+        'students_mgmt',
+        'classes_mgmt',
+        'parents_mgmt',
+        'class_councils',
+        'communication_mgmt',
+        'extracurricular_mgmt',
+      ];
     case 'BURSAR':
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'treasury',
+        'notifications_mgmt',
+        'reports_mgmt',
+        'extracurricular_mgmt',
+        'attendance_mgmt',
+        'parents_mgmt',
+        'hr_mgmt',
+        'fees_mgmt',
+        'tuition_fees_mgmt',
+        'payments_mgmt',
+        'accounting_mgmt',
+        'administrative_mgmt',
+        'communication_mgmt',
+        'material_mgmt',
+      ];
     case 'ACCOUNTANT':
-      return ['overview', 'counter', 'treasury'];
+      return [
+        'overview',
+        'counter',
+        'admissions',
+        'treasury',
+        'notifications_mgmt',
+        'reports_mgmt',
+        'fees_mgmt',
+        'tuition_fees_mgmt',
+        'payments_mgmt',
+        'accounting_mgmt',
+        'administrative_mgmt',
+        'communication_mgmt',
+      ];
     case 'STUDIES_DIRECTOR':
       return [
         'overview',
+        'admissions',
+        'appointments',
+        'student_registry',
         'validations',
+        'grading_mgmt',
         'academic_overview',
         'class_councils',
-        'students_mgmt',
-        'academic_mgmt',
-        'grading_mgmt',
-        'classes_mgmt',
-        'teachers_mgmt',
-        'educators_mgmt',
-        'staff_mgmt',
         'parents_mgmt',
         'pedagogical_tracking',
         'discipline_mgmt',
         'extracurricular_mgmt',
         'orientation_mgmt',
         'communication_mgmt',
-        'library_mgmt',
-        'material_mgmt',
-        'reports_mgmt',
-        'analytics_mgmt',
-        'schedule_mgmt',
-        'pointage_mgmt',
-        'attendance_mgmt',
         'hr_mgmt',
       ];
     case 'NURSE':
@@ -179,7 +225,7 @@ export function resolveVisibleStaffModules(
     picked.unshift('overview');
   }
 
-  return picked.length > 0 ? picked : eligible;
+  return [...new Set<StaffModuleId>([...eligible, ...picked])];
 }
 
 /** Met à jour visibleStaffModules en base si le catalogue éligible a évolué. */
