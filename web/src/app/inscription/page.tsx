@@ -1,8 +1,8 @@
 import InscriptionAdmission from '../../views/InscriptionAdmission';
 
 export const metadata = {
-  title: 'Inscription & admission | Gestion Scolaire',
-  description: 'Pré-inscription en ligne et suivi de dossier',
+  title: 'Pré-inscription en ligne | Gestion Scolaire',
+  description: 'Formulaire de pré-inscription et suivi de dossier candidature',
 };
 
 export default function InscriptionPage() {

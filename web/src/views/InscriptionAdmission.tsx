@@ -10,6 +10,7 @@ import { getCurrentAcademicYear } from '../utils/academicYear';
 import {
   admissionLevelRequiresGrades,
   ADMISSION_GRADE_FIELD_LABELS,
+  LYCEE_ADMISSION_LEVELS,
   type AdmissionGradeFieldKey,
 } from '../utils/admissionGrades';
 import AdmissionGradesDisplay from '../components/admission/AdmissionGradesDisplay';
@@ -43,6 +44,10 @@ const LEVEL_SUGGESTIONS = [
   '1ère',
   'Terminale',
 ];
+
+const OTHER_LEVELS = LEVEL_SUGGESTIONS.filter(
+  (l) => !(LYCEE_ADMISSION_LEVELS as readonly string[]).includes(l),
+);
 
 const InscriptionAdmission = () => {
   const defaultYear = getCurrentAcademicYear();
@@ -242,18 +247,19 @@ const InscriptionAdmission = () => {
             <FiArrowLeft className="w-4 h-4 shrink-0" aria-hidden />
             Retour
           </Link>
-          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Candidature</span>
+          <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Pré-inscription</span>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-10 space-y-10">
         <div className="text-center space-y-3">
           <h1 className="font-display text-3xl md:text-4xl font-bold text-stone-900 tracking-tight">
-            Inscription & admission
+            Pré-inscription en ligne
           </h1>
           <p className="text-stone-600 max-w-2xl mx-auto leading-relaxed">
-            Déposez une demande de pré-inscription pour l’année scolaire. Le service scolaire étudiera le dossier
-            et vous pourrez suivre l’avancement avec le numéro attribué.
+            Remplissez le formulaire de pré-inscription pour l’année scolaire. Le service scolaire étudiera le dossier
+            et vous pourrez suivre l’avancement avec le numéro attribué. L’inscription définitive intervient après
+            validation du dossier par l’établissement.
           </p>
         </div>
 
@@ -261,7 +267,7 @@ const InscriptionAdmission = () => {
           <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/95 px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3 text-emerald-950 ring-1 ring-emerald-900/5 shadow-sm">
             <FiCheckCircle className="w-8 h-8 shrink-0 text-emerald-700" aria-hidden />
             <div>
-              <p className="font-semibold">Demande bien reçue</p>
+              <p className="font-semibold">Demande de pré-inscription bien reçue</p>
               <p className="text-sm mt-1">
                 Votre numéro de dossier :{' '}
                 <span className="font-mono font-bold text-lg">{successRef}</span>
@@ -291,8 +297,17 @@ const InscriptionAdmission = () => {
               className="inline-flex items-center gap-2 shrink-0 self-start"
             >
               <FiPrinter className="w-4 h-4" aria-hidden />
-              Imprimer le formulaire
+              Imprimer le formulaire de pré-inscription
             </Button>
+          </div>
+
+          <div className="mb-6 rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950 leading-relaxed">
+            <p className="font-semibold">Candidats en 2nde, 1ère ou Terminale</p>
+            <p className="mt-1 text-indigo-900/90">
+              Après avoir choisi le niveau dans la liste, une section{' '}
+              <strong>Résultats scolaires (lycée)</strong> apparaît : 5 moyennes sur 20 et le{' '}
+              <strong>bulletin du 3e trimestre</strong> (PDF ou photo) sont obligatoires.
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -401,21 +416,35 @@ const InscriptionAdmission = () => {
                   <FiBook className="w-4 h-4 text-amber-800 shrink-0" aria-hidden />
                   Niveau souhaité *
                 </label>
-                <input
+                <select
                   id="adm-desiredLevel"
                   name="desiredLevel"
                   required
-                  list="levels-suggestions"
                   value={form.desiredLevel}
                   onChange={handleChange}
-                  placeholder="Ex. 6ème"
                   className={fieldClassName}
-                />
-                <datalist id="levels-suggestions">
-                  {LEVEL_SUGGESTIONS.map((l) => (
-                    <option key={l} value={l} />
-                  ))}
-                </datalist>
+                >
+                  <option value="">— Sélectionnez le niveau —</option>
+                  <optgroup label="Lycée — moyennes et bulletin obligatoires">
+                    {LYCEE_ADMISSION_LEVELS.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Maternelle, primaire et collège">
+                    {OTHER_LEVELS.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                {!showGrades && form.desiredLevel && (
+                  <p className="text-[11px] text-stone-500 mt-1.5">
+                    Aucune moyenne ni bulletin requis pour ce niveau.
+                  </p>
+                )}
               </div>
               <div>
                 <label htmlFor="adm-academicYear" className="block text-sm font-medium text-stone-800 mb-1.5">
@@ -447,7 +476,10 @@ const InscriptionAdmission = () => {
             </div>
 
             {showGrades && (
-              <div className="rounded-2xl border border-indigo-200/70 bg-indigo-50/40 p-4 sm:p-5 space-y-4">
+              <div
+                id="resultats-lycee"
+                className="rounded-2xl border-2 border-indigo-300/80 bg-indigo-50/50 p-4 sm:p-5 space-y-4 ring-2 ring-indigo-200/40"
+              >
                 <div>
                   <h3 className="text-sm font-bold text-indigo-950">Résultats scolaires (lycée)</h3>
                   <p className="text-xs text-indigo-900/80 mt-1 leading-relaxed">
@@ -580,7 +612,7 @@ const InscriptionAdmission = () => {
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <Button type="submit" disabled={submitting} isLoading={submitting} className="inline-flex items-center gap-2">
                 {!submitting && <FiSend className="w-4 h-4 shrink-0" aria-hidden />}
-                Envoyer la demande
+                Envoyer la demande de pré-inscription
               </Button>
               <Button
                 type="button"
@@ -593,7 +625,7 @@ const InscriptionAdmission = () => {
               </Button>
               <p className="text-xs text-stone-600 max-w-md leading-relaxed">
                 En soumettant ce formulaire, vous acceptez que l’établissement traite ces données dans le cadre de
-                la procédure d’admission. Consultez aussi nos{' '}
+                la procédure de pré-inscription et d’admission. Consultez aussi nos{' '}
                 <Link href="/privacy" className="text-amber-900/90 font-medium underline underline-offset-2 hover:text-stone-900">
                   règles de confidentialité
                 </Link>

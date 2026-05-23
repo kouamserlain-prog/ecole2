@@ -173,7 +173,7 @@ export const authApi = {
   },
 };
 
-/** Formulaire public d'inscription et suivi de dossier (sans compte) */
+/** Formulaire public de pré-inscription et suivi de dossier (sans compte) */
 export const publicApi = {
   submitAdmission: async (data: FormData | Record<string, unknown>) => {
     const response = await api.post('/public/admissions', data);

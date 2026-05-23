@@ -48,7 +48,7 @@ const NAV_LINKS = [
   { href: '#mot-directrice', label: 'Mot de la Direction' },
   { href: '#etablissement', label: 'Établissement' },
   { href: '#actualites', label: 'Actualités' },
-  { href: '/inscription', label: 'Inscription' },
+  { href: '/pre-inscription', label: 'Pré-inscription' },
   { href: '/contact', label: 'Contact' },
 ];
 
@@ -90,7 +90,7 @@ const PILLARS = [
   },
   {
     title: 'Administration & familles',
-    text: 'Inscriptions, suivi scolaire et lien renforcé avec les parents d’élèves.',
+    text: 'Pré-inscriptions, suivi scolaire et lien renforcé avec les parents d’élèves.',
     icon: FiLayers,
     accent: 'from-tran-mauve-800 to-tran-mustard-700',
     span: 'md:col-span-2',
@@ -233,7 +233,7 @@ export default function Home() {
                 </Link>
                 <Link href="/inscription">
                   <Button className="shadow-lg shadow-tran-mustard-900/15 ring-1 ring-tran-mustard-500/20">
-                    Candidature en ligne
+                    Pré-inscription en ligne
                     <FiArrowRight className="ml-1.5 inline h-4 w-4" />
                   </Button>
                 </Link>
@@ -278,7 +278,7 @@ export default function Home() {
                     </Button>
                   </Link>
                   <Link href="/inscription" onClick={() => setMenuOpen(false)}>
-                    <Button className="w-full">Candidature en ligne</Button>
+                    <Button className="w-full">Pré-inscription en ligne</Button>
                   </Link>
                 </>
               )}
@@ -382,7 +382,7 @@ export default function Home() {
                       className="inline-flex items-center gap-2 text-stone-500 transition-colors hover:text-tran-mustard-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tran-mustard-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-tran-mauve-950 rounded-lg"
                     >
                       <FiCalendar className="h-4 w-4 shrink-0 text-tran-mustard-400/80" aria-hidden />
-                      Inscription & admission
+                      Pré-inscription en ligne
                     </Link>
                     <Link
                       href="/contact"
@@ -622,7 +622,7 @@ export default function Home() {
                 </a>
                 <Link href="/inscription">
                   <span className="inline-flex items-center gap-2 rounded-2xl border border-stone-300 bg-white px-7 py-4 text-sm font-bold text-stone-900 shadow-sm transition-all hover:border-tran-mustard-400 hover:bg-tran-mustard-50">
-                    Candidature en ligne
+                    Pré-inscription en ligne
                     <FiArrowRight className="h-4 w-4" aria-hidden />
                   </span>
                 </Link>
