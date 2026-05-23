@@ -6,6 +6,7 @@ import {
   inviteNewUserToSetPassword,
   resolveAdminProvidedOrInvitePassword,
 } from '../utils/admin-user-initial-password.util';
+import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { sanitizeVisibleStaffModules } from '../utils/staff-visible-modules.util';
 
 const router = express.Router();
@@ -314,8 +315,8 @@ router.post(
     body('password')
       .optional({ values: 'falsy' })
       .trim()
-      .isLength({ min: 6 })
-      .withMessage('Mot de passe : au moins 6 caractères si renseigné'),
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
     body('firstName').notEmpty(),
     body('lastName').notEmpty(),
     body('employeeId').notEmpty(),

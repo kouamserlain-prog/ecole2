@@ -5,7 +5,8 @@ import prisma from '../utils/prisma';
 import { autoReceiptUrl } from '../utils/tuition-financial-automation.util';
 import { syncTuitionFeePaidStatusForFeeId } from '../utils/tuition-fee-paid-sync.util';
 import { academicYearFromDate } from '../utils/academicYear.util';
-import { deleteUploadedFileByPublicUrl } from '../utils/deleteUpload.util';
+import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
+import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import {
   decryptStudentRecord,
@@ -20,10 +21,13 @@ import {
   buildPortalOfferingWhere,
   registerStudentForExtracurricular,
 } from '../utils/extracurricular.util';
+import { notifyStaffOfPendingCashPayment } from '../utils/payment-cash-notify.util';
+import { notifyParentCashPaymentSubmitted } from '../utils/parent-notify.util';
 import {
   getAcademicYearsWithTuitionBlockForParent,
   parentTuitionBlockFromYears,
 } from '../utils/parent-academic-result-access.util';
+import { findSchedulesWithRelations } from '../utils/safe-schedule-query.util';
 
 const router = express.Router();
 
@@ -350,41 +354,7 @@ router.get('/schedule', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Classe non trouvée' });
     }
 
-    const schedule = await prisma.schedule.findMany({
-      where: {
-        classId: student.classId,
-      },
-      include: {
-        course: {
-          include: {
-            teacher: {
-              include: {
-                user: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        substituteTeacher: {
-          include: {
-            user: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
-    });
+    const schedule = await findSchedulesWithRelations({ classId: student.classId });
 
     res.json(schedule);
   } catch (error: any) {
@@ -662,23 +632,17 @@ router.get('/messages', async (req: AuthRequest, res) => {
   }
 });
 
-// Envoyer un message à l'administration
+// Envoyer un message (administration ou contact de l'établissement)
 router.post('/messages', async (req: AuthRequest, res) => {
   try {
-    const { subject, content, category } = req.body;
+    const { subject, content, category, receiverId } = req.body as {
+      subject?: string;
+      content?: string;
+      category?: string;
+      receiverId?: string;
+    };
     if (!content || typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ error: 'Le contenu du message est requis' });
-    }
-
-    const admin = await prisma.user.findFirst({
-      where: { role: 'ADMIN', isActive: true },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-    if (!admin) {
-      return res.status(503).json({
-        error: 'Aucun administrateur n’est disponible pour recevoir le message pour le moment.',
-      });
     }
 
     const validCategories = [
@@ -691,39 +655,63 @@ router.post('/messages', async (req: AuthRequest, res) => {
       'ANNOUNCEMENT',
     ] as const;
     const cat =
-      category && validCategories.includes(category) ? category : 'GENERAL';
+      category && validCategories.includes(category as (typeof validCategories)[number])
+        ? (category as (typeof validCategories)[number])
+        : 'GENERAL';
 
-    const { makeDmThreadKey } = await import('../utils/internal-messaging.util');
-    const dmKey = makeDmThreadKey(req.user!.id, admin.id);
+    const { makeDmThreadKey, createInternalPlatformMessage, isPlatformMessagingRole } =
+      await import('../utils/internal-messaging.util');
+
+    let targetReceiverId =
+      receiverId && typeof receiverId === 'string' && receiverId.trim() ? receiverId.trim() : '';
+
+    if (!targetReceiverId) {
+      const admin = await prisma.user.findFirst({
+        where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (!admin) {
+        return res.status(503).json({
+          error: 'Aucun administrateur n’est disponible pour recevoir le message pour le moment.',
+        });
+      }
+      targetReceiverId = admin.id;
+    } else {
+      const recv = await prisma.user.findUnique({
+        where: { id: targetReceiverId },
+        select: { id: true, role: true, isActive: true },
+      });
+      if (!recv || !recv.isActive) {
+        return res.status(404).json({ error: 'Destinataire introuvable' });
+      }
+      if (!isPlatformMessagingRole(recv.role)) {
+        return res.status(400).json({ error: 'Destinataire non autorisé.' });
+      }
+    }
+
     const attachmentUrls = Array.isArray(req.body.attachmentUrls)
-      ? (req.body.attachmentUrls as unknown[]).filter((u) => typeof u === 'string' && u.trim()).map((u) => String(u).trim())
+      ? (req.body.attachmentUrls as unknown[])
+          .filter((u) => typeof u === 'string' && String(u).trim())
+          .map((u) => String(u).trim())
       : [];
 
-    const message = await prisma.message.create({
-      data: {
-        senderId: req.user!.id,
-        receiverId: admin.id,
-        subject: subject && String(subject).trim() ? String(subject).trim() : null,
-        content: content.trim(),
-        category: cat,
-        channels: ['PLATFORM'],
-        threadKey: dmKey,
-        attachmentUrls,
-      },
-      include: {
-        receiver: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
-        sender: {
-          select: { id: true, firstName: true, lastName: true },
-        },
-      },
+    const dmKey = makeDmThreadKey(req.user!.id, targetReceiverId);
+
+    const message = await createInternalPlatformMessage({
+      senderId: req.user!.id,
+      receiverId: targetReceiverId,
+      subject: subject && String(subject).trim() ? String(subject).trim() : null,
+      content: content.trim(),
+      category: cat,
+      threadKey: dmKey,
+      attachmentUrls,
     });
 
     res.status(201).json(message);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('POST /student/messages:', error);
-    res.status(500).json({ error: error.message || 'Erreur serveur' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
 
@@ -1332,7 +1320,12 @@ router.get('/identity-documents', async (req: AuthRequest, res) => {
       },
     });
 
-    res.json(documents);
+    res.json(
+      documents.map((doc) => ({
+        ...doc,
+        fileUrl: resolveStoredFileAccessUrl(doc.fileUrl),
+      })),
+    );
   } catch (error: any) {
     console.error('GET /student/identity-documents:', error);
     res.status(500).json({ error: error.message || 'Erreur serveur' });
@@ -1356,7 +1349,7 @@ router.delete('/identity-documents/:id', async (req: AuthRequest, res) => {
     }
 
     await prisma.identityDocument.delete({ where: { id: doc.id } });
-    deleteUploadedFileByPublicUrl(doc.fileUrl);
+    await deleteStoredUploadUrl(doc.fileUrl);
 
     res.json({ message: 'Document supprimé' });
   } catch (error: any) {
@@ -1534,6 +1527,22 @@ router.post('/payments', async (req: AuthRequest, res) => {
         },
       },
     });
+
+    if (paymentMethod === 'CASH') {
+      await notifyStaffOfPendingCashPayment({
+        paymentId: payment.id,
+        amount: payment.amount,
+        paymentReference: payment.paymentReference,
+        studentFirstName: payment.student.user.firstName,
+        studentLastName: payment.student.user.lastName,
+        period: payment.tuitionFee.period,
+        academicYear: payment.tuitionFee.academicYear,
+        payerRole: 'STUDENT',
+      }).catch((err) => console.error('notifyStaffOfPendingCashPayment:', err));
+      void notifyParentCashPaymentSubmitted(payment.id).catch((err) =>
+        console.error('notifyParentCashPaymentSubmitted:', err),
+      );
+    }
 
     // Ici, vous pouvez intégrer avec un processeur de paiement réel (Stripe, PayPal, etc.)
     // Pour l'instant, on simule un paiement réussi après 2 secondes

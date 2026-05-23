@@ -5,14 +5,23 @@ import { admissionReportCardUpload } from '../middleware/upload.middleware';
 import { notifyAdminsOfNewAdmission } from '../utils/admission-notify.util';
 import {
   admissionGradeDataForCreate,
-  admissionLevelRequiresGrades,
+  isAdmissionSecondaryLevel,
   parseAdmissionGradeFields,
   validateAdmissionGrades,
   validateAdmissionTerm3ReportCard,
 } from '../utils/admission-grades.util';
 import { term3ReportCardDataFromUpload, unlinkUploadedFile } from '../utils/admission-upload.util';
+import { publicServerErrorMessage } from '../utils/http-error.util';
+import {
+  readSchoolSlugFromRequest,
+  resolveSchoolBySlug,
+} from '../utils/school-context.util';
+import { ensureDefaultSchool } from '../utils/ensure-default-school.util';
+import { publicFormLimiter } from '../middleware/rate-limit.middleware';
 
 const router = express.Router();
+
+router.use(publicFormLimiter);
 
 async function generateUniqueReference(): Promise<string> {
   const year = new Date().getFullYear();
@@ -37,6 +46,11 @@ const admissionValidators = [
   body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Genre invalide'),
   body('desiredLevel').trim().notEmpty().withMessage('Niveau souhaité requis'),
   body('academicYear').trim().notEmpty().withMessage('Année scolaire requise'),
+  body('matricule')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 40 })
+    .withMessage('Numéro matricule : 40 caractères maximum'),
 ];
 
 router.post(
@@ -70,6 +84,7 @@ router.post(
         desiredLevel,
         academicYear,
         previousSchool,
+        matricule,
         parentName,
         parentPhone,
         parentEmail,
@@ -79,6 +94,14 @@ router.post(
 
       const emailNorm = String(email).trim().toLowerCase();
       const levelTrim = String(desiredLevel).trim();
+
+      if (!isAdmissionSecondaryLevel(levelTrim)) {
+        unlinkUploadedFile(req.file);
+        return res.status(400).json({
+          error:
+            'Ce formulaire est réservé aux candidatures de la 6ème à la Terminale. Choisissez un niveau dans la liste.',
+        });
+      }
 
       const grades = parseAdmissionGradeFields(req.body as Record<string, unknown>);
       const gradeError = validateAdmissionGrades(levelTrim, grades);
@@ -92,14 +115,14 @@ router.post(
         unlinkUploadedFile(req.file);
         return res.status(400).json({ error: bulletinError });
       }
-      if (!admissionLevelRequiresGrades(levelTrim) && req.file) {
+      if (!isAdmissionSecondaryLevel(levelTrim) && req.file) {
         unlinkUploadedFile(req.file);
         return res.status(400).json({
-          error: 'Le bulletin du 3e trimestre n’est requis que pour les niveaux 2nde, 1ère et Terminale.',
+          error: 'Le bulletin du 3e trimestre est requis pour les niveaux de la 6ème à la Terminale.',
         });
       }
 
-      const reportCard = term3ReportCardDataFromUpload(req);
+      const reportCard = await term3ReportCardDataFromUpload(req);
 
       const openDuplicate = await prisma.admission.findFirst({
         where: {
@@ -120,9 +143,25 @@ router.post(
 
       const reference = await generateUniqueReference();
 
+      let schoolId: string | undefined;
+      const slug = readSchoolSlugFromRequest(req);
+      if (slug) {
+        const school = await resolveSchoolBySlug(slug);
+        if (!school) {
+          unlinkUploadedFile(req.file);
+          return res.status(400).json({
+            error: 'Établissement inconnu. Vérifiez le lien de pré-inscription.',
+          });
+        }
+        schoolId = school.id;
+      } else {
+        schoolId = await ensureDefaultSchool();
+      }
+
       const admission = await prisma.admission.create({
         data: {
           reference,
+          schoolId,
           firstName: String(firstName).trim(),
           lastName: String(lastName).trim(),
           email: emailNorm,
@@ -132,6 +171,7 @@ router.post(
           desiredLevel: levelTrim,
           academicYear: String(academicYear).trim(),
           previousSchool: previousSchool ? String(previousSchool).trim() : undefined,
+          matricule: matricule ? String(matricule).trim() : undefined,
           parentName: parentName ? String(parentName).trim() : undefined,
           parentPhone: parentPhone ? String(parentPhone).trim() : undefined,
           parentEmail: parentEmail ? String(parentEmail).trim().toLowerCase() : undefined,
@@ -168,13 +208,14 @@ router.post(
         parentName: parentName ? String(parentName).trim() : null,
         parentPhone: parentPhone ? String(parentPhone).trim() : null,
         parentEmail: parentEmail ? String(parentEmail).trim().toLowerCase() : null,
+        matricule: matricule ? String(matricule).trim() : null,
       }).catch((notifyError: unknown) => {
         console.error('notifyAdminsOfNewAdmission:', notifyError);
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       unlinkUploadedFile(req.file);
       console.error('admission.public POST:', error);
-      res.status(500).json({ error: error.message || 'Erreur serveur' });
+      res.status(500).json({ error: publicServerErrorMessage(error) });
     }
   }
 );
@@ -192,8 +233,16 @@ router.get('/track/:reference', async (req, res) => {
         status: true,
         firstName: true,
         lastName: true,
+        matricule: true,
         desiredLevel: true,
         academicYear: true,
+        gradeTerm1: true,
+        gradeTerm2: true,
+        gradeAnnualGeneral: true,
+        gradeAnnualSpecific: true,
+        gradeAnnualLiterary: true,
+        term3ReportCardUrl: true,
+        term3ReportCardOriginalName: true,
         createdAt: true,
         updatedAt: true,
         enrolledStudentId: true,
@@ -219,9 +268,9 @@ router.get('/track/:reference', async (req, res) => {
       : null;
 
     res.json({ ...rest, enrolledStudent });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('admission.public track:', error);
-    res.status(500).json({ error: error.message || 'Erreur serveur' });
+    res.status(500).json({ error: publicServerErrorMessage(error) });
   }
 });
 

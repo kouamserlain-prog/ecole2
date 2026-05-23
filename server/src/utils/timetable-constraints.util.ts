@@ -134,7 +134,7 @@ export async function autoGenerateTimetableForClass(
 ): Promise<{ created: number; errors: string[]; skippedCourses: string[] }> {
   const days = opts.days?.length ? opts.days : [1, 2, 3, 4, 5];
   const slotDuration = Math.max(30, Math.min(180, opts.slotDurationMinutes ?? 60));
-  const morningStart = opts.morningStart ?? '08:00';
+  const morningStart = opts.morningStart ?? '07:00';
   const morningEnd = opts.morningEnd ?? '12:00';
   const afternoonStart = opts.afternoonStart ?? '14:00';
   const afternoonEnd = opts.afternoonEnd ?? '18:00';

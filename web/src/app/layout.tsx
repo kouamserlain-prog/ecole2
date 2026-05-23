@@ -1,6 +1,7 @@
-import type { Metadata, Viewport } from "next";
+import type { Viewport } from "next";
 import { Plus_Jakarta_Sans, Cormorant_Garamond } from "next/font/google";
 import { Providers } from "./providers";
+import { buildRootLayoutMetadata } from "@/lib/appBrandingMetadata";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -16,11 +17,9 @@ const cormorant = Cormorant_Garamond({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "École · Gestion scolaire",
-  description:
-    "Plateforme de gestion scolaire : administration, pédagogie, familles et paiements.",
-};
+export async function generateMetadata() {
+  return buildRootLayoutMetadata();
+}
 
 export const viewport: Viewport = {
   width: "device-width",

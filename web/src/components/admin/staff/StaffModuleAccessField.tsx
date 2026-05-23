@@ -34,8 +34,10 @@ export default function StaffModuleAccessField({ supportKind, value, onChange }:
         <div>
           <p className="text-xs font-semibold text-stone-800">Modules visibles dans l&apos;espace personnel</p>
           <p className="text-[11px] text-stone-500 mt-0.5">
-            Tous les modules du menu STAFF sont listés. Le badge « Recommandé » suit le métier ; cochez librement
-            les accès souhaités.
+            Modules du menu <strong>/staff</strong> (pas « Espaces &amp; modules » admin). Cochez les
+            modules voulus pour ce métier, <strong>Enregistrer</strong>, puis l&apos;agent actualise{' '}
+            <strong>/staff</strong> (F5). Le bouton <strong>Recommandés</strong> applique la liste type du
+            métier sélectionné.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5 shrink-0">

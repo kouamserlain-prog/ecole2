@@ -5,7 +5,7 @@ import { parseTimeOnDate, toAttendanceDateKey, findActiveScheduleSlotForCourse, 
 
 export type PunchPhase = 'CHECK_IN' | 'CHECK_OUT' | 'ALREADY_COMPLETE';
 
-export type PunchSource = 'NFC' | 'BIOMETRIC' | 'MANUAL' | 'ADMIN';
+export type PunchSource = 'NFC' | 'BIOMETRIC' | 'FACE' | 'MANUAL' | 'ADMIN';
 
 function dayBounds(at: Date): { startOfDay: Date; endOfDay: Date } {
   const startOfDay = new Date(at);
@@ -204,7 +204,7 @@ export async function punchStaffAttendance(params: {
 export async function punchTeacherCourseAttendance(params: {
   teacherId: string;
   at: Date;
-  source: 'NFC' | 'BIOMETRIC' | 'ADMIN' | 'SELF';
+  source: 'NFC' | 'BIOMETRIC' | 'FACE' | 'ADMIN' | 'SELF';
   courseId?: string;
   recordedByUserId?: string | null;
 }) {

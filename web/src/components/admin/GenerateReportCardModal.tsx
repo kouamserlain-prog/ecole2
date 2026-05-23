@@ -42,7 +42,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
   const queryClient = useQueryClient();
   const { branding } = useAppBranding();
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('trim1');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('trim3');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2024-2025');
   const [isGenerating, setIsGenerating] = useState(false);
   /** Après génération PDF : enregistrer en base et rendre visible aux élèves / familles */
@@ -74,7 +74,10 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         branding.schoolPhone?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolPhone,
       schoolAddress:
         branding.schoolAddress?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolAddress,
+      schoolEmail:
+        branding.schoolEmail?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolEmail,
       principalName: branding.schoolPrincipal?.trim() || '',
+      studiesDirectorName: '',
       city: branding.schoolAddress?.includes('Bouaké')
         ? 'Bouaké'
         : TRANLEFET_DEFAULT_BRANDING.city,
@@ -170,10 +173,10 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
             <div>
               <p className="text-sm text-blue-800 font-medium mb-1">Instructions</p>
               <p className="text-sm text-blue-700">
-                Sélectionnez une classe, une période et une année scolaire. Le bulletin PDF reprend la
-                charte du <strong>Collège Privé TRANLEFET</strong> (en-tête ministériel, identité élève,
-                tableau des moyennes, absences, signatures). Les données proviennent des notes saisies sur
-                la période. Cochez « Publier » pour l’espace élève et parent.
+                Sélectionnez une classe, une période et une année scolaire. Le PDF reprend le modèle officiel
+                Tranlefet (colonnes Trim. 1–3, bilans lettres/sciences, résumé, distinctions, signatures).
+                Pour le <strong>3e trimestre</strong>, les moyennes et rangs des trimestres précédents sont
+                inclus automatiquement. Cochez « Publier » pour l’espace élève et parent.
               </p>
             </div>
           </div>

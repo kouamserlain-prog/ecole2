@@ -17,6 +17,8 @@ export const ADMIN_MODULE_IDS = [
   'parent-guardians',
   'management',
   'roles',
+  /** Multi-collèges — réservé SUPER_ADMIN côté UI et API */
+  'schools',
   'pedagogical',
   'discipline',
   'extracurricular',
@@ -66,6 +68,7 @@ export const ADMIN_MODULE_LABELS: Record<AdminModuleId, string> = {
   'parent-guardians': 'Parents & tuteurs',
   management: 'Gestion complète',
   roles: 'Multi-rôles',
+  schools: 'Établissements (multi-collèges)',
   pedagogical: 'Suivi pédagogique',
   discipline: 'Discipline & règlement',
   extracurricular: 'Activités parascolaires',
@@ -135,7 +138,7 @@ export const ADMIN_MODULE_CATEGORIES: {
   },
   {
     title: 'Système & conformité',
-    moduleIds: ['security', 'performance', 'settings', 'workspaces'],
+    moduleIds: ['security', 'performance', 'settings', 'workspaces', 'schools'],
   },
 ];
 
@@ -143,12 +146,17 @@ export function sanitizeEnabledAdminModules(requested: unknown): AdminModuleId[]
   if (!Array.isArray(requested)) return ['dashboard'];
   const picked = requested
     .map((v) => String(v).trim())
-    .filter((id): id is AdminModuleId => MODULE_SET.has(id) && id !== 'dashboard' && id !== 'workspaces');
+    .filter(
+      (id): id is AdminModuleId =>
+        MODULE_SET.has(id) && id !== 'dashboard' && id !== 'workspaces' && id !== 'schools',
+    );
   return ['dashboard', ...new Set(picked)];
 }
 
 export function getAllConfigurableAdminModules(): AdminModuleId[] {
-  return ADMIN_MODULE_IDS.filter((id) => id !== 'dashboard' && id !== 'workspaces');
+  return ADMIN_MODULE_IDS.filter(
+    (id) => id !== 'dashboard' && id !== 'workspaces' && id !== 'schools',
+  );
 }
 
 export function slugifyWorkspaceName(name: string): string {

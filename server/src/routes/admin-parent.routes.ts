@@ -3,8 +3,18 @@ import { body, validationResult } from 'express-validator';
 import type { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import type { AuthRequest } from '../middleware/auth.middleware';
+import type { SchoolContextRequest } from '../utils/school-context.util';
+import { guardAdminParentRoute } from '../middleware/admin-parent-school-guard.middleware';
+import {
+  assertStudentInSchool,
+  scopedParentWhere,
+  SchoolAccessDeniedError,
+} from '../utils/school-access-guard.util';
 
 const router = express.Router();
+
+router.use('/parents/:id', guardAdminParentRoute);
+router.use('/parents/:parentId', guardAdminParentRoute);
 
 const userPublic = {
   id: true,
@@ -24,9 +34,10 @@ async function assertParentOwnsStudent(parentId: string, studentId: string): Pro
   return Boolean(link);
 }
 
-router.get('/parents', async (_req, res) => {
+router.get('/parents', async (req: SchoolContextRequest, res) => {
   try {
     const rows = await prisma.parent.findMany({
+      where: scopedParentWhere(req.schoolId!),
       include: {
         user: { select: userPublic },
         _count: { select: { students: true, contacts: true } },
@@ -78,7 +89,7 @@ const PARENT_RELATIONS = ['father', 'mother', 'guardian', 'other'] as const;
 router.post(
   '/parents/:id/students',
   [body('studentId').isString().notEmpty(), body('relation').optional().isString()],
-  async (req, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -91,6 +102,14 @@ router.post(
       }
 
       const { studentId, relation } = req.body as { studentId: string; relation?: string };
+      try {
+        await assertStudentInSchool(studentId, req.schoolId);
+      } catch (e) {
+        if (e instanceof SchoolAccessDeniedError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
       const student = await prisma.student.findUnique({
         where: { id: studentId },
         include: { user: { select: { firstName: true, lastName: true } } },
@@ -134,8 +153,16 @@ router.post(
   }
 );
 
-router.delete('/parents/:id/students/:studentId', async (req, res) => {
+router.delete('/parents/:id/students/:studentId', async (req: SchoolContextRequest, res) => {
   try {
+    try {
+      await assertStudentInSchool(req.params.studentId, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
+    }
     const link = await prisma.studentParent.findFirst({
       where: { parentId: req.params.id, studentId: req.params.studentId },
     });
@@ -332,7 +359,7 @@ router.delete('/parents/:id/interactions/:interactionId', async (req, res) => {
   }
 });
 
-router.post('/parents/:id/consents/upsert', async (req, res) => {
+router.post('/parents/:id/consents/upsert', async (req: SchoolContextRequest, res) => {
   try {
     const parent = await prisma.parent.findUnique({ where: { id: req.params.id } });
     if (!parent) {
@@ -351,6 +378,14 @@ router.post('/parents/:id/consents/upsert', async (req, res) => {
       return res.status(400).json({ error: 'consentType invalide' });
     }
     if (studentId) {
+      try {
+        await assertStudentInSchool(String(studentId), req.schoolId);
+      } catch (e) {
+        if (e instanceof SchoolAccessDeniedError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
       const ok = await assertParentOwnsStudent(req.params.id, studentId);
       if (!ok) {
         return res.status(400).json({ error: 'Élève non lié à ce parent' });
@@ -408,12 +443,20 @@ router.delete('/parents/:id/consents/:consentId', async (req, res) => {
   }
 });
 
-router.post('/parents/:id/pickup-authorizations', async (req, res) => {
+router.post('/parents/:id/pickup-authorizations', async (req: SchoolContextRequest, res) => {
   try {
     const { studentId, authorizedName, relationship, phone, identityNote, validFrom, validUntil, isActive } =
       req.body;
     if (!studentId || !authorizedName) {
       return res.status(400).json({ error: 'studentId et authorizedName sont requis' });
+    }
+    try {
+      await assertStudentInSchool(String(studentId), req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
     }
     const ok = await assertParentOwnsStudent(req.params.id, studentId);
     if (!ok) {
@@ -438,13 +481,21 @@ router.post('/parents/:id/pickup-authorizations', async (req, res) => {
   }
 });
 
-router.put('/parents/:parentId/pickup-authorizations/:pickupId', async (req, res) => {
+router.put('/parents/:parentId/pickup-authorizations/:pickupId', async (req: SchoolContextRequest, res) => {
   try {
     const row = await prisma.studentPickupAuthorization.findFirst({
       where: { id: req.params.pickupId },
     });
     if (!row) {
       return res.status(404).json({ error: 'Autorisation introuvable' });
+    }
+    try {
+      await assertStudentInSchool(row.studentId, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
     }
     const ok = await assertParentOwnsStudent(req.params.parentId, row.studentId);
     if (!ok) {
@@ -475,13 +526,21 @@ router.put('/parents/:parentId/pickup-authorizations/:pickupId', async (req, res
   }
 });
 
-router.delete('/parents/:parentId/pickup-authorizations/:pickupId', async (req, res) => {
+router.delete('/parents/:parentId/pickup-authorizations/:pickupId', async (req: SchoolContextRequest, res) => {
   try {
     const row = await prisma.studentPickupAuthorization.findFirst({
       where: { id: req.params.pickupId },
     });
     if (!row) {
       return res.status(404).json({ error: 'Autorisation introuvable' });
+    }
+    try {
+      await assertStudentInSchool(row.studentId, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
     }
     const ok = await assertParentOwnsStudent(req.params.parentId, row.studentId);
     if (!ok) {

@@ -6,8 +6,9 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Badge from '../ui/Badge';
 import toast from 'react-hot-toast';
-import { 
-  FiBriefcase, 
+import HomePageImagesPanel from './HomePageImagesPanel';
+import {
+  FiBriefcase,
   FiBook, 
   FiBell,
   FiShield,
@@ -34,6 +35,8 @@ import {
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Onglet affiché à l’ouverture (ex. depuis « Logo de l’onglet »). */
+  initialTab?: SettingsTab;
 }
 
 type SettingsTab = 'school' | 'academic' | 'notifications' | 'security' | 'user' | 'system';
@@ -45,14 +48,21 @@ interface TabOption {
   color: string;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { refreshBranding, branding, navigationLogoAbsolute, loginLogoAbsolute, faviconAbsolute } =
-    useAppBranding();
+const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialTab = 'school' }) => {
+  const {
+    refreshBranding,
+    branding,
+    navigationLogoAbsolute,
+    loginLogoAbsolute,
+    faviconAbsolute,
+    studiesDirectorPhotoAbsolute,
+  } = useAppBranding();
   const [activeTab, setActiveTab] = useState<SettingsTab>('school');
   const [isSaving, setIsSaving] = useState(false);
-  const [brandingUploading, setBrandingUploading] = useState<'navigation' | 'login' | 'favicon' | null>(
-    null
-  );
+  const [brandingUploading, setBrandingUploading] = useState<
+    'navigation' | 'login' | 'favicon' | 'studiesDirector' | null
+  >(null);
+  const [homeImageUploading, setHomeImageUploading] = useState<string | null>(null);
   const [appTitleDraft, setAppTitleDraft] = useState('');
   const [appTaglineDraft, setAppTaglineDraft] = useState('');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -132,6 +142,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (!isOpen) return;
+    setActiveTab(initialTab);
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     let cancelled = false;
     (async () => {
       try {
@@ -168,7 +183,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     };
   }, [isOpen]);
 
-  const triggerBrandingUpload = (slot: 'navigation' | 'login' | 'favicon') => {
+  const triggerBrandingUpload = (slot: 'navigation' | 'login' | 'favicon' | 'studiesDirector') => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/png,image/jpeg,image/jpg,image/webp,image/gif,image/svg+xml,.ico';
@@ -188,7 +203,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             ? 'Logo barre de navigation mis à jour'
             : slot === 'login'
               ? 'Logo page de connexion mis à jour'
-              : 'Favicon mis à jour'
+              : slot === 'studiesDirector'
+                ? 'Photo de la directrice des études mise à jour'
+                : 'Logo de l’onglet mis à jour'
         );
       } catch (error: unknown) {
         const err = error as { response?: { data?: { error?: string }; status?: number }; message?: string };
@@ -206,7 +223,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     input.click();
   };
 
-  const clearBrandingAsset = async (field: 'navigationLogoUrl' | 'loginLogoUrl' | 'faviconUrl') => {
+  const clearBrandingAsset = async (
+    field: 'navigationLogoUrl' | 'loginLogoUrl' | 'faviconUrl' | 'studiesDirectorPhotoUrl',
+  ) => {
     try {
       await adminApi.updateAppBranding({ [field]: null });
       await refreshBranding();
@@ -517,6 +536,97 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-violet-50/80 rounded-xl border-2 border-violet-200/80">
+                    <div className="flex h-24 w-20 shrink-0 items-center justify-center rounded-lg bg-white border border-violet-200 overflow-hidden">
+                      {studiesDirectorPhotoAbsolute ? (
+                        <img
+                          src={studiesDirectorPhotoAbsolute}
+                          alt=""
+                          className="h-full w-full object-cover object-[center_18%]"
+                        />
+                      ) : (
+                        <span className="text-xs text-gray-400 text-center px-1">Photo par défaut</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900">Photo — Directrice des études</p>
+                      <p className="text-xs text-gray-500">
+                        Affichée sur la page d’accueil publique (section « Mot de la Directrice des Études »).
+                        Portrait vertical recommandé (JPG ou PNG, max 5 Mo).
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => triggerBrandingUpload('studiesDirector')}
+                        disabled={!!brandingUploading}
+                      >
+                        {brandingUploading === 'studiesDirector' ? (
+                          <FiLoader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <FiUpload className="w-4 h-4" />
+                        )}
+                        <span className="ml-1.5">Changer la photo</span>
+                      </Button>
+                      {studiesDirectorPhotoAbsolute ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => clearBrandingAsset('studiesDirectorPhotoUrl')}
+                          disabled={!!brandingUploading}
+                        >
+                          <FiTrash2 className="w-4 h-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-indigo-50/80 rounded-xl border-2 border-indigo-200/80">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-white border border-indigo-200 overflow-hidden">
+                      {faviconAbsolute ? (
+                        <img src={faviconAbsolute} alt="" className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <span className="text-xs text-gray-400 text-center px-1">Défaut</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900">Logo de l’onglet du navigateur</p>
+                      <p className="text-xs text-gray-500">
+                        Favicon : icône dans l’onglet et les favoris (PNG ou ICO carré, 32×32 recommandé)
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => triggerBrandingUpload('favicon')}
+                        disabled={!!brandingUploading}
+                      >
+                        {brandingUploading === 'favicon' ? (
+                          <FiLoader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <FiUpload className="w-4 h-4" />
+                        )}
+                        <span className="ml-1.5">Changer</span>
+                      </Button>
+                      {faviconAbsolute ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => clearBrandingAsset('faviconUrl')}
+                          disabled={!!brandingUploading}
+                        >
+                          <FiTrash2 className="w-4 h-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200 overflow-hidden">
                       {navigationLogoAbsolute ? (
@@ -599,46 +709,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200 overflow-hidden">
-                      {faviconAbsolute ? (
-                        <img src={faviconAbsolute} alt="" className="max-h-full max-w-full object-contain" />
-                      ) : (
-                        <span className="text-xs text-gray-400 text-center px-1">Défaut</span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">Favicon</p>
-                      <p className="text-xs text-gray-500">ICO ou PNG carré 32×32 recommandé</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => triggerBrandingUpload('favicon')}
-                        disabled={!!brandingUploading}
-                      >
-                        {brandingUploading === 'favicon' ? (
-                          <FiLoader className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <FiUpload className="w-4 h-4" />
-                        )}
-                        <span className="ml-1.5">Changer</span>
-                      </Button>
-                      {faviconAbsolute ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => clearBrandingAsset('faviconUrl')}
-                          disabled={!!brandingUploading}
-                        >
-                          <FiTrash2 className="w-4 h-4" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-6 mt-6">
+                  <h4 className="text-base font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <FiImage className="text-amber-600" aria-hidden />
+                    Images de la page d’accueil
+                  </h4>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Bannière, piliers, communauté et campus — visibles sur la page publique avant connexion
+                    (JPG, PNG ou WEBP — max 5 Mo). La photo de la directrice se gère juste au-dessus.
+                  </p>
+                  <HomePageImagesPanel
+                    uploadingSlot={homeImageUploading}
+                    onUploadStart={setHomeImageUploading}
+                    onUploadEnd={() => setHomeImageUploading(null)}
+                  />
                 </div>
               </div>
             </div>

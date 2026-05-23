@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
+import PendingCashPaymentsPanel from '../payments/PendingCashPaymentsPanel';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -32,6 +34,8 @@ const PaymentsManagement: React.FC<PaymentsManagementProps> = ({
   embedded = false,
   compact = true,
 }) => {
+  const pathname = usePathname();
+  const pendingCashMode = pathname?.startsWith('/staff') ? 'staff' : 'admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
@@ -171,6 +175,7 @@ const PaymentsManagement: React.FC<PaymentsManagementProps> = ({
 
   return (
     <div className={compact ? ADM.root : 'space-y-4 text-sm'}>
+      <PendingCashPaymentsPanel mode={pendingCashMode} compact />
       {/* Header */}
       <div
         className={`flex flex-wrap items-center justify-between gap-2 sm:gap-3 ${embedded ? 'justify-end' : ''}`}

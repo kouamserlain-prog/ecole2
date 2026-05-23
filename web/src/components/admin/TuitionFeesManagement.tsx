@@ -32,6 +32,7 @@ import { formatFCFA } from '../../utils/currency';
 import { getCurrentAcademicYear } from '../../utils/academicYear';
 import { ADM } from './adminModuleLayout';
 import TuitionFeeCatalogAndSchedulesPanel from './TuitionFeeCatalogAndSchedulesPanel';
+import { adminTuitionCatalogApi } from '../../services/api/admin-tuition-catalog.api';
 
 const FEE_TYPE_LABELS: Record<string, string> = {
   ENROLLMENT: 'Inscription',
@@ -71,7 +72,10 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
   const [selectedFee, setSelectedFee] = useState<any>(null);
   const [groupByStudent, setGroupByStudent] = useState(true);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
+  const [tuitionLevelHint, setTuitionLevelHint] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const isTuitionFeeType = (feeType: string) => feeType === 'TUITION';
 
   // Form states
   const [formData, setFormData] = useState({
@@ -257,6 +261,69 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
     });
   }, [tuitionFeesGrouped, searchQuery]);
 
+  useEffect(() => {
+    if (!isTuitionFeeType(formData.feeType) || !formData.studentId || !formData.academicYear) {
+      setTuitionLevelHint(null);
+      return;
+    }
+    let cancelled = false;
+    adminTuitionCatalogApi
+      .resolveTuitionForStudent(formData.studentId, formData.academicYear)
+      .then((resolved) => {
+        if (cancelled) return;
+        const disc = formData.discountAmount.trim() ? parseFloat(formData.discountAmount) : 0;
+        const net = Math.max(0, resolved.amount - (Number.isNaN(disc) ? 0 : disc));
+        setFormData((prev) => ({
+          ...prev,
+          baseAmount: String(resolved.amount),
+          amount: String(net),
+        }));
+        setTuitionLevelHint(
+          `Montant fixe pour le niveau ${resolved.classLevel} : ${formatFCFA(resolved.amount)}`,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTuitionLevelHint(
+            'Aucun montant défini pour le niveau de cet élève — configurez l’onglet « Scolarité par niveau ».',
+          );
+          setFormData((prev) => ({ ...prev, baseAmount: '', amount: '' }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.studentId, formData.academicYear, formData.feeType]);
+
+  useEffect(() => {
+    if (!isTuitionFeeType(bulkFormData.feeType) || !bulkFormData.classId || !bulkFormData.academicYear) {
+      return;
+    }
+    const cls = classes?.find((c: { id: string; level?: string | null }) => c.id === bulkFormData.classId);
+    if (!cls?.level) return;
+    adminTuitionCatalogApi
+      .getLevelTuitionRates(bulkFormData.academicYear)
+      .then((data) => {
+        const row = data.rates.find((r) => r.level === cls.level);
+        if (row?.amount != null) {
+          const disc = bulkFormData.discountAmount.trim() ? parseFloat(bulkFormData.discountAmount) : 0;
+          const net = Math.max(0, row.amount - (Number.isNaN(disc) ? 0 : disc));
+          setBulkFormData((prev) => ({
+            ...prev,
+            baseAmount: String(row.amount),
+            amount: String(net),
+          }));
+        }
+      })
+      .catch(() => undefined);
+  }, [
+    bulkFormData.classId,
+    bulkFormData.academicYear,
+    bulkFormData.feeType,
+    bulkFormData.discountAmount,
+    classes,
+  ]);
+
   // Expander toutes les sections par défaut au premier chargement
   useEffect(() => {
     if (groupByStudent && tuitionFeesGrouped && expandedStudents.size === 0 && tuitionFeesGrouped.length > 0) {
@@ -314,8 +381,13 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
-    if (!formData.amount.trim() && !formData.baseAmount.trim()) {
+    const tuitionFixed = isTuitionFeeType(formData.feeType);
+    if (!tuitionFixed && !formData.amount.trim() && !formData.baseAmount.trim()) {
       toast.error('Indiquez le montant à payer ou le montant brut (FCFA)');
+      return;
+    }
+    if (tuitionFixed && !formData.baseAmount.trim()) {
+      toast.error('Configurez le montant de scolarité pour le niveau de l’élève (barèmes → Scolarité par niveau)');
       return;
     }
 
@@ -378,11 +450,12 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
-    if (!bulkFormData.amount.trim() && !bulkFormData.baseAmount.trim()) {
+    const bulkTuition = isTuitionFeeType(bulkFormData.feeType);
+    if (!bulkTuition && !bulkFormData.amount.trim() && !bulkFormData.baseAmount.trim()) {
       toast.error('Indiquez le montant à payer ou le montant brut (FCFA)');
       return;
     }
-    let bulkAmount = parseFloat(bulkFormData.amount);
+    let bulkAmount = bulkTuition ? 0 : parseFloat(bulkFormData.amount);
     if (bulkFormData.baseAmount.trim()) {
       const b = parseFloat(bulkFormData.baseAmount);
       const d = bulkFormData.discountAmount.trim() ? parseFloat(bulkFormData.discountAmount) : 0;
@@ -395,7 +468,7 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       const d = parseFloat(bulkFormData.discountAmount);
       bulkAmount = Math.max(0, Math.round(bulkAmount - (Number.isNaN(d) ? 0 : d)));
     }
-    if (Number.isNaN(bulkAmount) || bulkAmount <= 0) {
+    if (!bulkTuition && (Number.isNaN(bulkAmount) || bulkAmount <= 0)) {
       toast.error('Le montant à payer doit être strictement positif');
       return;
     }
@@ -403,7 +476,7 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       classId: bulkFormData.classId,
       academicYear: bulkFormData.academicYear,
       period: bulkFormData.period,
-      amount: bulkAmount,
+      ...(bulkTuition ? {} : { amount: bulkAmount }),
       dueDate: bulkFormData.dueDate,
       description: bulkFormData.description || undefined,
       feeType: bulkFormData.feeType,
@@ -1351,15 +1424,27 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             </div>
           </div>
 
+          {isTuitionFeeType(bulkFormData.feeType) ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Scolarité : le montant est appliqué automatiquement selon le niveau de la classe sélectionnée (un
+              montant par élève si les niveaux diffèrent).
+            </p>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Montant brut (FCFA), optionnel</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Montant brut (FCFA){isTuitionFeeType(bulkFormData.feeType) ? ' — fixe par niveau' : ', optionnel'}
+              </label>
               <input
                 type="number"
                 value={bulkFormData.baseAmount}
+                readOnly={isTuitionFeeType(bulkFormData.feeType)}
                 onChange={(e) => setBulkFormData({ ...bulkFormData, baseAmount: e.target.value })}
                 placeholder="Ex. barème avant remise"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  isTuitionFeeType(bulkFormData.feeType) ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
               />
             </div>
             <div>
@@ -1378,14 +1463,19 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Montant à payer (FCFA){' '}
-                {!bulkFormData.baseAmount.trim() ? <span className="text-red-500">*</span> : null}
+                {!isTuitionFeeType(bulkFormData.feeType) && !bulkFormData.baseAmount.trim() ? (
+                  <span className="text-red-500">*</span>
+                ) : null}
               </label>
               <input
                 type="number"
                 value={bulkFormData.amount}
+                readOnly={isTuitionFeeType(bulkFormData.feeType)}
                 onChange={(e) => setBulkFormData({ ...bulkFormData, amount: e.target.value })}
                 placeholder="100000"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                  isTuitionFeeType(bulkFormData.feeType) ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
               />
               {bulkFormData.baseAmount.trim() ? (
                 <p className="text-xs text-gray-500 mt-1">Avec un montant brut, le net est recalculé (brut − remise).</p>

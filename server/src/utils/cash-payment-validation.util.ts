@@ -2,7 +2,11 @@ import type { Payment, Prisma, PrismaClient, Role } from '@prisma/client';
 import prisma from './prisma';
 import { autoReceiptUrl } from './tuition-financial-automation.util';
 import { syncTuitionFeePaidStatusForFeeId } from './tuition-fee-paid-sync.util';
-
+import {
+  notifyParentCashPaymentRejected,
+  notifyParentCashPaymentValidated,
+} from './parent-notify.util';
+import { assertPaymentInSchool } from './school-access-guard.util';
 type Db = PrismaClient | Prisma.TransactionClient;
 
 const PENDING_CASH_INCLUDE = {
@@ -16,12 +20,13 @@ const PENDING_CASH_INCLUDE = {
   payer: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
 } satisfies Prisma.PaymentInclude;
 
-export async function listPendingCashPayments(client: Db = prisma) {
+export async function listPendingCashPayments(client: Db = prisma, schoolId?: string) {
   return client.payment.findMany({
     where: {
       status: 'PENDING',
       paymentMethod: 'CASH',
       payerRole: { in: ['STUDENT', 'PARENT'] },
+      ...(schoolId ? { student: { OR: [{ schoolId }, { class: { schoolId } }] } } : {}),
     },
     orderBy: { createdAt: 'asc' },
     include: PENDING_CASH_INCLUDE,
@@ -46,7 +51,11 @@ export async function validateCashPayment(
   client: Db,
   paymentId: string,
   validator: { id: string; role: Role; name: string },
+  schoolId?: string,
 ) {
+  if (schoolId) {
+    await assertPaymentInSchool(paymentId, schoolId);
+  }
   const payment = await client.payment.findUnique({ where: { id: paymentId } });
   if (!payment) {
     throw Object.assign(new Error('Paiement introuvable'), { status: 404 });
@@ -69,6 +78,9 @@ export async function validateCashPayment(
   });
 
   await syncTuitionFeePaidStatusForFeeId(client, payment.tuitionFeeId);
+  void notifyParentCashPaymentValidated(paymentId).catch((err) =>
+    console.error('notifyParentCashPaymentValidated:', err),
+  );
   return updated;
 }
 
@@ -77,7 +89,11 @@ export async function rejectCashPayment(
   paymentId: string,
   validator: { name: string },
   reason?: string,
+  schoolId?: string,
 ) {
+  if (schoolId) {
+    await assertPaymentInSchool(paymentId, schoolId);
+  }
   const payment = await client.payment.findUnique({ where: { id: paymentId } });
   if (!payment) {
     throw Object.assign(new Error('Paiement introuvable'), { status: 404 });
@@ -87,7 +103,7 @@ export async function rejectCashPayment(
   const rejectionNote = `Refusé par l'économe (${validator.name})${reason?.trim() ? ` : ${reason.trim()}` : ''}`;
   const notes = payment.notes ? `${payment.notes} — ${rejectionNote}` : rejectionNote;
 
-  return client.payment.update({
+  const updated = await client.payment.update({
     where: { id: paymentId },
     data: {
       status: 'CANCELLED',
@@ -95,6 +111,10 @@ export async function rejectCashPayment(
     },
     include: PENDING_CASH_INCLUDE,
   });
+  void notifyParentCashPaymentRejected(paymentId, reason).catch((err) =>
+    console.error('notifyParentCashPaymentRejected:', err),
+  );
+  return updated;
 }
 
 export type PendingCashPaymentRow = Awaited<ReturnType<typeof listPendingCashPayments>>[number];

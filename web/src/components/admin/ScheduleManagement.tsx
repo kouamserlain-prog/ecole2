@@ -46,12 +46,7 @@ const DAYS = [
   { value: 6, label: 'Samedi' },
 ];
 
-const TIME_SLOTS = [
-  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-  '17:00', '17:30', '18:00',
-];
+import { DEFAULT_SCHEDULE_START, SCHEDULE_TIME_SLOTS } from '../../lib/scheduleTimeSlots';
 
 const getTeacherDisplayName = (teacher?: any) =>
   teacher?.user ? `${teacher.user.firstName ?? ''} ${teacher.user.lastName ?? ''}`.trim() : '';
@@ -72,14 +67,14 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   const [availabilityTeacherId, setAvailabilityTeacherId] = useState<string>('');
   const [availabilityForm, setAvailabilityForm] = useState({
     dayOfWeek: '1',
-    startTime: '08:00',
+    startTime: DEFAULT_SCHEDULE_START,
     endTime: '09:00',
     label: '',
   });
   const [roomBlockForm, setRoomBlockForm] = useState({
     room: '',
     dayOfWeek: '1',
-    startTime: '08:00',
+    startTime: DEFAULT_SCHEDULE_START,
     endTime: '09:00',
     reason: '',
   });
@@ -87,7 +82,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     classId: '',
     courseId: '',
     dayOfWeek: '1',
-    startTime: '08:00',
+    startTime: DEFAULT_SCHEDULE_START,
     endTime: '09:00',
     room: '',
     substituteTeacherId: '',
@@ -202,7 +197,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teacher-schedule-availability', availabilityTeacherId] });
-      setAvailabilityForm({ dayOfWeek: '1', startTime: '08:00', endTime: '09:00', label: '' });
+      setAvailabilityForm({ dayOfWeek: '1', startTime: DEFAULT_SCHEDULE_START, endTime: '09:00', label: '' });
       toast.success('Disponibilité ajoutée');
     },
     onError: (error: any) => toast.error(error.response?.data?.error || 'Erreur disponibilité'),
@@ -228,7 +223,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule-room-blocks'] });
-      setRoomBlockForm({ room: '', dayOfWeek: '1', startTime: '08:00', endTime: '09:00', reason: '' });
+      setRoomBlockForm({ room: '', dayOfWeek: '1', startTime: DEFAULT_SCHEDULE_START, endTime: '09:00', reason: '' });
       toast.success('Bloc salle ajouté');
     },
     onError: (error: any) => toast.error(error.response?.data?.error || 'Erreur bloc salle'),
@@ -248,7 +243,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       classId: '',
       courseId: '',
       dayOfWeek: '1',
-      startTime: '08:00',
+      startTime: DEFAULT_SCHEDULE_START,
       endTime: '09:00',
       room: '',
       substituteTeacherId: '',
@@ -353,6 +348,137 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     return acc;
   }, {});
 
+  // Export functions
+  const exportSchedulesToCSV = () => {
+    try {
+      const headers = ['Jour', 'Heure', 'Matière', 'Classe', 'Enseignant', 'Remplaçant', 'Note remplacement', 'Salle'];
+      const csvContent =
+        '\ufeff' + // BOM for UTF-8
+        headers.join(';') +
+        '\n' +
+        (filteredSchedulesList || [])
+          .map((s: any) =>
+            [
+              DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
+              `${s.startTime} - ${s.endTime}`,
+              s.course?.name || 'N/A',
+              s.class?.name || 'N/A',
+              s.course?.teacher?.user
+                ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
+                : 'N/A',
+              getTeacherDisplayName(s.substituteTeacher) || '—',
+              s.replacementNote || '—',
+              s.room || 'N/A',
+            ].join(';')
+          )
+          .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute('download', `emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Emploi du temps exporté en CSV avec succès !');
+    } catch (error) {
+      console.error('Erreur lors de l\'export CSV:', error);
+      toast.error('Erreur lors de l\'export CSV');
+    }
+  };
+
+  const exportSchedulesToJSON = () => {
+    try {
+      const jsonData = {
+        dateExport: format(new Date(), 'dd/MM/yyyy à HH:mm', { locale: fr }),
+        emploisDuTemps: (filteredSchedulesList || []).map((s: any) => ({
+          jour: DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
+          heureDebut: s.startTime,
+          heureFin: s.endTime,
+          matiere: s.course?.name || 'N/A',
+          codeMatiere: s.course?.code || 'N/A',
+          classe: s.class?.name || 'N/A',
+          niveau: s.class?.level || 'N/A',
+          enseignant: s.course?.teacher?.user
+            ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
+            : 'N/A',
+          emailEnseignant: s.course?.teacher?.user?.email || 'N/A',
+          remplacant: getTeacherDisplayName(s.substituteTeacher) || null,
+          noteRemplacement: s.replacementNote || null,
+          salle: s.room || 'N/A',
+        })),
+      };
+
+      const jsonString = JSON.stringify(jsonData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute('download', `emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Emploi du temps exporté en JSON avec succès !');
+    } catch (error) {
+      console.error('Erreur lors de l\'export JSON:', error);
+      toast.error('Erreur lors de l\'export JSON');
+    }
+  };
+
+  const exportSchedulesToPDF = () => {
+    try {
+      const doc = new jsPDF('l', 'mm', 'a4');
+      const currentDate = new Date().toLocaleDateString('fr-FR');
+
+      doc.setFontSize(20);
+      doc.setTextColor(249, 115, 22);
+      doc.text('School Manager', 14, 20);
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Emploi du Temps', 14, 30);
+      doc.setFontSize(10);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Généré le ${currentDate}`, 14, 37);
+
+      const runAutoTable = (options: any) => {
+        if (typeof (doc as any).autoTable === 'function') {
+          (doc as any).autoTable(options);
+        } else if (typeof autoTable === 'function') {
+          autoTable(doc, options);
+        } else {
+          throw new Error('autoTable is not available');
+        }
+      };
+
+      const tableData = (filteredSchedulesList || []).map((s: any) => [
+        DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
+        `${s.startTime} - ${s.endTime}`,
+        s.course?.name || 'N/A',
+        s.class?.name || 'N/A',
+        s.course?.teacher?.user
+          ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
+          : 'N/A',
+        getTeacherDisplayName(s.substituteTeacher) || '—',
+        s.replacementNote || '—',
+        s.room || 'N/A',
+      ]);
+
+      runAutoTable({
+        startY: 45,
+        head: [['Jour', 'Heure', 'Matière', 'Classe', 'Enseignant', 'Remplaçant', 'Note', 'Salle']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 8, cellPadding: 2 },
+        margin: { left: 14, right: 14 },
+      });
+
+      doc.save(`emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      toast.success('Emploi du temps exporté en PDF avec succès !');
+    } catch (error: any) {
+      console.error('Erreur lors de l\'export PDF:', error);
+      toast.error(`Erreur lors de l'export PDF: ${error.message || 'Erreur inconnue'}`);
+    }
+  };
   return (
     <div className={`space-y-6 ${compact ? 'text-xs' : 'text-sm'}`}>
       {/* Header */}
@@ -531,11 +657,12 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 relative z-40">
         <Card>
           <h3 className="mb-3 font-semibold text-gray-800">Disponibilités enseignants</h3>
           <div className="space-y-3">
             <FilterDropdown
+              variant="field"
               label="Enseignant"
               value={availabilityTeacherId}
               onChange={setAvailabilityTeacherId}
@@ -549,6 +676,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
             />
             <div className="grid grid-cols-2 gap-3">
               <FilterDropdown
+                variant="field"
                 label="Jour"
                 value={availabilityForm.dayOfWeek}
                 onChange={(value) => setAvailabilityForm({ ...availabilityForm, dayOfWeek: value })}
@@ -560,16 +688,18 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 placeholder="Label (optionnel)"
               />
               <FilterDropdown
+                variant="field"
                 label="Début"
                 value={availabilityForm.startTime}
                 onChange={(value) => setAvailabilityForm({ ...availabilityForm, startTime: value })}
-                options={TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
               />
               <FilterDropdown
+                variant="field"
                 label="Fin"
                 value={availabilityForm.endTime}
                 onChange={(value) => setAvailabilityForm({ ...availabilityForm, endTime: value })}
-                options={TIME_SLOTS.filter((t) => t > availabilityForm.startTime).map((t) => ({ value: t, label: t }))}
+                options={SCHEDULE_TIME_SLOTS.filter((t) => t > availabilityForm.startTime).map((t) => ({ value: t, label: t }))}
               />
             </div>
             <Button
@@ -617,22 +747,25 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 placeholder="Salle (ex: A101)"
               />
               <FilterDropdown
+                variant="field"
                 label="Jour"
                 value={roomBlockForm.dayOfWeek}
                 onChange={(value) => setRoomBlockForm({ ...roomBlockForm, dayOfWeek: value })}
                 options={DAYS.map((d) => ({ value: String(d.value), label: d.label }))}
               />
               <FilterDropdown
+                variant="field"
                 label="Début"
                 value={roomBlockForm.startTime}
                 onChange={(value) => setRoomBlockForm({ ...roomBlockForm, startTime: value })}
-                options={TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
               />
               <FilterDropdown
+                variant="field"
                 label="Fin"
                 value={roomBlockForm.endTime}
                 onChange={(value) => setRoomBlockForm({ ...roomBlockForm, endTime: value })}
-                options={TIME_SLOTS.filter((t) => t > roomBlockForm.startTime).map((t) => ({ value: t, label: t }))}
+                options={SCHEDULE_TIME_SLOTS.filter((t) => t > roomBlockForm.startTime).map((t) => ({ value: t, label: t }))}
               />
               <div className="col-span-2">
                 <Input
@@ -787,7 +920,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {TIME_SLOTS.map((time, idx) => {
+                    {SCHEDULE_TIME_SLOTS.map((time, idx) => {
                       if (idx % 2 !== 0) return null; // Afficher seulement les heures pleines
                       return (
                         <tr key={time}>
@@ -992,6 +1125,7 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
         }}
         title={editingSchedule ? 'Modifier l\'horaire' : 'Nouvel horaire'}
         size="lg"
+        compact
       >
         <div className="space-y-4 text-sm">
           <div>
@@ -999,6 +1133,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
               Classe <span className="text-red-500">*</span>
             </label>
             <FilterDropdown
+              variant="field"
+              label="Classe"
               value={scheduleForm.classId}
               onChange={(value) => setScheduleForm({ ...scheduleForm, classId: value })}
               options={[
@@ -1013,6 +1149,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
               Matière <span className="text-red-500">*</span>
             </label>
             <FilterDropdown
+              variant="field"
+              label="Matière"
               value={scheduleForm.courseId}
               onChange={(value) => setScheduleForm({ ...scheduleForm, courseId: value })}
               options={[
@@ -1028,6 +1166,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 Jour <span className="text-red-500">*</span>
               </label>
               <FilterDropdown
+                variant="field"
+                label="Jour"
                 value={scheduleForm.dayOfWeek}
                 onChange={(value) => setScheduleForm({ ...scheduleForm, dayOfWeek: value })}
                 options={DAYS.map((d) => ({ value: d.value.toString(), label: d.label }))}
@@ -1048,6 +1188,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-700">Remplaçant</label>
               <FilterDropdown
+                variant="field"
+                label="Remplaçant"
                 value={scheduleForm.substituteTeacherId}
                 onChange={(value) => setScheduleForm({ ...scheduleForm, substituteTeacherId: value })}
                 options={[
@@ -1075,9 +1217,11 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 Heure de début <span className="text-red-500">*</span>
               </label>
               <FilterDropdown
+                variant="field"
+                label="Heure de début"
                 value={scheduleForm.startTime}
                 onChange={(value) => setScheduleForm({ ...scheduleForm, startTime: value })}
-                options={TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
               />
             </div>
 
@@ -1086,9 +1230,11 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 Heure de fin <span className="text-red-500">*</span>
               </label>
               <FilterDropdown
+                variant="field"
+                label="Heure de fin"
                 value={scheduleForm.endTime}
                 onChange={(value) => setScheduleForm({ ...scheduleForm, endTime: value })}
-                options={TIME_SLOTS.filter((t) => t > scheduleForm.startTime).map((t) => ({
+                options={SCHEDULE_TIME_SLOTS.filter((t) => t > scheduleForm.startTime).map((t) => ({
                   value: t,
                   label: t,
                 }))}
@@ -1150,138 +1296,6 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     </div>
   );
 
-  // Export functions
-  const exportSchedulesToCSV = () => {
-    try {
-      const headers = ['Jour', 'Heure', 'Matière', 'Classe', 'Enseignant', 'Remplaçant', 'Note remplacement', 'Salle'];
-      const csvContent =
-        '\ufeff' + // BOM for UTF-8
-        headers.join(';') +
-        '\n' +
-        (filteredSchedulesList || [])
-          .map((s: any) =>
-            [
-              DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
-              `${s.startTime} - ${s.endTime}`,
-              s.course?.name || 'N/A',
-              s.class?.name || 'N/A',
-              s.course?.teacher?.user
-                ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
-                : 'N/A',
-              getTeacherDisplayName(s.substituteTeacher) || '—',
-              s.replacementNote || '—',
-              s.room || 'N/A',
-            ].join(';')
-          )
-          .join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute('download', `emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success('Emploi du temps exporté en CSV avec succès !');
-    } catch (error) {
-      console.error('Erreur lors de l\'export CSV:', error);
-      toast.error('Erreur lors de l\'export CSV');
-    }
-  };
-
-  const exportSchedulesToJSON = () => {
-    try {
-      const jsonData = {
-        dateExport: format(new Date(), 'dd/MM/yyyy à HH:mm', { locale: fr }),
-        emploisDuTemps: (filteredSchedulesList || []).map((s: any) => ({
-          jour: DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
-          heureDebut: s.startTime,
-          heureFin: s.endTime,
-          matiere: s.course?.name || 'N/A',
-          codeMatiere: s.course?.code || 'N/A',
-          classe: s.class?.name || 'N/A',
-          niveau: s.class?.level || 'N/A',
-          enseignant: s.course?.teacher?.user
-            ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
-            : 'N/A',
-          emailEnseignant: s.course?.teacher?.user?.email || 'N/A',
-          remplacant: getTeacherDisplayName(s.substituteTeacher) || null,
-          noteRemplacement: s.replacementNote || null,
-          salle: s.room || 'N/A',
-        })),
-      };
-
-      const jsonString = JSON.stringify(jsonData, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute('download', `emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.json`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success('Emploi du temps exporté en JSON avec succès !');
-    } catch (error) {
-      console.error('Erreur lors de l\'export JSON:', error);
-      toast.error('Erreur lors de l\'export JSON');
-    }
-  };
-
-  const exportSchedulesToPDF = () => {
-    try {
-      const doc = new jsPDF('l', 'mm', 'a4');
-      const currentDate = new Date().toLocaleDateString('fr-FR');
-
-      doc.setFontSize(20);
-      doc.setTextColor(249, 115, 22);
-      doc.text('School Manager', 14, 20);
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text('Emploi du Temps', 14, 30);
-      doc.setFontSize(10);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Généré le ${currentDate}`, 14, 37);
-
-      const runAutoTable = (options: any) => {
-        if (typeof (doc as any).autoTable === 'function') {
-          (doc as any).autoTable(options);
-        } else if (typeof autoTable === 'function') {
-          autoTable(doc, options);
-        } else {
-          throw new Error('autoTable is not available');
-        }
-      };
-
-      const tableData = (filteredSchedulesList || []).map((s: any) => [
-        DAYS.find((d) => d.value === s.dayOfWeek)?.label || 'Inconnu',
-        `${s.startTime} - ${s.endTime}`,
-        s.course?.name || 'N/A',
-        s.class?.name || 'N/A',
-        s.course?.teacher?.user
-          ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`
-          : 'N/A',
-        getTeacherDisplayName(s.substituteTeacher) || '—',
-        s.replacementNote || '—',
-        s.room || 'N/A',
-      ]);
-
-      runAutoTable({
-        startY: 45,
-        head: [['Jour', 'Heure', 'Matière', 'Classe', 'Enseignant', 'Remplaçant', 'Note', 'Salle']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 8, cellPadding: 2 },
-        margin: { left: 14, right: 14 },
-      });
-
-      doc.save(`emploi-du-temps-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-      toast.success('Emploi du temps exporté en PDF avec succès !');
-    } catch (error: any) {
-      console.error('Erreur lors de l\'export PDF:', error);
-      toast.error(`Erreur lors de l'export PDF: ${error.message || 'Erreur inconnue'}`);
-    }
-  };
 };
 
 export default ScheduleManagement;
-

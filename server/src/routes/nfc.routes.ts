@@ -3,31 +3,17 @@ import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
 import { punchStudentCourseAttendance, punchStaffAttendance, punchTeacherCourseAttendance } from '../utils/attendance-punch.util';
 import { matchStudentScanId, matchTeacherScanId, matchStaffScanId } from '../utils/scan-id.util';
+import { verifyDeviceApiKey } from '../middleware/device-api-key.middleware';
+import { deviceBiometricLimiter } from '../middleware/rate-limit.middleware';
 
 const router = express.Router();
 
-// Clé API pour authentifier les appareils NFC externes
-// En production, cette clé devrait être stockée dans les variables d'environnement
-const NFC_API_KEY = process.env.NFC_API_KEY || 'nfc-device-key-2024';
-
-// Middleware pour vérifier la clé API NFC
-const verifyNFCKey = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const apiKey = req.headers['x-nfc-api-key'] || req.body.apiKey || req.query.apiKey;
-  
-  if (!apiKey || apiKey !== NFC_API_KEY) {
-    return res.status(401).json({ 
-      error: 'Clé API NFC invalide ou manquante',
-      message: 'Veuillez fournir une clé API NFC valide dans le header X-NFC-API-Key ou dans le body/apiKey'
-    });
-  }
-  
-  next();
-};
+router.use(deviceBiometricLimiter);
+router.use(verifyDeviceApiKey);
 
 // Endpoint pour recevoir un scan NFC depuis un appareil externe
 router.post(
   '/scan',
-  verifyNFCKey,
   [
     body('nfcId').notEmpty().withMessage('nfcId est requis'),
     body('date').optional().isISO8601().withMessage('Format de date invalide'),
@@ -278,7 +264,6 @@ router.post(
 // Endpoint pour obtenir les informations d'un utilisateur par NFC ID (sans enregistrer)
 router.get(
   '/info/:nfcId',
-  verifyNFCKey,
   async (req, res) => {
     try {
       const { nfcId } = req.params;
@@ -375,7 +360,6 @@ router.get(
 // Endpoint pour lister les cours disponibles (pour les appareils externes)
 router.get(
   '/courses',
-  verifyNFCKey,
   async (req, res) => {
     try {
       const { date } = req.query;

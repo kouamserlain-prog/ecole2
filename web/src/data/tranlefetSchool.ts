@@ -29,11 +29,11 @@ export function getTranlefetSchoolMapsQuery(address?: string | null): string {
 }
 
 export const TRANLEFET_OPENING_HOURS = [
-  { day: 'Lundi', hours: '08:00 – 17:00' },
-  { day: 'Mardi', hours: '08:00 – 17:00' },
-  { day: 'Mercredi', hours: '08:00 – 12:00' },
-  { day: 'Jeudi', hours: '08:00 – 17:00' },
-  { day: 'Vendredi', hours: '08:00 – 17:00' },
+  { day: 'Lundi', hours: '07:00 – 17:00' },
+  { day: 'Mardi', hours: '07:00 – 17:00' },
+  { day: 'Mercredi', hours: '07:00 – 12:00' },
+  { day: 'Jeudi', hours: '07:00 – 17:00' },
+  { day: 'Vendredi', hours: '07:00 – 17:00' },
 ] as const;
 
 export const TRANLEFET_MARQUEE = [
@@ -96,7 +96,7 @@ export const TRANLEFET_NEWS = [
 ] as const;
 
 export const TRANLEFET_STATS = [
-  { n: '08h–17h', l: 'accueil', d: 'lun. – ven. (sauf mer.)' },
+  { n: '07h–17h', l: 'accueil', d: 'lun. – ven. (sauf mer.)' },
   { n: '1', l: 'établissement', d: 'à Bouaké' },
   { n: '∞', l: 'ambition', d: 'réussite & valeurs' },
 ] as const;

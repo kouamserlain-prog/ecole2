@@ -16,6 +16,7 @@ import ParentAppointmentsPanel from '../../components/parent/ParentAppointmentsP
 import ParentFamilyProfilePanel from '../../components/parent/ParentFamilyProfilePanel';
 import ParentExtracurricularPanel from '../../components/parent/ParentExtracurricularPanel';
 import ParentOrientationPanel from '../../components/parent/ParentOrientationPanel';
+import ParentNotificationsPanel from '../../components/parent/ParentNotificationsPanel';
 import SchoolCommunication from '../../components/portal/SchoolCommunication';
 import Card from '../../components/ui/Card';
 import { format } from 'date-fns';
@@ -38,10 +39,12 @@ import {
   FiClock,
   FiMap,
   FiNavigation,
+  FiBell,
 } from 'react-icons/fi';
 
 const VALID_PARENT_TABS = [
   'overview',
+  'notifications',
   'communication',
   'appointments',
   'family',
@@ -71,6 +74,7 @@ const ParentDashboard = () => {
   const navItems: ParentNavItem[] = useMemo(
     () => [
       { id: 'overview', label: 'Vue d’ensemble', icon: FiLayout, requiresChild: false, color: 'from-orange-500 to-amber-600' },
+      { id: 'notifications', label: 'Notifications', icon: FiBell, requiresChild: false, color: 'from-amber-500 to-orange-600' },
       { id: 'communication', label: 'Messages école', icon: FiMessageCircle, requiresChild: false, color: 'from-amber-500 to-yellow-600' },
       { id: 'appointments', label: 'Rendez-vous', icon: FiClock, requiresChild: false, color: 'from-amber-600 to-orange-600' },
       {
@@ -109,7 +113,8 @@ const ParentDashboard = () => {
   const tabDescriptions: Record<string, string> = useMemo(
     () => ({
       overview: 'Vue d’ensemble de la scolarité et raccourcis utiles',
-      communication: 'Échanges avec l’école et notifications',
+      notifications: 'Alertes paiements, notes, devoirs, présence et rendez-vous',
+      communication: 'Échanges avec l’école',
       appointments: 'Entretiens avec les enseignants de vos enfants',
       family: 'Profil, préférences du portail, contacts, consentements et personnes autorisées à récupérer vos enfants',
       children: 'Liste de vos enfants et sélection du profil actif',
@@ -238,6 +243,7 @@ const ParentDashboard = () => {
 
               <div className="animate-slide-up">
                 {activeTab === 'overview' && <ParentOverview />}
+                {activeTab === 'notifications' && <ParentNotificationsPanel />}
                 {activeTab === 'communication' && (
                   <SchoolCommunication role="parent" contextStudentId={selectedChild} />
                 )}

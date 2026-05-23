@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 
-type BrandingPayload = {
+export type BrandingPayload = {
   appTitle?: string | null;
   appTagline?: string | null;
+  faviconUrl?: string | null;
+  navigationLogoUrl?: string | null;
+  loginLogoUrl?: string | null;
 };
 
 function getServerApiBaseUrl(): string {
@@ -25,19 +28,31 @@ function getServerApiBaseUrl(): string {
   return 'http://localhost:5000/api';
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function fetchPublicAppBrandingForMetadata(): Promise<BrandingPayload | null> {
   const base = getServerApiBaseUrl().replace(/\/+$/, '');
   const url = `${base}/public/app-branding`;
-  try {
-    const res = await fetch(url, {
-      next: { revalidate: 120 },
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as BrandingPayload;
-  } catch {
-    return null;
+  const isDev = process.env.NODE_ENV === 'development';
+  const attempts = isDev ? 8 : 2;
+  const delayMs = 400;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, {
+        next: { revalidate: isDev ? 0 : 120 },
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as BrandingPayload;
+    } catch {
+      if (i < attempts - 1) await sleep(delayMs);
+    }
   }
+  return null;
 }
 
 const DEFAULT_TITLE = 'Collège Privé Tranlefet de Bouaké';

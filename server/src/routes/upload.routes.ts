@@ -1,8 +1,9 @@
 import express from 'express';
-import fs from 'fs';
 import { authenticate } from '../middleware/auth.middleware';
-import { upload, identityUpload, getFileUrl, digitalLibraryUpload, elearningUpload } from '../middleware/upload.middleware';
+import { upload, identityUpload, digitalLibraryUpload, elearningUpload } from '../middleware/upload.middleware';
 import prisma from '../utils/prisma';
+import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
+import { discardUploadedFile, persistUploadedFile } from '../utils/upload-persist.util';
 
 const IDENTITY_TYPES = [
   'NATIONAL_ID',
@@ -25,17 +26,14 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// Upload d'avatar
 router.post('/avatar', upload.single('avatar'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Aucun fichier fourni' });
     }
 
-    const fileUrl = getFileUrl(req.file.filename, 'avatars');
-    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+    const fullUrl = await persistUploadedFile(req.file, 'avatars', { req });
 
-    // Mettre à jour l'avatar de l'utilisateur
     await prisma.user.update({
       where: { id: req.user!.id },
       data: { avatar: fullUrl },
@@ -46,18 +44,16 @@ router.post('/avatar', upload.single('avatar'), async (req: any, res) => {
       url: fullUrl,
     });
   } catch (error: any) {
+    discardUploadedFile(req.file);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Upload de fichier pour devoir (enseignants / administration)
 router.post('/assignment', upload.single('assignment'), async (req: any, res) => {
   try {
     const role = req.user?.role;
     if (!role || !['TEACHER', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
-      if (req.file?.path && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
+      discardUploadedFile(req.file);
       return res.status(403).json({ error: 'Seuls les enseignants et administrateurs peuvent joindre des fichiers aux devoirs' });
     }
 
@@ -65,8 +61,7 @@ router.post('/assignment', upload.single('assignment'), async (req: any, res) =>
       return res.status(400).json({ error: 'Aucun fichier fourni' });
     }
 
-    const fileUrl = getFileUrl(req.file.filename, 'assignments');
-    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+    const fullUrl = await persistUploadedFile(req.file, 'assignments', { req });
 
     res.json({
       message: 'Fichier uploadé avec succès',
@@ -74,30 +69,29 @@ router.post('/assignment', upload.single('assignment'), async (req: any, res) =>
       filename: req.file.originalname,
     });
   } catch (error: any) {
+    discardUploadedFile(req.file);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Upload d'image pour cours
 router.post('/course', upload.single('course'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Aucun fichier fourni' });
     }
 
-    const fileUrl = getFileUrl(req.file.filename, 'courses');
-    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+    const fullUrl = await persistUploadedFile(req.file, 'courses', { req });
 
     res.json({
       message: 'Image uploadée avec succès',
       url: fullUrl,
     });
   } catch (error: any) {
+    discardUploadedFile(req.file);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Pièce d'identité (élève : son dossier ; admin : studentId requis en champ formulaire)
 router.post(
   '/identity-document',
   identityUpload.single('identityDocument'),
@@ -111,7 +105,7 @@ router.post(
       const { type, label, notes, studentId: bodyStudentId } = req.body;
 
       if (!type || !IDENTITY_TYPES.includes(type as (typeof IDENTITY_TYPES)[number])) {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(400).json({ error: 'Type de document invalide' });
       }
 
@@ -119,28 +113,28 @@ router.post(
 
       if (role === 'ADMIN') {
         if (!bodyStudentId) {
-          fs.unlinkSync(req.file.path);
+          discardUploadedFile(req.file);
           return res.status(400).json({ error: 'studentId requis pour déposer le document sur un dossier élève' });
         }
         const st = await prisma.student.findUnique({ where: { id: String(bodyStudentId) } });
         if (!st) {
-          fs.unlinkSync(req.file.path);
+          discardUploadedFile(req.file);
           return res.status(404).json({ error: 'Élève introuvable' });
         }
         targetStudentId = st.id;
       } else if (role === 'STUDENT') {
         const st = await prisma.student.findFirst({ where: { userId: req.user.id } });
         if (!st) {
-          fs.unlinkSync(req.file.path);
+          discardUploadedFile(req.file);
           return res.status(404).json({ error: 'Profil élève introuvable' });
         }
         targetStudentId = st.id;
       } else {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(403).json({ error: 'Seuls les élèves et administrateurs peuvent déposer des pièces' });
       }
 
-      const fileUrl = `${req.protocol}://${req.get('host')}${getFileUrl(req.file.filename, 'identity-documents')}`;
+      const fileUrl = await persistUploadedFile(req.file, 'identity-documents', { req });
 
       const doc = await prisma.identityDocument.create({
         data: {
@@ -164,23 +158,19 @@ router.post(
 
       res.status(201).json({
         message: 'Document enregistré',
-        document: doc,
+        document: {
+          ...doc,
+          fileUrl: resolveStoredFileAccessUrl(doc.fileUrl),
+        },
       });
     } catch (error: any) {
-      if (req.file?.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch {
-          /* ignore */
-        }
-      }
+      discardUploadedFile(req.file);
       console.error('POST /upload/identity-document:', error);
       res.status(500).json({ error: error.message || 'Erreur serveur' });
     }
   }
 );
 
-// Document administratif enseignant (contrat, copie diplôme, etc.) — admin uniquement
 router.post(
   '/teacher-admin-document',
   identityUpload.single('teacherAdminDocument'),
@@ -191,32 +181,29 @@ router.post(
       }
 
       if (req.user?.role !== 'ADMIN') {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(403).json({ error: 'Réservé aux administrateurs' });
       }
 
       const { type, label, notes, teacherId: bodyTeacherId } = req.body;
 
       if (!bodyTeacherId) {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(400).json({ error: 'teacherId requis' });
       }
 
       if (!type || !TEACHER_ADMIN_DOC_TYPES.includes(type as (typeof TEACHER_ADMIN_DOC_TYPES)[number])) {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(400).json({ error: 'Type de document invalide' });
       }
 
       const t = await prisma.teacher.findUnique({ where: { id: String(bodyTeacherId) } });
       if (!t) {
-        fs.unlinkSync(req.file.path);
+        discardUploadedFile(req.file);
         return res.status(404).json({ error: 'Enseignant introuvable' });
       }
 
-      const fileUrl = `${req.protocol}://${req.get('host')}${getFileUrl(
-        req.file.filename,
-        'teacher-admin-documents'
-      )}`;
+      const fileUrl = await persistUploadedFile(req.file, 'teacher-admin-documents', { req });
 
       const doc = await prisma.teacherAdministrativeDocument.create({
         data: {
@@ -238,22 +225,21 @@ router.post(
         },
       });
 
-      res.status(201).json({ message: 'Document enregistré', document: doc });
+      res.status(201).json({
+        message: 'Document enregistré',
+        document: {
+          ...doc,
+          fileUrl: resolveStoredFileAccessUrl(doc.fileUrl),
+        },
+      });
     } catch (error: any) {
-      if (req.file?.path && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch {
-          /* ignore */
-        }
-      }
+      discardUploadedFile(req.file);
       console.error('POST /upload/teacher-admin-document:', error);
       res.status(500).json({ error: error.message || 'Erreur serveur' });
     }
   }
 );
 
-// Fichiers bibliothèque numérique (admin / bibliothécaire)
 router.post('/digital-library', digitalLibraryUpload.single('digitalLibrary'), async (req: any, res) => {
   try {
     const role = req.user?.role;
@@ -271,14 +257,13 @@ router.post('/digital-library', digitalLibraryUpload.single('digitalLibrary'), a
       }
     }
     if (!allowed) {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      discardUploadedFile(req.file);
       return res.status(403).json({ error: 'Droit insuffisant pour déposer une ressource numérique' });
     }
 
     if (!req.file) return res.status(400).json({ error: 'Aucun fichier fourni' });
 
-    const fileUrl = getFileUrl(req.file.filename, 'digital-library');
-    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+    const fullUrl = await persistUploadedFile(req.file, 'digital-library', { req });
 
     res.json({
       message: 'Fichier déposé',
@@ -288,6 +273,7 @@ router.post('/digital-library', digitalLibraryUpload.single('digitalLibrary'), a
       size: req.file.size,
     });
   } catch (error: unknown) {
+    discardUploadedFile(req.file);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
@@ -296,13 +282,13 @@ router.post('/elearning', elearningUpload.single('elearning'), async (req: any, 
   try {
     const role = req.user?.role;
     if (role !== 'TEACHER' && role !== 'ADMIN') {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      discardUploadedFile(req.file);
       return res.status(403).json({ error: 'Droit insuffisant' });
     }
     if (!req.file) return res.status(400).json({ error: 'Aucun fichier fourni' });
 
-    const fileUrl = getFileUrl(req.file.filename, 'elearning');
-    const fullUrl = `${req.protocol}://${req.get('host')}${fileUrl}`;
+    const fullUrl = await persistUploadedFile(req.file, 'elearning', { req });
+
     res.json({
       message: 'Fichier déposé',
       url: fullUrl,
@@ -311,12 +297,9 @@ router.post('/elearning', elearningUpload.single('elearning'), async (req: any, 
       size: req.file.size,
     });
   } catch (error: unknown) {
+    discardUploadedFile(req.file);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
 
 export default router;
-
-
-
-

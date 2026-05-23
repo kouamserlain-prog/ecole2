@@ -2,6 +2,7 @@ import express from 'express';
 import type { Prisma } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
+import { findSchedulesWithRelations } from '../utils/safe-schedule-query.util';
 import { autoReceiptUrl } from '../utils/tuition-financial-automation.util';
 import { syncTuitionFeePaidStatusForFeeId } from '../utils/tuition-fee-paid-sync.util';
 import {
@@ -9,6 +10,8 @@ import {
   decryptStudentRecord,
 } from '../utils/student-sensitive-crypto.util';
 import { notifyUsersImportant } from '../utils/notify-important.util';
+import { notifyStaffOfPendingCashPayment } from '../utils/payment-cash-notify.util';
+import { notifyParentCashPaymentSubmitted } from '../utils/parent-notify.util';
 import {
   addMinutes,
   appointmentInclude,
@@ -26,12 +29,18 @@ import {
   getAcademicYearsWithTuitionBlockForParent,
   parentTuitionBlockFromYears,
 } from '../utils/parent-academic-result-access.util';
+import {
+  absenceWhereRelationsExist,
+  gradeWhereRelationsExist,
+} from '../utils/prisma-relation-exists.util';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
+import { guardParentOwnsStudentParam } from '../middleware/parent-student-guard.middleware';
 
 const router = express.Router();
 
 router.use(authenticate);
 router.use(authorize('PARENT'));
+router.use('/children/:studentId', guardParentOwnsStudentParam);
 
 router.get('/notifications', async (req: AuthRequest, res) => {
   try {
@@ -76,6 +85,23 @@ router.put('/notifications/:id/read', async (req: AuthRequest, res) => {
     res.json(notification);
   } catch (error: unknown) {
     console.error('PUT /parent/notifications/:id/read:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
+
+router.delete('/notifications/:id', async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.notification.findFirst({
+      where: { id, userId: req.user!.id },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Notification non trouvée' });
+    }
+    await prisma.notification.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (error: unknown) {
+    console.error('DELETE /parent/notifications/:id:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
@@ -360,10 +386,18 @@ router.post('/appointments', async (req: AuthRequest, res) => {
         timeStyle: 'short',
       });
       if (autoConfirm && parentUser?.userId) {
-        await notifyUsersImportant([teacherUser.userId, parentUser.userId], {
+        await notifyUsersImportant([parentUser.userId], {
           type: 'appointment',
           title: 'Rendez-vous confirmé',
           content: `Entretien parents-enseignants (${stName || 'élève'}) le ${when} — confirmation automatique.`,
+          link: '/parent?tab=appointments',
+          email: undefined,
+        });
+        await notifyUsersImportant([teacherUser.userId], {
+          type: 'appointment',
+          title: 'Rendez-vous confirmé',
+          content: `Entretien avec un parent (${stName || 'élève'}) le ${when} — confirmation automatique.`,
+          link: '/teacher?tab=appointments',
           email: undefined,
         });
       } else {
@@ -663,7 +697,11 @@ router.get('/dashboard/kpis', async (req: AuthRequest, res) => {
         where: { userId: req.user!.id, read: false },
       }),
       prisma.grade.findMany({
-        where: { studentId: { in: studentIds }, date: { gte: since } },
+        where: {
+          studentId: { in: studentIds },
+          date: { gte: since },
+          ...gradeWhereRelationsExist,
+        },
         select: {
           studentId: true,
           score: true,
@@ -745,6 +783,7 @@ router.get('/children/:studentId/grades', async (req: AuthRequest, res) => {
     const gradesRaw = await prisma.grade.findMany({
       where: {
         studentId,
+        ...gradeWhereRelationsExist,
       },
       include: {
         course: {
@@ -827,6 +866,7 @@ router.get('/children/:studentId/absences', async (req: AuthRequest, res) => {
     const absences = await prisma.absence.findMany({
       where: {
         studentId,
+        ...absenceWhereRelationsExist,
       },
       include: {
         course: true,
@@ -886,41 +926,7 @@ router.get('/children/:studentId/schedule', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Classe non trouvée' });
     }
 
-    const schedule = await prisma.schedule.findMany({
-      where: {
-        classId: student.classId,
-      },
-      include: {
-        course: {
-          include: {
-            teacher: {
-              include: {
-                user: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-        substituteTeacher: {
-          include: {
-            user: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
-    });
+    const schedule = await findSchedulesWithRelations({ classId: student.classId });
 
     res.json(schedule);
   } catch (error: any) {
@@ -1172,6 +1178,22 @@ router.post('/children/:studentId/payments', async (req: AuthRequest, res) => {
         },
       },
     });
+
+    if (paymentMethod === 'CASH') {
+      await notifyStaffOfPendingCashPayment({
+        paymentId: payment.id,
+        amount: payment.amount,
+        paymentReference: payment.paymentReference,
+        studentFirstName: payment.student.user.firstName,
+        studentLastName: payment.student.user.lastName,
+        period: payment.tuitionFee.period,
+        academicYear: payment.tuitionFee.academicYear,
+        payerRole: 'PARENT',
+      }).catch((err) => console.error('notifyStaffOfPendingCashPayment:', err));
+      void notifyParentCashPaymentSubmitted(payment.id).catch((err) =>
+        console.error('notifyParentCashPaymentSubmitted:', err),
+      );
+    }
 
     res.status(201).json({
       payment,
@@ -1771,12 +1793,24 @@ router.get('/messages', async (req: AuthRequest, res) => {
 
 router.get('/messages/contacts', async (req: AuthRequest, res) => {
   try {
-    const [admins, courses] = await Promise.all([
+    const [admins, staffUsers, educators, courses] = await Promise.all([
       prisma.user.findMany({
-        where: { role: 'ADMIN', isActive: true },
+        where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
         select: { id: true, firstName: true, lastName: true, email: true, role: true },
         orderBy: { lastName: 'asc' },
         take: 40,
+      }),
+      prisma.user.findMany({
+        where: { role: 'STAFF', isActive: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        orderBy: { lastName: 'asc' },
+        take: 120,
+      }),
+      prisma.user.findMany({
+        where: { role: 'EDUCATOR', isActive: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        orderBy: { lastName: 'asc' },
+        take: 80,
       }),
       prisma.course.findMany({
         where: {
@@ -1810,7 +1844,7 @@ router.get('/messages/contacts', async (req: AuthRequest, res) => {
       }
     }
 
-    res.json({ admins, teachers: [...teacherMap.values()] });
+    res.json({ admins, staff: staffUsers, educators, teachers: [...teacherMap.values()] });
   } catch (error: any) {
     console.error('GET /parent/messages/contacts:', error);
     res.status(500).json({ error: error.message || 'Erreur serveur' });
@@ -1898,7 +1932,7 @@ router.post('/messages', async (req: AuthRequest, res) => {
       if (!recv || !recv.isActive) {
         return res.status(404).json({ error: 'Destinataire introuvable' });
       }
-      if (recv.role === 'ADMIN') {
+      if (recv.role === 'ADMIN' || recv.role === 'SUPER_ADMIN') {
         /* ok */
       } else if (recv.role === 'TEACHER') {
         const { parentLinkedToTeacherUser } = await import('../utils/internal-messaging.util');
@@ -1909,9 +1943,12 @@ router.post('/messages', async (req: AuthRequest, res) => {
           });
         }
       } else {
-        return res.status(400).json({
-          error: 'Destinataire non autorisé. Choisissez un enseignant ou laissez vide pour l’administration.',
-        });
+        const { isPlatformMessagingRole } = await import('../utils/internal-messaging.util');
+        if (!isPlatformMessagingRole(recv.role)) {
+          return res.status(400).json({
+            error: 'Destinataire non autorisé. Choisissez un contact de l’établissement ou laissez vide pour l’administration.',
+          });
+        }
       }
     }
 

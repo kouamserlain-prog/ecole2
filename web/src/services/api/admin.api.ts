@@ -1,4 +1,5 @@
 import api from './client';
+import type { AppBrandingUploadSlot } from '@/lib/appBrandingUpload';
 
 export const adminApi = {
   getStudents: async () => {
@@ -507,7 +508,7 @@ export const adminApi = {
     date: string;
     status?: 'PRESENT' | 'ABSENT' | 'LATE';
     minutesLate?: number;
-    attendanceSource?: 'NFC' | 'BIOMETRIC' | 'MANUAL';
+      attendanceSource?: 'NFC' | 'BIOMETRIC' | 'FACE' | 'MANUAL';
     notifyParentsOnSave?: boolean;
   }) => {
     const response = await api.post('/admin/absences/nfc-attendance', data);
@@ -1739,7 +1740,7 @@ export const adminApi = {
     const response = await api.put('/admin/app-branding', data);
     return response.data;
   },
-  uploadAppBrandingFile: async (slot: 'navigation' | 'login' | 'favicon', file: File) => {
+  uploadAppBrandingFile: async (slot: AppBrandingUploadSlot, file: File) => {
     const formData = new FormData();
     formData.append('branding', file);
     const response = await api.post(
@@ -1766,6 +1767,26 @@ export const adminApi = {
   },
   deactivateAdminWorkspace: async (id: string) => {
     const response = await api.delete(`/admin/workspaces/${id}`);
+    return response.data;
+  },
+  listSchools: async () => {
+    const response = await api.get('/admin/schools');
+    return response.data;
+  },
+  setActiveSchool: async (schoolId: string) => {
+    const response = await api.put('/admin/schools/active', { schoolId });
+    return response.data;
+  },
+  listSchoolsManage: async () => {
+    const response = await api.get('/admin/schools/manage');
+    return response.data;
+  },
+  createSchool: async (data: Record<string, unknown>) => {
+    const response = await api.post('/admin/schools', data);
+    return response.data;
+  },
+  updateSchool: async (id: string, data: Record<string, unknown>) => {
+    const response = await api.put(`/admin/schools/${id}`, data);
     return response.data;
   },
 };

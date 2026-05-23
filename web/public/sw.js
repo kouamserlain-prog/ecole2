@@ -1,8 +1,8 @@
 /* Service worker — Web Push + mise en cache légère pour usage hors ligne du shell */
-const STATIC_CACHE = 'gs-shell-v2';
+const STATIC_CACHE = 'gs-shell-v3';
 const PRECACHE_URLS = ['/', '/favicon.ico'];
-/** Chemins jamais servis depuis le cache hors ligne (formulaires publics évolutifs). */
-const NO_OFFLINE_CACHE_PATHS = ['/inscription', '/pre-inscription'];
+/** Chemins laissés au navigateur (pas d’interception — évite Failed to fetch en dev). */
+const BYPASS_SW_PATHS = ['/inscription', '/pre-inscription', '/_next'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -25,8 +25,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api')) return;
-  if (NO_OFFLINE_CACHE_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`))) {
-    event.respondWith(fetch(req));
+  if (BYPASS_SW_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`))) {
     return;
   }
 

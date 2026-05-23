@@ -1,18 +1,19 @@
 import crypto from 'crypto';
-import { hashPassword } from './password.util';
+import { hashPassword, validatePasswordStrength } from './password.util';
 import { createPasswordResetToken, sendWelcomeSetPasswordEmail } from './email.util';
 
 const SETUP_TOKEN_HOURS = 48;
 
 /**
- * Si l’admin fournit un mot de passe (≥ 6 caractères), il est utilisé.
+ * Si l’admin fournit un mot de passe, il doit respecter la politique de complexité.
  * Sinon : hash aléatoire + invitation par e-mail pour définir le mot de passe (lien type « oublié »).
  */
 export async function resolveAdminProvidedOrInvitePassword(
   passwordFromBody: unknown
 ): Promise<{ hashedPassword: string; shouldSendSetupEmail: boolean }> {
   const raw = typeof passwordFromBody === 'string' ? passwordFromBody.trim() : '';
-  if (raw.length >= 6) {
+  if (raw.length > 0) {
+    validatePasswordStrength(raw);
     return { hashedPassword: await hashPassword(raw), shouldSendSetupEmail: false };
   }
   const placeholder = crypto.randomBytes(48).toString('base64url');

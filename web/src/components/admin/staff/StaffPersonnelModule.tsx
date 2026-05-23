@@ -31,6 +31,7 @@ import {
   getAllStaffVisibleModules,
   getEligibleModulesForSupportKind,
   resolveVisibleStaffModules,
+  sanitizeStaffModulesForSave,
   type StaffModuleId,
 } from '@/lib/staffModules';
 import { useAppBranding } from '@/contexts/AppBrandingContext';
@@ -952,6 +953,8 @@ function StaffFormModal({
     mutationFn: async () => {
       const rawSal = salary.trim();
       const salaryNum = rawSal === '' ? undefined : parseFloat(rawSal.replace(',', '.'));
+      const modulesPayload =
+        staffCategory === 'SUPPORT' ? sanitizeStaffModulesForSave(visibleStaffModules) : [];
       if (staffId) {
         return adminApi.updateStaffMember(staffId, {
           firstName,
@@ -971,7 +974,7 @@ function StaffFormModal({
           jobDescriptionId: jobDescriptionId || null,
           managerId: managerId || null,
           isActive,
-          visibleStaffModules: staffCategory === 'SUPPORT' ? visibleStaffModules : [],
+          visibleStaffModules: modulesPayload,
         });
       }
       const pw = password.trim();
@@ -995,7 +998,7 @@ function StaffFormModal({
         biometricId: biometricId || undefined,
         jobDescriptionId: jobDescriptionId || undefined,
         managerId: managerId || undefined,
-        visibleStaffModules: staffCategory === 'SUPPORT' ? visibleStaffModules : undefined,
+        visibleStaffModules: staffCategory === 'SUPPORT' ? modulesPayload : undefined,
       });
     },
     onSuccess: (data) => {
@@ -1075,7 +1078,13 @@ function StaffFormModal({
         {staffCategory === 'SUPPORT' && (
           <div>
             <label className="text-xs font-medium">Type de soutien *</label>
-            <select className="w-full border rounded-lg px-2 py-1.5 mt-0.5" value={supportKind} onChange={(e) => setSupportKind(e.target.value)}>
+            <select
+              className="w-full border rounded-lg px-2 py-1.5 mt-0.5"
+              value={supportKind}
+              onChange={(e) => {
+                setSupportKind(e.target.value);
+              }}
+            >
               {Object.entries(KIND_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>
                   {v}

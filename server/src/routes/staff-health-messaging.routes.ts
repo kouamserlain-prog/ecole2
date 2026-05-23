@@ -1,32 +1,28 @@
 import express from 'express';
 import prisma from '../utils/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
-import { assertStaffHasModule } from '../utils/staff-visible-modules.util';
+import { assertStaffHasModule, type StaffModuleId } from '../utils/staff-visible-modules.util';
+import { isPlatformMessagingRole } from '../utils/internal-messaging.util';
 
 const router = express.Router();
 
-const MESSAGING_ROLES = new Set([
-  'ADMIN',
-  'SUPER_ADMIN',
-  'TEACHER',
-  'EDUCATOR',
-  'PARENT',
-  'STUDENT',
-  'STAFF',
-]);
-
-async function healthStaffGuard(req: AuthRequest, res: express.Response, next: express.NextFunction) {
-  try {
-    await assertStaffHasModule(req.user!.id, 'health_log');
-    next();
-  } catch {
-    return res.status(403).json({ error: 'Module infirmerie requis pour la messagerie' });
+async function staffMessagingGuard(req: AuthRequest, res: express.Response, next: express.NextFunction) {
+  const uid = req.user!.id;
+  for (const moduleId of ['communication_mgmt', 'health_log'] as StaffModuleId[]) {
+    try {
+      await assertStaffHasModule(uid, moduleId);
+      next();
+      return;
+    } catch {
+      /* essayer le module suivant */
+    }
   }
+  return res.status(403).json({ error: 'Module communication ou infirmerie requis pour la messagerie' });
 }
 
 router.use(authenticate);
 router.use(authorize('STAFF'));
-router.use(healthStaffGuard);
+router.use(staffMessagingGuard);
 
 router.get('/threads', async (req: AuthRequest, res) => {
   try {
@@ -280,7 +276,7 @@ router.post('/send', async (req: AuthRequest, res) => {
     if (!recv || !recv.isActive) {
       return res.status(404).json({ error: 'Destinataire introuvable' });
     }
-    if (!MESSAGING_ROLES.has(recv.role)) {
+    if (!isPlatformMessagingRole(recv.role)) {
       return res.status(400).json({ error: 'Destinataire non autorisé.' });
     }
 

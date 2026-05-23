@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '../contexts/AuthContext';
 import { useAppBranding } from '../contexts/AppBrandingContext';
@@ -9,6 +8,7 @@ import Button from '../components/ui/Button';
 import Footer from '../components/Footer';
 import HomeReveal from '../components/public/HomeReveal';
 import HomeDirectorSection from '../components/public/HomeDirectorSection';
+import HomePageImage from '../components/public/HomePageImage';
 import { getCurrentAcademicYear } from '../utils/academicYear';
 import { getRoleDashboardPath } from '../lib/rolePaths';
 import {
@@ -48,7 +48,6 @@ const NAV_LINKS = [
   { href: '#mot-directrice', label: 'Mot de la Direction' },
   { href: '#etablissement', label: 'Établissement' },
   { href: '#actualites', label: 'Actualités' },
-  { href: '/pre-inscription', label: 'Pré-inscription' },
   { href: '/contact', label: 'Contact' },
 ];
 
@@ -67,6 +66,7 @@ const PILLARS = [
     icon: FiBook,
     accent: 'from-tran-mauve-600 to-tran-mauve-800',
     span: 'md:col-span-2',
+    imageSlot: 'homePillarPedagogy' as const,
     image: '/home/pillar-pedagogy.jpg',
     imageAlt: 'Salle de classe au Collège Privé Tranlefet de Bouaké',
   },
@@ -76,6 +76,7 @@ const PILLARS = [
     icon: FiZap,
     accent: 'from-tran-mustard-500 to-tran-mustard-700',
     span: 'md:col-span-1',
+    imageSlot: 'homePillarPortals' as const,
     image: '/home/pillar-portals.jpg',
     imageAlt: 'Élèves et enseignants en activité pédagogique',
   },
@@ -85,6 +86,7 @@ const PILLARS = [
     icon: FiShield,
     accent: 'from-tran-mauve-500 to-tran-mauve-700',
     span: 'md:col-span-1',
+    imageSlot: 'homePillarSecurity' as const,
     image: '/home/pillar-security.jpg',
     imageAlt: 'Encadrement et discipline au quotidien',
   },
@@ -94,6 +96,7 @@ const PILLARS = [
     icon: FiLayers,
     accent: 'from-tran-mauve-800 to-tran-mustard-700',
     span: 'md:col-span-2',
+    imageSlot: 'homePillarAdministration' as const,
     image: '/home/pillar-administration.jpg',
     imageAlt: 'Équipe éducative et administrative du collège',
   },
@@ -106,6 +109,7 @@ const ROLES = [
     gradient: 'from-tran-mauve-600 to-tran-mauve-800',
     ring: 'ring-tran-mauve-500/25',
     icon: FiBarChart2,
+    imageSlot: 'homeRoleAdmin' as const,
     image: '/home/role-admin.jpg',
     imageAlt: 'Direction du Collège Privé Tranlefet',
   },
@@ -115,6 +119,7 @@ const ROLES = [
     gradient: 'from-tran-mauve-500 to-tran-mauve-700',
     ring: 'ring-tran-mauve-400/25',
     icon: FiBook,
+    imageSlot: 'homeRoleTeacher' as const,
     image: '/home/role-teacher.jpg',
     imageAlt: 'Corps enseignant du CPTB',
   },
@@ -124,6 +129,7 @@ const ROLES = [
     gradient: 'from-tran-mustard-500 to-tran-mustard-700',
     ring: 'ring-tran-mustard-500/25',
     icon: FiAward,
+    imageSlot: 'homeRoleStudent' as const,
     image: '/home/role-student.jpg',
     imageAlt: 'Élèves du Collège Privé Tranlefet de Bouaké',
   },
@@ -133,6 +139,7 @@ const ROLES = [
     gradient: 'from-tran-mauve-700 to-tran-mustard-600',
     ring: 'ring-tran-mustard-500/20',
     icon: FiHeart,
+    imageSlot: 'homeRoleParent' as const,
     image: '/home/role-parent.jpg',
     imageAlt: 'Familles et parents d’élèves',
   },
@@ -442,8 +449,9 @@ export default function Home() {
                         </span>
                       </div>
                       <div className="relative aspect-[4/3] min-h-[280px] sm:min-h-[320px] lg:min-h-[380px]">
-                        <Image
-                          src="/home/hero-platform.jpg"
+                        <HomePageImage
+                          slot="homeHeroPlatform"
+                          defaultPath="/home/hero-platform.jpg"
                           alt="Collège Privé Tranlefet de Bouaké — vie scolaire et apprentissage"
                           fill
                           className="object-cover"
@@ -528,7 +536,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="grid gap-5 md:grid-cols-3 md:gap-6">
-                {PILLARS.map(({ title, text, icon: Icon, accent, span, image, imageAlt }, idx) => (
+                {PILLARS.map(({ title, text, icon: Icon, accent, span, image, imageAlt, imageSlot }, idx) => (
                   <HomeReveal key={title} delayMs={idx * 70} className={span}>
                   <article
                     className="home-pillar-sheen group relative h-full overflow-hidden rounded-3xl border border-stone-200/90 bg-white shadow-[0_20px_50px_-28px_rgba(30,31,56,0.12)] transition-all duration-500 hover:-translate-y-1.5 hover:border-tran-mustard-300/60 hover:shadow-[0_28px_56px_-22px_rgba(90,91,154,0.18)]"
@@ -536,8 +544,9 @@ export default function Home() {
                     <div
                       className={`relative w-full overflow-hidden ${span.includes('col-span-2') ? 'h-48 sm:h-56' : 'h-44 sm:h-48'}`}
                     >
-                      <Image
-                        src={image}
+                      <HomePageImage
+                        slot={imageSlot}
+                        defaultPath={image}
                         alt={imageAlt}
                         fill
                         className="object-cover transition-transform duration-700 motion-safe:group-hover:scale-105"
@@ -571,8 +580,9 @@ export default function Home() {
           <HomeReveal>
           <div className="home-campus-split group overflow-hidden rounded-[2rem] border border-stone-200/90 bg-white shadow-[0_28px_56px_-24px_rgba(12,10,9,0.18)] ring-1 ring-tran-mustard-500/15 transition-all duration-500 hover:ring-tran-mustard-500/25 lg:grid lg:grid-cols-2">
             <div className="relative min-h-[260px] lg:min-h-[400px]">
-              <Image
-                src="/home/split-campus.jpg"
+              <HomePageImage
+                slot="homeSplitCampus"
+                defaultPath="/home/split-campus.jpg"
                 alt="Bâtiment et campus scolaire, perspective architecturale"
                 fill
                 className="object-cover transition-transform duration-700 motion-safe:group-hover:scale-[1.02]"
@@ -645,14 +655,15 @@ export default function Home() {
             </p>
           </div>
           <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {ROLES.map(({ label, desc, gradient, ring, icon: Icon, image, imageAlt }, idx) => (
+            {ROLES.map(({ label, desc, gradient, ring, icon: Icon, image, imageAlt, imageSlot }, idx) => (
               <HomeReveal key={label} delayMs={idx * 55}>
               <div
                 className={`home-role-card group relative overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-lg shadow-stone-900/[0.06] ring-2 ${ring} transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl`}
               >
                 <div className="relative h-40 w-full overflow-hidden">
-                  <Image
-                    src={image}
+                  <HomePageImage
+                    slot={imageSlot}
+                    defaultPath={image}
                     alt={imageAlt}
                     fill
                     className="object-cover transition-transform duration-700 motion-safe:group-hover:scale-110"

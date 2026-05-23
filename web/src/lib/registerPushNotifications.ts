@@ -17,6 +17,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
  */
 export async function registerPushNotifications(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
+  if (process.env.NODE_ENV === 'development') return false;
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
   try {

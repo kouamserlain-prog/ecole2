@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
+import { staffApi } from '../../services/api/staff.api';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
@@ -39,8 +40,15 @@ interface Notification {
   createdAt: Date;
 }
 
-const AllNotifications = () => {
+type AllNotificationsProps = {
+  /** `staff` : notifications du compte personnel (API `/staff/notifications`). */
+  audience?: 'admin' | 'staff';
+};
+
+const AllNotifications = ({ audience = 'admin' }: AllNotificationsProps) => {
+  const isStaff = audience === 'staff';
   const queryClient = useQueryClient();
+  const notificationsQueryKey = ['all-notifications', audience] as const;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<NotificationType>('all');
   const [selectedStatus, setSelectedStatus] = useState<NotificationStatus>('all');
@@ -50,12 +58,19 @@ const AllNotifications = () => {
 
   // Fetch all notifications
   const { data: notifications = [], isLoading, refetch } = useQuery({
-    queryKey: ['all-notifications'],
+    queryKey: notificationsQueryKey,
     queryFn: async () => {
       try {
+        if (isStaff) {
+          return await staffApi.getNotifications();
+        }
         return await adminApi.getNotifications();
       } catch (error) {
-        // Fallback to mock data if API fails
+        if (isStaff) {
+          toast.error('Impossible de charger vos notifications.');
+          return [];
+        }
+        // Fallback to mock data if API fails (admin uniquement)
         const mockNotifications: Notification[] = [
           {
             id: '1',
@@ -134,6 +149,9 @@ const AllNotifications = () => {
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
       try {
+        if (isStaff) {
+          return await staffApi.markNotificationAsRead(notificationId);
+        }
         return await adminApi.markNotificationAsRead(notificationId);
       } catch (error: any) {
         // Si l'API échoue (notifications mockées ou erreur serveur), on continue quand même
@@ -143,7 +161,7 @@ const AllNotifications = () => {
     },
     onSuccess: (data, notificationId) => {
       // Mettre à jour le cache localement
-      queryClient.setQueryData(['all-notifications'], (oldData: any) => {
+      queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
         if (!oldData) return oldData;
         return oldData.map((notification: Notification) =>
           notification.id === notificationId
@@ -151,7 +169,7 @@ const AllNotifications = () => {
             : notification
         );
       });
-      queryClient.invalidateQueries({ queryKey: ['all-notifications'] });
+      queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
       toast.success('Notification marquée comme lue');
     },
     onError: (error: any, notificationId: string) => {
@@ -163,15 +181,19 @@ const AllNotifications = () => {
       if (is404 || is500) {
         // Mettre à jour localement pour les notifications mockées ou en cas d'erreur serveur
         console.warn('API error (status:', status, '), updating locally:', error);
-        queryClient.setQueryData(['all-notifications'], (oldData: any) => {
-          if (!oldData) return oldData;
-          return oldData.map((notification: Notification) =>
-            notification.id === notificationId
-              ? { ...notification, read: true, readAt: new Date() }
-              : notification
-          );
-        });
-        toast.success('Notification marquée comme lue (localement)');
+        if (!isStaff) {
+          queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
+            if (!oldData) return oldData;
+            return oldData.map((notification: Notification) =>
+              notification.id === notificationId
+                ? { ...notification, read: true, readAt: new Date() }
+                : notification
+            );
+          });
+          toast.success('Notification marquée comme lue (localement)');
+        } else {
+          toast.error('Erreur lors du marquage de la notification');
+        }
       } else {
         // Autre type d'erreur
         console.error('Error marking notification as read:', error);
@@ -184,6 +206,9 @@ const AllNotifications = () => {
   const deleteNotificationMutation = useMutation({
     mutationFn: async (notificationId: string) => {
       try {
+        if (isStaff) {
+          return await staffApi.deleteNotification(notificationId);
+        }
         return await adminApi.deleteNotification(notificationId);
       } catch (error: any) {
         throw error;
@@ -191,11 +216,11 @@ const AllNotifications = () => {
     },
     onSuccess: (data, notificationId) => {
       // Supprimer de la liste localement
-      queryClient.setQueryData(['all-notifications'], (oldData: any) => {
+      queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
         if (!oldData) return oldData;
         return oldData.filter((notification: Notification) => notification.id !== notificationId);
       });
-      queryClient.invalidateQueries({ queryKey: ['all-notifications'] });
+      queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
       toast.success('Notification supprimée avec succès');
     },
     onError: (error: any, notificationId: string) => {
@@ -203,10 +228,10 @@ const AllNotifications = () => {
       const is404 = status === 404;
       const is500 = status === 500;
       
-      if (is404 || is500) {
+      if (!isStaff && (is404 || is500)) {
         // Supprimer localement pour les notifications mockées ou en cas d'erreur serveur
         console.warn('API error (status:', status, '), deleting locally:', error);
-        queryClient.setQueryData(['all-notifications'], (oldData: any) => {
+        queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
           if (!oldData) return oldData;
           return oldData.filter((notification: Notification) => notification.id !== notificationId);
         });
@@ -383,15 +408,18 @@ const AllNotifications = () => {
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
       try {
+        if (isStaff) {
+          return await staffApi.markAllNotificationsAsRead();
+        }
         return await adminApi.markAllNotificationsAsRead();
       } catch (error: any) {
         throw error;
       }
     },
     onSuccess: (data) => {
-      const count = data.count || 0;
+      const count = isStaff ? undefined : data?.count || 0;
       // Mettre à jour toutes les notifications non lues dans le cache
-      queryClient.setQueryData(['all-notifications'], (oldData: any) => {
+      queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
         if (!oldData) return oldData;
         const now = new Date();
         return oldData.map((notification: Notification) =>
@@ -400,20 +428,26 @@ const AllNotifications = () => {
             : notification
         );
       });
-      queryClient.invalidateQueries({ queryKey: ['all-notifications'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
-      toast.success(`${count} notification(s) marquée(s) comme lue(s)`);
+      queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
+      if (!isStaff) {
+        queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
+      }
+      if (isStaff) {
+        toast.success('Toutes les notifications sont marquées comme lues.');
+      } else {
+        toast.success(`${count} notification(s) marquée(s) comme lue(s)`);
+      }
     },
     onError: (error: any) => {
       const status = error.response?.status;
       const is404 = status === 404;
       const is500 = status === 500;
       
-      if (is404 || is500) {
+      if (!isStaff && (is404 || is500)) {
         // Mettre à jour localement pour les notifications mockées ou en cas d'erreur serveur
         console.warn('API error (status:', status, '), updating locally:', error);
         const unreadCount = filteredNotifications.filter((n) => !n.read).length;
-        queryClient.setQueryData(['all-notifications'], (oldData: any) => {
+        queryClient.setQueryData(notificationsQueryKey, (oldData: any) => {
           if (!oldData) return oldData;
           const now = new Date();
           return oldData.map((notification: Notification) =>
@@ -483,7 +517,9 @@ const AllNotifications = () => {
         <div>
           <h2 className="text-xl font-bold text-gray-900">Notifications</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Consultez et gérez les notifications de l'établissement
+            {isStaff
+              ? 'Alertes et messages liés à vos modules (pré-inscriptions, stock, etc.)'
+              : "Consultez et gérez les notifications de l'établissement"}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

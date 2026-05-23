@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import type { StaffCategory, SupportStaffKind } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { generateToken } from '../utils/jwt.util';
-import { hashPassword, comparePassword } from '../utils/password.util';
+import { hashPassword, comparePassword, assertPasswordPolicy, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import {
   createPasswordResetToken,
@@ -21,7 +21,10 @@ import {
   gdprErasureRequestLimiter,
 } from '../middleware/rate-limit.middleware';
 import { decryptSessionUserPayload } from '../utils/student-sensitive-crypto.util';
-import { syncStaffVisibleModulesIfStale } from '../utils/staff-visible-modules.util';
+import {
+  resolveVisibleStaffModules,
+  syncStaffVisibleModulesIfStale,
+} from '../utils/staff-visible-modules.util';
 import { buildGdprDataExport } from '../utils/gdpr-data-export.util';
 import QRCode from 'qrcode';
 import { generateTwoFactorSecret, verifyTwoFactorToken } from '../utils/two-factor.util';
@@ -39,11 +42,16 @@ async function withSyncedStaffModules<
   },
 >(user: T): Promise<T> {
   if (!user.staffProfile) return user;
-  const synced = await syncStaffVisibleModulesIfStale(user.staffProfile);
-  if (!synced) return user;
+  const sp = user.staffProfile;
+  await syncStaffVisibleModulesIfStale(sp);
+  const visibleStaffModules = resolveVisibleStaffModules(
+    sp.staffCategory,
+    sp.supportKind,
+    sp.visibleStaffModules,
+  );
   return {
     ...user,
-    staffProfile: { ...user.staffProfile, visibleStaffModules: synced },
+    staffProfile: { ...sp, visibleStaffModules },
   };
 }
 
@@ -53,7 +61,7 @@ router.post(
   authRegisterLimiter,
   [
     body('email').isEmail().withMessage('Email invalide'),
-    body('password').isLength({ min: 6 }).withMessage('Mot de passe trop court'),
+    body('password').custom(assertPasswordPolicy).withMessage(PASSWORD_POLICY_HINT),
     body('firstName').notEmpty().withMessage('Prénom requis'),
     body('lastName').notEmpty().withMessage('Nom requis'),
     body('role')
@@ -113,8 +121,10 @@ router.post(
         user,
         token,
       });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Erreur serveur';
+      const status = message.includes('mot de passe') ? 400 : 500;
+      res.status(status).json({ error: message });
     }
   }
 );
@@ -565,7 +575,7 @@ router.post(
   authResetPasswordLimiter,
   [
     body('token').notEmpty().withMessage('Token requis'),
-    body('password').isLength({ min: 6 }).withMessage('Le mot de passe doit contenir au moins 6 caractères'),
+    body('password').custom(assertPasswordPolicy).withMessage(PASSWORD_POLICY_HINT),
   ],
   async (req, res) => {
     try {
@@ -607,9 +617,11 @@ router.post(
       res.json({
         message: 'Mot de passe réinitialisé avec succès',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Erreur lors de la réinitialisation:', error);
-      res.status(500).json({ error: error.message || 'Erreur serveur' });
+      const message = error instanceof Error ? error.message : 'Erreur serveur';
+      const status = message.includes('mot de passe') ? 400 : 500;
+      res.status(status).json({ error: message });
     }
   }
 );

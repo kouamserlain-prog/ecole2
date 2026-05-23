@@ -1019,7 +1019,9 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
       broadcastAudience?: 'parents' | 'students' | 'all';
     };
 
-    const { createInternalPlatformMessage, makeDmThreadKey } = await import('../utils/internal-messaging.util');
+    const { createInternalPlatformMessage, makeDmThreadKey, isPlatformMessagingRole } = await import(
+      '../utils/internal-messaging.util'
+    );
 
     const validCategories = [
       'GENERAL',
@@ -1034,8 +1036,6 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
       category && validCategories.includes(category as (typeof validCategories)[number])
         ? (category as (typeof validCategories)[number])
         : 'GENERAL';
-
-    const allowedRoles = new Set(['ADMIN', 'SUPER_ADMIN', 'TEACHER', 'PARENT', 'EDUCATOR', 'STUDENT']);
 
     if (broadcastClassId && typeof broadcastClassId === 'string' && broadcastClassId.trim()) {
       const classId = broadcastClassId.trim();
@@ -1101,7 +1101,7 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
     if (!recv || !recv.isActive) {
       return res.status(404).json({ error: 'Destinataire introuvable' });
     }
-    if (!allowedRoles.has(recv.role)) {
+    if (!isPlatformMessagingRole(recv.role)) {
       return res.status(400).json({ error: 'Destinataire non autorisé pour la messagerie éducateur.' });
     }
 

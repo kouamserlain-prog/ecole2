@@ -52,7 +52,7 @@ const AdminSidebar = ({
       )}
 
       <aside
-        className={`fixed top-16 left-0 z-50 h-[calc(100vh-4rem)] border-r border-cptb-blue/30 bg-gradient-to-b from-cptb-blue-dark via-cptb-blue to-brand-900 shadow-lux backdrop-blur-xl
+        className={`fixed top-16 left-0 z-50 h-[calc(100vh-4rem)] border-r border-white/10 bg-black shadow-2xl
           transition-[transform,width] duration-300 ease-in-out
           w-[min(16rem,calc(100vw-2rem))]
           ${collapsed ? 'lg:w-[4.25rem]' : 'lg:w-64'}
@@ -61,12 +61,12 @@ const AdminSidebar = ({
       >
         <div className="flex h-full min-h-0 flex-col">
           <div
-            className={`hidden shrink-0 items-center border-b border-amber-500/15 px-1.5 py-2 lg:flex ${
+            className={`hidden shrink-0 items-center border-b border-white/10 px-1.5 py-2 lg:flex ${
               collapsed ? 'justify-center' : 'justify-between gap-1'
             }`}
           >
             {!collapsed ? (
-              <p className="min-w-0 truncate pl-1 text-[8px] font-semibold uppercase tracking-[0.2em] text-amber-500/70">
+              <p className="min-w-0 truncate pl-1 text-[8px] font-semibold uppercase tracking-[0.2em] text-white/45">
                 Menu
               </p>
             ) : null}
@@ -74,7 +74,7 @@ const AdminSidebar = ({
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className={`flex shrink-0 items-center justify-center rounded-lg p-1.5 text-amber-100/85 transition-colors hover:bg-white/10 min-h-[34px] min-w-[34px] ${
+                className={`flex shrink-0 items-center justify-center rounded-lg p-1.5 text-white/80 transition-colors hover:bg-white/10 min-h-[34px] min-w-[34px] ${
                   collapsed ? '' : 'ml-auto'
                 }`}
                 aria-expanded={collapsed ? false : true}
@@ -89,15 +89,15 @@ const AdminSidebar = ({
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between border-b border-amber-500/15 px-2.5 py-2 shrink-0 lg:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-2.5 py-2 shrink-0 lg:hidden">
             <div>
-              <p className="text-[8px] font-semibold text-amber-500/70 uppercase tracking-[0.2em]">Navigation</p>
-              <h2 className="text-sm font-display font-semibold tracking-wide text-amber-50">Administration</h2>
+              <p className="text-[8px] font-semibold text-white/45 uppercase tracking-[0.2em]">Navigation</p>
+              <h2 className="text-sm font-display font-semibold tracking-wide text-white">Administration</h2>
             </div>
             <button
               type="button"
               onClick={onToggle}
-              className="p-1.5 rounded-lg text-amber-100/80 hover:bg-white/10 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+              className="p-1.5 rounded-lg text-white/80 hover:bg-white/10 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
               aria-label="Fermer le menu"
             >
               <FiX className="w-4 h-4" />
@@ -122,7 +122,7 @@ const AdminSidebar = ({
                     } ${
                       isActive
                         ? `bg-gradient-to-r ${tab.color} text-white shadow-[0_0_28px_-8px_rgba(251,191,36,0.45)] ring-1 ring-amber-400/30`
-                        : 'text-stone-400 hover:bg-white/[0.06] hover:text-amber-50/95 active:bg-white/[0.08]'
+                        : 'text-zinc-400 hover:bg-white/[0.08] hover:text-white active:bg-white/[0.12]'
                     }`}
                   >
                     <Icon
@@ -139,7 +139,7 @@ const AdminSidebar = ({
                 );
               })}
             </nav>
-            <div className="mt-auto shrink-0 border-t border-amber-900/25 pt-2">
+            <div className="mt-auto shrink-0 border-t border-white/10 pt-2">
               <nav className="space-y-0.5 text-[10px] leading-tight">
                 {bottomTabs.map((tab) => {
                   const Icon = tab.icon;
@@ -157,7 +157,7 @@ const AdminSidebar = ({
                       } ${
                         isActive
                           ? `bg-gradient-to-r ${tab.color} text-white shadow-[0_0_24px_-8px_rgba(251,191,36,0.4)] ring-1 ring-amber-400/25`
-                          : 'text-stone-400 hover:bg-white/[0.06] hover:text-amber-50/95 active:bg-white/[0.08]'
+                          : 'text-zinc-400 hover:bg-white/[0.08] hover:text-white active:bg-white/[0.12]'
                       }`}
                     >
                       <Icon

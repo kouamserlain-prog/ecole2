@@ -50,6 +50,7 @@ export default function PendingCashPaymentsPanel({ mode, compact = false }: Pend
       qc.invalidateQueries({ queryKey: ['admin-payments-grouped'] });
       qc.invalidateQueries({ queryKey: ['admin-tuition-fees'] });
     } else {
+      qc.invalidateQueries({ queryKey: ['admin-payments-grouped'] });
       qc.invalidateQueries({ queryKey: ['staff-treasury-summary'] });
       qc.invalidateQueries({ queryKey: ['staff-treasury-recent'] });
     }

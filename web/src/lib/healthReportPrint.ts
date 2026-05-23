@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import { printHtmlDocument } from '@/lib/printHtml';
 
 export type HealthPrintColumn = {
   key: string;
@@ -79,17 +80,5 @@ function buildPrintHtml(opts: HealthPrintOptions): string {
 
 export function printHealthReport(opts: HealthPrintOptions): void {
   const html = buildPrintHtml(opts).replace(/<\/?motion\.div>/g, (tag) => tag.replace('motion.', ''));
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
-  if (!win) {
-    throw new Error('Impossible d’ouvrir la fenêtre d’impression. Autorisez les pop-ups pour ce site.');
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  const trigger = () => {
-    win.print();
-    win.onafterprint = () => win.close();
-  };
-  setTimeout(trigger, 300);
+  printHtmlDocument(html, 300);
 }

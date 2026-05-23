@@ -1,5 +1,12 @@
-/** Libellés officiels lycée — déclenchent moyennes + bulletin 3e trimestre. */
+/** Niveaux collège (formulaire public 6ème → 3ème). */
+export const COLLEGE_ADMISSION_LEVELS = ['6ème', '5ème', '4ème', '3ème'] as const;
+
 export const LYCEE_ADMISSION_LEVELS = ['2nde', '1ère', 'Terminale'] as const;
+
+export const ADMISSION_SECONDARY_LEVELS = [
+  ...COLLEGE_ADMISSION_LEVELS,
+  ...LYCEE_ADMISSION_LEVELS,
+] as const;
 
 function normalizeAdmissionLevel(desiredLevel: string): string {
   return desiredLevel
@@ -10,8 +17,22 @@ function normalizeAdmissionLevel(desiredLevel: string): string {
     .replace(/\s+/g, ' ');
 }
 
-/** Niveaux lycée concernés par les moyennes au formulaire d'inscription. */
-export function admissionLevelRequiresGrades(desiredLevel: string): boolean {
+function matchesLevel(desiredLevel: string, officialLabel: string): boolean {
+  return normalizeAdmissionLevel(desiredLevel) === normalizeAdmissionLevel(officialLabel);
+}
+
+export function isCollegeAdmissionLevel(desiredLevel: string): boolean {
+  const n = normalizeAdmissionLevel(desiredLevel);
+  if (!n) return false;
+  if (COLLEGE_ADMISSION_LEVELS.some((l) => matchesLevel(desiredLevel, l))) return true;
+  if (/^6(e|eme)?$/.test(n) || n === '6eme') return true;
+  if (/^5(e|eme)?$/.test(n) || n === '5eme') return true;
+  if (/^4(e|eme)?$/.test(n) || n === '4eme') return true;
+  if (/^3(e|eme)?$/.test(n) || n === '3eme') return true;
+  return false;
+}
+
+export function isLyceeAdmissionLevel(desiredLevel: string): boolean {
   const n = normalizeAdmissionLevel(desiredLevel);
   if (!n) return false;
 
@@ -44,7 +65,15 @@ export function admissionLevelRequiresGrades(desiredLevel: string): boolean {
     return true;
   }
 
-  return LYCEE_ADMISSION_LEVELS.some((label) => normalizeAdmissionLevel(label) === n);
+  return LYCEE_ADMISSION_LEVELS.some((l) => matchesLevel(desiredLevel, l));
+}
+
+export function isAdmissionSecondaryLevel(desiredLevel: string): boolean {
+  return isCollegeAdmissionLevel(desiredLevel) || isLyceeAdmissionLevel(desiredLevel);
+}
+
+export function admissionLevelRequiresGrades(desiredLevel: string): boolean {
+  return isLyceeAdmissionLevel(desiredLevel);
 }
 
 export function parseAdmissionGrade(value: unknown): number | null {
@@ -78,7 +107,12 @@ export function validateAdmissionTerm3ReportCard(
   desiredLevel: string,
   hasFile: boolean,
 ): string | null {
-  if (!admissionLevelRequiresGrades(desiredLevel)) return null;
+  if (!isAdmissionSecondaryLevel(desiredLevel)) {
+    if (hasFile) {
+      return 'Le bulletin du 3e trimestre n’est requis que pour les niveaux de la 6ème à la Terminale.';
+    }
+    return null;
+  }
   if (!hasFile) {
     return 'Le bulletin du 3e trimestre est obligatoire (PDF ou image JPG/PNG).';
   }
@@ -89,15 +123,27 @@ export function validateAdmissionGrades(
   desiredLevel: string,
   grades: AdmissionGradeFields,
 ): string | null {
-  if (!admissionLevelRequiresGrades(desiredLevel)) return null;
-  const missing: string[] = [];
-  if (grades.gradeTerm1 === null) missing.push('moyenne du 1er trimestre');
-  if (grades.gradeTerm2 === null) missing.push('moyenne du 2e trimestre');
-  if (grades.gradeAnnualGeneral === null) missing.push('moyenne générale annuelle');
-  if (grades.gradeAnnualSpecific === null) missing.push('moyenne annuelle des matières spécifiques');
-  if (grades.gradeAnnualLiterary === null) missing.push('moyenne annuelle des matières littéraires');
-  if (missing.length === 0) return null;
-  return `Pour le niveau ${desiredLevel.trim()}, renseignez : ${missing.join(', ')} (note sur 20).`;
+  if (isLyceeAdmissionLevel(desiredLevel)) {
+    const missing: string[] = [];
+    if (grades.gradeTerm1 === null) missing.push('moyenne du 1er trimestre');
+    if (grades.gradeTerm2 === null) missing.push('moyenne du 2e trimestre');
+    if (grades.gradeAnnualGeneral === null) missing.push('moyenne générale annuelle');
+    if (grades.gradeAnnualSpecific === null) missing.push('moyenne annuelle des matières spécifiques');
+    if (grades.gradeAnnualLiterary === null) missing.push('moyenne annuelle des matières littéraires');
+    if (missing.length === 0) return null;
+    return `Pour le niveau ${desiredLevel.trim()}, renseignez : ${missing.join(', ')} (note sur 20).`;
+  }
+
+  if (isCollegeAdmissionLevel(desiredLevel)) {
+    const missing: string[] = [];
+    if (grades.gradeTerm1 === null) missing.push('moyenne du 1er trimestre');
+    if (grades.gradeTerm2 === null) missing.push('moyenne du 2e trimestre');
+    if (grades.gradeAnnualGeneral === null) missing.push('moyenne générale annuelle');
+    if (missing.length === 0) return null;
+    return `Pour le niveau ${desiredLevel.trim()}, renseignez : ${missing.join(', ')} (note sur 20).`;
+  }
+
+  return null;
 }
 
 export function admissionGradeDataForCreate(
@@ -105,12 +151,17 @@ export function admissionGradeDataForCreate(
   body: Record<string, unknown>,
 ): Partial<AdmissionGradeFields> {
   const grades = parseAdmissionGradeFields(body);
-  if (!admissionLevelRequiresGrades(desiredLevel)) return {};
-  return {
-    ...(grades.gradeTerm1 !== null && { gradeTerm1: grades.gradeTerm1 }),
-    ...(grades.gradeTerm2 !== null && { gradeTerm2: grades.gradeTerm2 }),
-    ...(grades.gradeAnnualGeneral !== null && { gradeAnnualGeneral: grades.gradeAnnualGeneral }),
-    ...(grades.gradeAnnualSpecific !== null && { gradeAnnualSpecific: grades.gradeAnnualSpecific }),
-    ...(grades.gradeAnnualLiterary !== null && { gradeAnnualLiterary: grades.gradeAnnualLiterary }),
-  };
+  if (!isAdmissionSecondaryLevel(desiredLevel)) return {};
+
+  const out: Partial<AdmissionGradeFields> = {};
+  if (grades.gradeTerm1 !== null) out.gradeTerm1 = grades.gradeTerm1;
+  if (grades.gradeTerm2 !== null) out.gradeTerm2 = grades.gradeTerm2;
+  if (grades.gradeAnnualGeneral !== null) out.gradeAnnualGeneral = grades.gradeAnnualGeneral;
+
+  if (isLyceeAdmissionLevel(desiredLevel)) {
+    if (grades.gradeAnnualSpecific !== null) out.gradeAnnualSpecific = grades.gradeAnnualSpecific;
+    if (grades.gradeAnnualLiterary !== null) out.gradeAnnualLiterary = grades.gradeAnnualLiterary;
+  }
+
+  return out;
 }

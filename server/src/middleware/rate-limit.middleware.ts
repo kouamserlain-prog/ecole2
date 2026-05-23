@@ -2,6 +2,37 @@ import rateLimit from 'express-rate-limit';
 
 const isProd = process.env.NODE_ENV === 'production';
 
+/** Plafond global API (anti scan / flood). */
+export const apiGlobalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 2000 : 20_000,
+  message: { error: 'Trop de requêtes. Réessayez plus tard.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    const p = req.path || '';
+    return p.endsWith('/health') || p === '/health';
+  },
+});
+
+/** Terminaux NFC / reconnaissance faciale (anti brute-force biométrique). */
+export const deviceBiometricLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: isProd ? 45 : 500,
+  message: { error: 'Trop de tentatives de pointage. Patientez une minute.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/** Formulaires publics (pré-inscription, admissions). */
+export const publicFormLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isProd ? 40 : 500,
+  message: { error: 'Trop de soumissions depuis cette adresse. Réessayez plus tard.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 /**
  * Limite les tentatives de connexion (anti brute-force).
  */

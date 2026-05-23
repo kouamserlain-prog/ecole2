@@ -6,6 +6,7 @@ import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import NFCStudentScanner from './NFCStudentScanner';
 import NFCTeacherScanner from './NFCTeacherScanner';
+import FaceBiometricHub from '../face/FaceBiometricHub';
 import { ADM } from './adminModuleLayout';
 import { FiCamera, FiClock, FiShield, FiUserCheck, FiWifi, FiAlertTriangle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -101,7 +102,7 @@ const AccessControlModule: React.FC = () => {
   const tabs: { id: AccessTab; label: string }[] = [
     { id: 'overview', label: "Vue d'ensemble" },
     { id: 'badges', label: 'Badges électroniques' },
-    { id: 'biometric', label: 'Pointage biométrique' },
+    { id: 'biometric', label: 'Reconnaissance faciale' },
     { id: 'entries', label: 'Entrées / sorties' },
     { id: 'visitors', label: 'Visiteurs & rendez-vous' },
     { id: 'cctv', label: 'CCTV' },
@@ -136,7 +137,7 @@ const AccessControlModule: React.FC = () => {
       {tab === 'overview' && (
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           <Card className={`${ADM.statCard} border border-sky-100 bg-sky-50/40`}><p className={ADM.statLabel}>Badges</p><p className={ADM.statVal}>{stats.badges}</p></Card>
-          <Card className={`${ADM.statCard} border border-indigo-100 bg-indigo-50/40`}><p className={ADM.statLabel}>Biométrie</p><p className={ADM.statVal}>{stats.bio}</p></Card>
+          <Card className={`${ADM.statCard} border border-indigo-100 bg-indigo-50/40`}><p className={ADM.statLabel}>Biométrie / visage</p><p className={ADM.statVal}>{stats.bio + Number(overview?.faceEnrolled ?? 0)}</p></Card>
           <Card className={`${ADM.statCard} border border-emerald-100 bg-emerald-50/40`}><p className={ADM.statLabel}>Entrées jour</p><p className={ADM.statVal}>{stats.entries}</p></Card>
           <Card className={`${ADM.statCard} border border-teal-100 bg-teal-50/40`}><p className={ADM.statLabel}>Sorties jour</p><p className={ADM.statVal}>{stats.exits}</p></Card>
           <Card className={`${ADM.statCard} border border-amber-100 bg-amber-50/40`}><p className={ADM.statLabel}>Visiteurs présents</p><p className={ADM.statVal}>{stats.visitors}</p></Card>
@@ -151,17 +152,7 @@ const AccessControlModule: React.FC = () => {
         </div>
       )}
 
-      {tab === 'biometric' && (
-        <Card className="p-4">
-          <div className="flex items-start gap-3">
-            <FiUserCheck className="w-5 h-5 text-indigo-600 mt-0.5" />
-            <div className="text-sm text-gray-700 space-y-2">
-              <p>Le pointage biométrique est pris en charge via les identifiants biométriques des profils (élèves, enseignants, personnel) et les événements d’accès.</p>
-              <p>Pour l’instant, l’interface admin utilise le journal d’entrées/sorties pour tracer les passages biométriques.</p>
-            </div>
-          </div>
-        </Card>
-      )}
+      {tab === 'biometric' && <FaceBiometricHub />}
 
       {tab === 'entries' && (
         <div className="space-y-3">

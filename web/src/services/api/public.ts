@@ -2,8 +2,10 @@ import api from './client';
 
 /** Formulaire public de pré-inscription et suivi de dossier (sans compte) */
 export const publicApi = {
-  submitAdmission: async (data: FormData | Record<string, unknown>) => {
-    const response = await api.post('/public/admissions', data);
+  submitAdmission: async (data: FormData | Record<string, unknown>, schoolSlug?: string) => {
+    const response = await api.post('/public/admissions', data, {
+      params: schoolSlug?.trim() ? { school: schoolSlug.trim() } : undefined,
+    });
     return response.data;
   },
   trackAdmission: async (reference: string) => {
@@ -20,8 +22,12 @@ export const publicApi = {
     return response.data;
   },
   /** Logos et titres d’application (lecture publique pour la page de connexion et le layout). */
-  getAppBranding: async () => {
-    const response = await api.get('/public/app-branding');
+  getAppBranding: async (params?: { school?: string }) => {
+    const response = await api.get('/public/app-branding', { params });
+    return response.data;
+  },
+  listSchools: async () => {
+    const response = await api.get('/public/schools');
     return response.data;
   },
 };

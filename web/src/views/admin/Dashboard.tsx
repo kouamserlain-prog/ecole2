@@ -51,6 +51,7 @@ import AddEducatorModal from '../../components/admin/AddEducatorModal';
 import GenerateReportModal from '../../components/admin/GenerateReportModal';
 import ExportDataModal from '../../components/admin/ExportDataModal';
 import SettingsModal from '../../components/admin/SettingsModal';
+import AdminTabLogoCard from '../../components/admin/AdminTabLogoCard';
 import { 
   FiLayout, 
   FiUsers, 
@@ -90,12 +91,16 @@ import {
   FiMap,
   FiNavigation,
   FiMonitor,
+  FiHome,
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import AdminWorkspacesPanel from '../../components/admin/AdminWorkspacesPanel';
+import SchoolsManagementPanel from '../../components/admin/SchoolsManagementPanel';
+import SchoolSwitcher from '../../components/admin/SchoolSwitcher';
+import { useSchool } from '../../contexts/SchoolContext';
 import {
   ADMIN_VALID_TAB_IDS,
   filterTabsByVisibleModules,
@@ -116,6 +121,7 @@ const SIDEBAR_COLLAPSED_KEY = 'admin-dashboard-sidebar-collapsed';
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
+  const { isMultiSchool, activeSchool } = useSchool();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -147,6 +153,7 @@ const AdminDashboard = () => {
   const [isGenerateReportModalOpen, setIsGenerateReportModalOpen] = useState(false);
   const [isExportDataModalOpen, setIsExportDataModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsModalTab, setSettingsModalTab] = useState<'school' | 'academic' | 'notifications' | 'security' | 'user' | 'system'>('school');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -168,8 +175,17 @@ const AdminDashboard = () => {
     }
   }, [sidebarCollapsed]);
 
+  const schoolsTab: TabItem = {
+    id: 'schools',
+    label: 'Établissements',
+    icon: FiHome,
+    color: 'from-amber-600 to-orange-700',
+    description: 'Créer et gérer plusieurs collèges sur la plateforme',
+  };
+
   const tabs: TabItem[] = [
     { id: 'dashboard', label: 'Tableau de bord', icon: FiLayout, color: 'from-blue-500 to-blue-600', description: 'Vue d’ensemble et indicateurs' },
+    ...(user?.role === 'SUPER_ADMIN' ? [schoolsTab] : []),
     { id: 'activities', label: 'Activités', icon: FiActivity, color: 'from-sky-500 to-sky-600', description: 'Historique des activités récentes' },
     { id: 'notifications', label: 'Notifications', icon: FiInbox, color: 'from-amber-500 to-amber-600', description: 'Toutes les notifications' },
     { id: 'students', label: 'Élèves', icon: FiUsers, color: 'from-green-500 to-green-600', description: 'Gestion des élèves' },
@@ -261,9 +277,14 @@ const AdminDashboard = () => {
   const visibleModules = (workspaceContext as { visibleModules?: string[] } | undefined)?.visibleModules;
   const workspaceRestricted = (workspaceContext as { unrestricted?: boolean } | undefined)?.unrestricted === false;
 
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
   const filteredTabs = useMemo(
-    () => filterTabsByVisibleModules(tabs, visibleModules),
-    [tabs, visibleModules],
+    () =>
+      filterTabsByVisibleModules(tabs, visibleModules, {
+        alwaysInclude: isSuperAdmin ? ['schools'] : [],
+      }),
+    [tabs, visibleModules, isSuperAdmin],
   );
 
   const mainTabs = filteredTabs.filter((t) => t.id !== 'activities' && t.id !== 'notifications');
@@ -282,13 +303,14 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     if (!visibleModules?.length) return;
+    if (isSuperAdmin && activeTab === 'schools') return;
     if (!isAdminModuleId(activeTab) || !visibleModules.includes(activeTab)) {
       setActiveTab('dashboard');
       const params = new URLSearchParams(searchParams?.toString() ?? '');
       params.set('tab', 'dashboard');
       router.replace(`/admin?${params.toString()}`);
     }
-  }, [activeTab, visibleModules, router, searchParams]);
+  }, [activeTab, visibleModules, router, searchParams, isSuperAdmin]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -356,13 +378,17 @@ const AdminDashboard = () => {
                       {getGreeting()}, {user?.firstName}
                     </h1>
                     <p className="text-xs text-stone-600 mt-0.5 line-clamp-2 sm:line-clamp-1 max-w-md">
-                      Pilotage — stratégique, opérationnel et conformité
+                      {isMultiSchool && activeSchool
+                        ? `Établissement : ${activeSchool.name}`
+                        : 'Pilotage — stratégique, opérationnel et conformité'}
                     </p>
                     <p className="text-[11px] sm:text-xs text-stone-500 mt-1 tabular-nums">
                       {format(new Date(), "EEE d MMM yyyy • HH:mm", { locale: fr })}
                     </p>
                   </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
+                <SchoolSwitcher />
                 <div className="relative w-full sm:max-w-xs shrink-0">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">
                     <FiSearch className="w-4 h-4" aria-hidden />
@@ -381,6 +407,7 @@ const AdminDashboard = () => {
                     autoComplete="off"
                     className="w-full pl-10 pr-3 py-2 sm:py-2.5 bg-white/95 border border-stone-200/90 rounded-xl text-sm text-stone-900 placeholder:text-stone-400 shadow-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-amber-500/35 focus:border-amber-400/50 hover:border-stone-300"
                   />
+                </div>
                 </div>
               </div>
             </div>
@@ -449,6 +476,22 @@ const AdminDashboard = () => {
                 <AllNotifications />
               ) : activeTab === 'dashboard' && (
                 <div className="space-y-4 sm:space-y-5">
+                  {isSuperAdmin ? (
+                    <Card className="p-4 border-amber-200/80 bg-gradient-to-r from-amber-50/90 to-orange-50/60">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <h2 className="text-base font-bold text-stone-900">Multi-établissements</h2>
+                          <p className="text-sm text-stone-600 mt-1">
+                            Créez un nouveau collège, gérez les slugs et les liens de pré-inscription publics.
+                          </p>
+                        </div>
+                        <Button type="button" onClick={() => changeTab('schools')}>
+                          <FiHome className="mr-2" />
+                          Gérer les établissements
+                        </Button>
+                      </div>
+                    </Card>
+                  ) : null}
                   <DashboardStats
                     onAddStudent={() => setIsAddStudentModalOpen(true)}
                     onCreateClass={() => setIsAddClassModalOpen(true)}
@@ -456,7 +499,10 @@ const AdminDashboard = () => {
                     onAddEducator={() => setIsAddEducatorModalOpen(true)}
                     onGenerateReport={() => setIsGenerateReportModalOpen(true)}
                     onExportData={() => setIsExportDataModalOpen(true)}
-                    onSettings={() => setIsSettingsModalOpen(true)}
+                    onSettings={() => {
+                      setSettingsModalTab('school');
+                      setIsSettingsModalOpen(true);
+                    }}
                   />
                   <SchoolOverviewCharts />
                   <AdminModulesHub
@@ -475,6 +521,7 @@ const AdminDashboard = () => {
               {activeTab === 'parent-guardians' && <ParentGuardiansModule />}
               {activeTab === 'management' && <CompleteManagement />}
               {activeTab === 'roles' && <MultiRolesManagement />}
+              {activeTab === 'schools' && user?.role === 'SUPER_ADMIN' && <SchoolsManagementPanel />}
               {activeTab === 'workspaces' && <AdminWorkspacesPanel />}
               {activeTab === 'pedagogical' && <PedagogicalTracking />}
               {activeTab === 'discipline' && <DisciplineAdminModule />}
@@ -516,6 +563,13 @@ const AdminDashboard = () => {
                     </div>
                   </Card>
                   
+                  <AdminTabLogoCard
+                    onOpenFullSettings={() => {
+                      setSettingsModalTab('school');
+                      setIsSettingsModalOpen(true);
+                    }}
+                  />
+
                   <Card variant="premium">
                     <div className="text-center py-12">
                       <FiSettings className="w-20 h-20 text-gray-300 mx-auto mb-4" />
@@ -524,7 +578,10 @@ const AdminDashboard = () => {
                         Accédez à tous les paramètres de configuration de votre établissement
                       </p>
                       <Button
-                        onClick={() => setIsSettingsModalOpen(true)}
+                        onClick={() => {
+                          setSettingsModalTab('school');
+                          setIsSettingsModalOpen(true);
+                        }}
                         className="bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-8 py-4 text-lg"
                       >
                         <FiSettings className="w-5 h-5 mr-2" />
@@ -566,6 +623,7 @@ const AdminDashboard = () => {
       />
       <SettingsModal
         isOpen={isSettingsModalOpen}
+        initialTab={settingsModalTab}
         onClose={() => setIsSettingsModalOpen(false)}
       />
     </Layout>

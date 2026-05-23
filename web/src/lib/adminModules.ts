@@ -16,6 +16,7 @@ export const ADMIN_MODULE_IDS = [
   'parent-guardians',
   'management',
   'roles',
+  'schools',
   'pedagogical',
   'discipline',
   'extracurricular',
@@ -62,6 +63,7 @@ export const ADMIN_MODULE_LABELS: Record<AdminModuleId, string> = {
   'parent-guardians': 'Parents & tuteurs',
   management: 'Gestion complète',
   roles: 'Multi-rôles',
+  schools: 'Établissements',
   pedagogical: 'Suivi pédagogique',
   discipline: 'Discipline & règlement',
   extracurricular: 'Activités parascolaires',
@@ -140,12 +142,14 @@ export const ADMIN_MODULE_CATEGORIES: {
   },
   {
     title: 'Système & conformité',
-    moduleIds: ['security', 'performance', 'settings', 'workspaces'],
+    moduleIds: ['security', 'performance', 'settings', 'workspaces', 'schools'],
   },
 ];
 
 export function getAllConfigurableAdminModules(): AdminModuleId[] {
-  return ADMIN_MODULE_IDS.filter((id) => id !== 'dashboard' && id !== 'workspaces');
+  return ADMIN_MODULE_IDS.filter(
+    (id) => id !== 'dashboard' && id !== 'workspaces' && id !== 'schools',
+  );
 }
 
 export function isAdminModuleId(id: string): id is AdminModuleId {
@@ -155,8 +159,10 @@ export function isAdminModuleId(id: string): id is AdminModuleId {
 export function filterTabsByVisibleModules<T extends { id: string }>(
   tabs: T[],
   visibleModules: string[] | undefined,
+  options?: { alwaysInclude?: string[] },
 ): T[] {
   if (!visibleModules || visibleModules.length === 0) return tabs;
   const allowed = new Set(visibleModules);
-  return tabs.filter((t) => allowed.has(t.id));
+  const force = new Set(options?.alwaysInclude ?? []);
+  return tabs.filter((t) => allowed.has(t.id) || force.has(t.id));
 }

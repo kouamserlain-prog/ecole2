@@ -1,5 +1,9 @@
 import prisma from './prisma';
 import { notifyUsersImportant } from './notify-important.util';
+import {
+  resolveActiveAdminUserIds,
+  resolveStaffUserIdsWithAnyModule,
+} from './staff-notify.util';
 
 export type StockItemSnapshot = {
   id: string;
@@ -17,15 +21,16 @@ function isLowStock(qty: number, safetyQty: number): boolean {
   return qty > 0 && safetyQty > 0 && qty <= safetyQty;
 }
 
-async function resolveStockAlertRecipientIds(): Promise<string[]> {
-  const users = await prisma.user.findMany({
-    where: {
-      role: { in: ['ADMIN', 'SUPER_ADMIN'] },
-      isActive: true,
-    },
-    select: { id: true },
-  });
-  return users.map((u) => u.id);
+async function resolveStockAlertRecipientIds(): Promise<{
+  adminIds: string[];
+  staffIds: string[];
+}> {
+  const adminIds = await resolveActiveAdminUserIds();
+  const staffIds = await resolveStaffUserIdsWithAnyModule([
+    'material_mgmt',
+    'notifications_mgmt',
+  ]);
+  return { adminIds, staffIds };
 }
 
 /**
@@ -51,31 +56,45 @@ export async function maybeNotifyMaterialStockAlert(
   if (wasRupture && nowRupture) return;
   if (wasLow && nowLow && !nowRupture) return;
 
-  const recipients = await resolveStockAlertRecipientIds();
-  if (recipients.length === 0) return;
+  const { adminIds, staffIds } = await resolveStockAlertRecipientIds();
+  if (adminIds.length === 0 && staffIds.length === 0) return;
 
-  const link = '/admin?tab=material';
   const name = previous.name.trim() || 'Article';
   const unit = previous.unit?.trim() || 'unité';
 
+  const notifyAll = async (title: string, content: string) => {
+    if (adminIds.length > 0) {
+      await notifyUsersImportant(adminIds, {
+        type: 'stock_alert',
+        title,
+        content,
+        link: '/admin?tab=material',
+      });
+    }
+    if (staffIds.length > 0) {
+      await notifyUsersImportant(staffIds, {
+        type: 'stock_alert',
+        title,
+        content,
+        link: '/staff?tab=material_mgmt',
+      });
+    }
+  };
+
   if (!wasRupture && nowRupture) {
-    await notifyUsersImportant(recipients, {
-      type: 'stock_alert',
-      title: 'Rupture de stock',
-      content: `L'article « ${name} » est en rupture (0 ${unit}). Réapprovisionnement nécessaire.`,
-      link,
-    });
+    await notifyAll(
+      'Rupture de stock',
+      `L'article « ${name} » est en rupture (0 ${unit}). Réapprovisionnement nécessaire.`,
+    );
     return;
   }
 
   if (!wasLow && nowLow) {
     const qtyLabel = Number.isInteger(nextQty) ? String(nextQty) : nextQty.toFixed(2);
-    await notifyUsersImportant(recipients, {
-      type: 'stock_alert',
-      title: 'Alerte stock bas',
-      content: `Stock faible pour « ${name} » : ${qtyLabel} ${unit} restant(s) (seuil : ${nextSafety} ${unit}).`,
-      link,
-    });
+    await notifyAll(
+      'Alerte stock bas',
+      `Stock faible pour « ${name} » : ${qtyLabel} ${unit} restant(s) (seuil : ${nextSafety} ${unit}).`,
+    );
   }
 }
 

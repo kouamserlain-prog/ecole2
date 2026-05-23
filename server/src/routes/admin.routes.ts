@@ -6,9 +6,11 @@ import {
   inviteNewUserToSetPassword,
   resolveAdminProvidedOrInvitePassword,
 } from '../utils/admin-user-initial-password.util';
+import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import prisma from '../utils/prisma';
-import { deleteUploadedFileByPublicUrl } from '../utils/deleteUpload.util';
-import { computeClassBulletinRanks } from '../utils/report-card.util';
+import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
+import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
+import { computeClassBulletinRanks, enrichReportCardsWithTermHistory } from '../utils/report-card.util';
 import {
   assertScheduleConstraints,
   autoGenerateTimetableForClass,
@@ -19,12 +21,18 @@ import {
   notifyParentsForAbsenceById,
   shouldNotifyParentsOnAttendanceChange,
 } from '../utils/attendance-parent-notify.util';
+import { notifyParentsNewAssignment } from '../utils/parent-notify.util';
+import { countFaceEnrollments } from '../utils/face-recognition.util';
 import { punchStudentCourseAttendance, punchTeacherCourseAttendance } from '../utils/attendance-punch.util';
 import QRCode from 'qrcode';
 import { generateDigitalCardPublicId } from '../utils/digital-card.util';
 import staffAdminRoutes from './admin-staff.routes';
 import parentAdminRoutes from './admin-parent.routes';
 import tuitionCatalogRoutes from './admin-tuition-catalog.routes';
+import {
+  enforceTuitionFeeAmounts,
+  TuitionLevelAmountError,
+} from '../utils/tuition-level-amount.util';
 import accountingRoutes from './admin-accounting.routes';
 import disciplineAdminRoutes from './admin-discipline.routes';
 import adminDigitalLibraryRoutes from './admin-digital-library.routes';
@@ -34,6 +42,31 @@ import orientationAdminRoutes from './admin-orientation.routes';
 import adminReportsRoutes from './admin-reports.routes';
 import adminAppBrandingRoutes from './admin-app-branding.routes';
 import adminWorkspacesRoutes from './admin-workspaces.routes';
+import adminSchoolsRoutes from './admin-schools.routes';
+import { attachSchoolContext } from '../middleware/school-context.middleware';
+import { guardAdminStudentRoute } from '../middleware/school-resource-guard.middleware';
+import type { SchoolContextRequest } from '../utils/school-context.util';
+import {
+  assertClassInSchool,
+  assertPaymentInSchool,
+  assertStudentInSchool,
+  assertTuitionFeeInSchool,
+  mergeWhereWithSchoolScope,
+  scopedPaymentWhere,
+  scopedTuitionFeeWhere,
+  SchoolAccessDeniedError,
+  studentBelongsToSchool,
+} from '../utils/school-access-guard.util';
+import {
+  absenceWhereRelationsExist,
+  assignmentWhereRelationsExist,
+  gradeWhereRelationsExist,
+} from '../utils/prisma-relation-exists.util';
+import {
+  studentScopeWhere,
+  classScopeWhere,
+  admissionScopeWhere,
+} from '../utils/school-context.util';
 import libraryManagementRoutes from './shared/library-management.routes';
 import { maybeNotifyMaterialStockAlert } from '../utils/material-stock-notify.util';
 import {
@@ -65,12 +98,39 @@ import {
 } from '../utils/teacher-engagement-kind.util';
 import { getMetricsSummary, getSlowEndpoints } from '../utils/performance-metrics.util';
 import { authorizeAdminOrStaffFinance } from '../middleware/authorize-admin-or-staff-finance.middleware';
+import { enrollStudentFromAdmission } from '../utils/admission-enroll.util';
+import {
+  findScheduleByIdWithRelations,
+  findSchedulesWithRelations,
+} from '../utils/safe-schedule-query.util';
 
 const router = express.Router();
 
 // ADMIN complet, ou STAFF économat sur les routes financières / de suivi autorisées
 router.use(authenticate);
 router.use(authorizeAdminOrStaffFinance);
+router.use(adminSchoolsRoutes);
+router.use(adminWorkspacesRoutes);
+
+function shouldSkipSchoolContext(path: string, method: string): boolean {
+  if (path === '/schools' && (method === 'GET' || method === 'POST')) return true;
+  if (path === '/schools/manage' && method === 'GET') return true;
+  if (path === '/schools/active') return true;
+  if (path.startsWith('/schools/by-slug/')) return true;
+  if (/^\/schools\/[a-f0-9]{24}$/i.test(path) && method === 'PUT') return true;
+  if (path.startsWith('/workspaces')) return true;
+  if (path === '/notifications' || path.startsWith('/notifications')) return true;
+  return false;
+}
+
+router.use((req, res, next) => {
+  if (shouldSkipSchoolContext(req.path, req.method)) return next();
+  return attachSchoolContext(req as SchoolContextRequest, res, next);
+});
+
+router.use('/students/:id', guardAdminStudentRoute);
+router.use('/students/:studentId', guardAdminStudentRoute);
+
 router.use(staffAdminRoutes);
 router.use(parentAdminRoutes);
 router.use(tuitionCatalogRoutes);
@@ -82,18 +142,21 @@ router.use(tracksAdminRoutes);
 router.use(orientationAdminRoutes);
 router.use(adminReportsRoutes);
 router.use(adminAppBrandingRoutes);
-router.use(adminWorkspacesRoutes);
 router.use(libraryManagementRoutes);
 
 // ========== GESTION DES ÉLÈVES ==========
 
 // Rechercher un élève par NFC ID
-router.get('/students/nfc/:nfcId', async (req, res) => {
+router.get('/students/nfc/:nfcId', async (req: SchoolContextRequest, res) => {
   try {
     const { nfcId } = req.params;
+    const schoolId = req.schoolId!;
 
     const student = await prisma.student.findFirst({
-      where: { nfcId },
+      where: {
+        nfcId,
+        ...studentScopeWhere(schoolId),
+      },
       include: {
         user: {
           select: {
@@ -142,12 +205,14 @@ router.get('/students/nfc/:nfcId', async (req, res) => {
 });
 
 // Lister tous les élèves
-router.get('/students', async (req, res) => {
+router.get('/students', async (req: SchoolContextRequest, res) => {
   try {
     const { classId, isActive, enrollmentStatus } = req.query;
+    const schoolId = req.schoolId!;
 
     const students = await prisma.student.findMany({
       where: {
+        ...studentScopeWhere(schoolId),
         ...(classId && { classId: classId as string }),
         ...(isActive !== undefined && { isActive: isActive === 'true' }),
         ...(enrollmentStatus &&
@@ -211,8 +276,8 @@ router.post(
     body('password')
       .optional({ values: 'falsy' })
       .trim()
-      .isLength({ min: 6 })
-      .withMessage('Mot de passe : au moins 6 caractères si renseigné'),
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
     body('firstName').notEmpty(),
     body('lastName').notEmpty(),
     body('studentId').notEmpty(),
@@ -665,7 +730,12 @@ router.get('/students/:id/identity-documents', async (req, res) => {
       },
     });
 
-    res.json(documents);
+    res.json(
+      documents.map((doc) => ({
+        ...doc,
+        fileUrl: resolveStoredFileAccessUrl(doc.fileUrl),
+      })),
+    );
   } catch (error: any) {
     console.error('GET /admin/students/:id/identity-documents:', error);
     res.status(500).json({ error: error.message || 'Erreur serveur' });
@@ -690,7 +760,7 @@ router.delete('/students/:studentId/identity-documents/:docId', async (req, res)
     }
 
     await prisma.identityDocument.delete({ where: { id: doc.id } });
-    deleteUploadedFileByPublicUrl(doc.fileUrl);
+    await deleteStoredUploadUrl(doc.fileUrl);
 
     res.json({ message: 'Document supprimé' });
   } catch (error: any) {
@@ -938,9 +1008,11 @@ router.delete('/students/:id', async (req, res) => {
 // ========== GESTION DES CLASSES ==========
 
 // Lister toutes les classes
-router.get('/classes', async (req, res) => {
+router.get('/classes', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId!;
     const classes = await prisma.class.findMany({
+      where: classScopeWhere(schoolId),
       include: {
         track: {
           select: { id: true, name: true, code: true, academicYear: true },
@@ -987,7 +1059,7 @@ router.post(
     body('level').notEmpty(),
     body('academicYear').notEmpty(),
   ],
-  async (req, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -995,6 +1067,7 @@ router.post(
       }
 
       const { name, level, room, capacity, academicYear, teacherId, trackId } = req.body;
+      const schoolId = req.schoolId!;
 
       const newClass = await prisma.class.create({
         data: {
@@ -1003,6 +1076,7 @@ router.post(
           room,
           capacity: capacity || 30,
           academicYear,
+          schoolId,
           teacherId,
           trackId: typeof trackId === 'string' && trackId.trim() ? trackId.trim() : undefined,
         },
@@ -1246,8 +1320,8 @@ router.post(
     body('password')
       .optional({ values: 'falsy' })
       .trim()
-      .isLength({ min: 6 })
-      .withMessage('Mot de passe : au moins 6 caractères si renseigné'),
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
     body('firstName').notEmpty(),
     body('lastName').notEmpty(),
     body('employeeId').notEmpty(),
@@ -1694,7 +1768,7 @@ router.delete('/teachers/:teacherId/administrative-documents/:docId', async (req
       return res.status(404).json({ error: 'Document introuvable' });
     }
     await prisma.teacherAdministrativeDocument.delete({ where: { id: doc.id } });
-    deleteUploadedFileByPublicUrl(doc.fileUrl);
+    await deleteStoredUploadUrl(doc.fileUrl);
     res.json({ message: 'Document supprimé' });
   } catch (error: any) {
     console.error('DELETE teacher administrative-document:', error);
@@ -2138,9 +2212,13 @@ router.delete('/teachers/:id', async (req, res) => {
         select: { id: true },
       });
       if (courses.length > 0) {
+        const courseIds = courses.map((c) => c.id);
         await tx.schedule.deleteMany({
-          where: { courseId: { in: courses.map((c) => c.id) } },
+          where: { courseId: { in: courseIds } },
         });
+        // Notes / absences liées au cours (autre enseignant que celui supprimé)
+        await tx.grade.deleteMany({ where: { courseId: { in: courseIds } } });
+        await tx.absence.deleteMany({ where: { courseId: { in: courseIds } } });
       }
 
       // 6. Supprimer les courses de l'enseignant
@@ -2177,7 +2255,7 @@ router.delete('/teachers/:id', async (req, res) => {
         where: { teacherId: req.params.id },
       });
       for (const d of adminDocs) {
-        deleteUploadedFileByPublicUrl(d.fileUrl);
+        await deleteStoredUploadUrl(d.fileUrl);
       }
       await tx.teacherAdministrativeDocument.deleteMany({
         where: { teacherId: req.params.id },
@@ -2279,8 +2357,8 @@ router.post(
     body('password')
       .optional({ values: 'falsy' })
       .trim()
-      .isLength({ min: 6 })
-      .withMessage('Mot de passe : au moins 6 caractères si renseigné'),
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
     body('firstName').notEmpty(),
     body('lastName').notEmpty(),
     body('employeeId').notEmpty(),
@@ -2516,13 +2594,12 @@ router.get('/grades', async (req, res) => {
 
     const grades = await prisma.grade.findMany({
       where: {
-        ...(studentId && { studentId: studentId as string }),
-        ...(courseId && { courseId: courseId as string }),
-        ...(classId && {
-          student: {
-            classId: classId as string,
-          },
-        }),
+        AND: [
+          gradeWhereRelationsExist,
+          ...(studentId ? [{ studentId: studentId as string }] : []),
+          ...(courseId ? [{ courseId: courseId as string }] : []),
+          ...(classId ? [{ student: { classId: classId as string } }] : []),
+        ],
       },
       include: {
         student: {
@@ -2577,19 +2654,24 @@ router.get('/absences', async (req, res) => {
 
     const absences = await prisma.absence.findMany({
       where: {
-        ...(studentId && { studentId: studentId as string }),
-        ...(courseId && { courseId: courseId as string }),
-        ...(classId && {
-          student: {
-            classId: classId as string,
-          },
-        }),
-        ...(date && {
-          date: {
-            gte: new Date(date as string),
-            lt: new Date(new Date(date as string).setDate(new Date(date as string).getDate() + 1)),
-          },
-        }),
+        AND: [
+          absenceWhereRelationsExist,
+          ...(studentId ? [{ studentId: studentId as string }] : []),
+          ...(courseId ? [{ courseId: courseId as string }] : []),
+          ...(classId ? [{ student: { classId: classId as string } }] : []),
+          ...(date
+            ? [
+                {
+                  date: {
+                    gte: new Date(date as string),
+                    lt: new Date(
+                      new Date(date as string).setDate(new Date(date as string).getDate() + 1),
+                    ),
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       include: {
         student: {
@@ -2743,12 +2825,11 @@ router.get('/assignments', async (req, res) => {
 
     const assignments = await prisma.assignment.findMany({
       where: {
-        ...(courseId && { courseId: courseId as string }),
-        ...(classId && {
-          course: {
-            classId: classId as string,
-          },
-        }),
+        AND: [
+          assignmentWhereRelationsExist,
+          ...(courseId ? [{ courseId: courseId as string }] : []),
+          ...(classId ? [{ course: { classId: classId as string } }] : []),
+        ],
       },
       include: {
         course: {
@@ -3569,11 +3650,13 @@ router.post(
           : null;
 
       const sourceNorm =
-        attendanceSource === 'BIOMETRIC'
-          ? 'BIOMETRIC'
-          : attendanceSource === 'MANUAL'
-            ? 'MANUAL'
-            : 'NFC';
+        attendanceSource === 'FACE'
+          ? 'FACE'
+          : attendanceSource === 'BIOMETRIC'
+            ? 'BIOMETRIC'
+            : attendanceSource === 'MANUAL'
+              ? 'MANUAL'
+              : 'NFC';
 
       const punch = await punchStudentCourseAttendance({
         studentId,
@@ -3929,6 +4012,23 @@ router.post(
           },
         },
       });
+
+      const courseWithClass = await prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          name: true,
+          class: { select: { students: { select: { id: true } } } },
+        },
+      });
+      const studentIds = courseWithClass?.class?.students.map((s) => s.id) ?? [];
+      if (studentIds.length > 0) {
+        void notifyParentsNewAssignment({
+          studentIds,
+          title,
+          courseName: courseWithClass?.name ?? 'cours',
+          dueDate: new Date(dueDate),
+        }).catch((err) => console.error('notifyParentsNewAssignment:', err));
+      }
 
       res.status(201).json(assignment);
     } catch (error: any) {
@@ -5873,26 +5973,24 @@ router.get('/schedules', async (req, res) => {
   try {
     const { classId, courseId, teacherId, room } = req.query;
 
-    const schedules = await prisma.schedule.findMany({
-      where: {
-        ...(classId && { classId: classId as string }),
-        ...(courseId && { courseId: courseId as string }),
-        ...(teacherId && {
-          OR: [
-            { course: { teacherId: teacherId as string } },
-            { substituteTeacherId: teacherId as string },
-          ],
-        }),
-      },
-      include: scheduleInclude,
-      orderBy: [
-        { dayOfWeek: 'asc' },
-        { startTime: 'asc' },
-      ],
-    });
+    const where: Parameters<typeof findSchedulesWithRelations>[0] = {};
+    if (classId) where.classId = classId as string;
+    if (courseId) where.courseId = courseId as string;
+    if (teacherId) {
+      where.OR = [
+        { course: { teacherId: teacherId as string } },
+        { substituteTeacherId: teacherId as string },
+      ];
+    }
+
+    let schedules = await findSchedulesWithRelations(where);
 
     const roomKey = typeof room === 'string' ? normalizeRoomKey(room) : null;
-    res.json(roomKey ? schedules.filter((s) => normalizeRoomKey(s.room) === roomKey) : schedules);
+    if (roomKey) {
+      schedules = schedules.filter((s) => normalizeRoomKey(s.room) === roomKey);
+    }
+
+    res.json(schedules);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -5979,10 +6077,7 @@ router.post('/schedules', async (req, res) => {
 // Obtenir un emploi du temps par ID
 router.get('/schedules/:id', async (req, res) => {
   try {
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: req.params.id },
-      include: scheduleInclude,
-    });
+    const schedule = await findScheduleByIdWithRelations(req.params.id);
 
     if (!schedule) {
       return res.status(404).json({ error: 'Emploi du temps non trouvé' });
@@ -5991,9 +6086,9 @@ router.get('/schedules/:id', async (req, res) => {
     res.json(schedule);
   } catch (error: any) {
     console.error('Erreur dans /admin/schedules/:id:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message || 'Erreur serveur',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 });
@@ -6079,7 +6174,7 @@ router.get('/access-control/overview', async (_req, res) => {
     const endOfDay = new Date(startOfDay);
     endOfDay.setDate(endOfDay.getDate() + 1);
 
-    const [studentBadges, teacherBadges, staffBadges, studentBio, teacherBio, staffBio, byType, criticalToday] =
+    const [studentBadges, teacherBadges, staffBadges, studentBio, teacherBio, staffBio, faceCounts, byType, criticalToday] =
       await Promise.all([
         prisma.student.count({ where: { nfcId: { not: null } } }),
         prisma.teacher.count({ where: { nfcId: { not: null } } }),
@@ -6087,6 +6182,7 @@ router.get('/access-control/overview', async (_req, res) => {
         prisma.student.count({ where: { biometricId: { not: null } } }),
         prisma.teacher.count({ where: { biometricId: { not: null } } }),
         prisma.staffMember.count({ where: { biometricId: { not: null } } }),
+        countFaceEnrollments(),
         prisma.securityEvent.groupBy({
           by: ['type'],
           where: { createdAt: { gte: startOfDay, lt: endOfDay } },
@@ -6112,6 +6208,8 @@ router.get('/access-control/overview', async (_req, res) => {
     res.json({
       badgesAssigned: studentBadges + teacherBadges + staffBadges,
       biometricsEnrolled: studentBio + teacherBio + staffBio,
+      faceEnrolled: faceCounts.total,
+      faceEnrolledBreakdown: faceCounts,
       todayEntries,
       todayExits,
       activeVisitorsEstimate: visitorIn - visitorOut,
@@ -6669,8 +6767,10 @@ router.put('/security/users/:id/status', async (req, res) => {
 // ========== STATISTIQUES ==========
 
 // Tableau de bord avec statistiques
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId!;
+    const studentWhere = studentScopeWhere(schoolId);
     const [
       totalStudents,
       totalTeachers,
@@ -6679,11 +6779,21 @@ router.get('/dashboard', async (req, res) => {
       totalParents,
       totalEducators,
     ] = await Promise.all([
-      prisma.student.count(),
-      prisma.teacher.count(),
-      prisma.class.count(),
-      prisma.student.count({ where: { isActive: true, enrollmentStatus: 'ACTIVE' } }),
-      prisma.parent.count(),
+      prisma.student.count({ where: studentWhere }),
+      prisma.teacher.count({
+        where: { OR: [{ classes: { some: { schoolId } } }, { courses: { some: { class: { schoolId } } } }] },
+      }),
+      prisma.class.count({ where: classScopeWhere(schoolId) }),
+      prisma.student.count({
+        where: { ...studentWhere, isActive: true, enrollmentStatus: 'ACTIVE' },
+      }),
+      prisma.parent.count({
+        where: {
+          students: {
+            some: { student: studentWhere },
+          },
+        },
+      }),
       prisma.educator.count(),
     ]);
 
@@ -6701,8 +6811,11 @@ router.get('/dashboard', async (req, res) => {
 });
 
 /** KPI consolidés + séries courtes pour tableaux de bord et vue direction */
-router.get('/dashboard/kpis', async (_req, res) => {
+router.get('/dashboard/kpis', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId!;
+    const studentWhere = studentScopeWhere(schoolId);
+    const admissionWhere = admissionScopeWhere(schoolId, req.school?.isDefault);
     const now = new Date();
     const d30 = new Date(now);
     d30.setDate(d30.getDate() - 30);
@@ -6718,24 +6831,34 @@ router.get('/dashboard/kpis', async (_req, res) => {
       saSubmitted,
       saTotal,
     ] = await Promise.all([
-      prisma.admission.count({ where: { status: 'PENDING' } }),
-      prisma.admission.count({ where: { status: 'UNDER_REVIEW' } }),
+      prisma.admission.count({ where: { ...admissionWhere, status: 'PENDING' } }),
+      prisma.admission.count({ where: { ...admissionWhere, status: 'UNDER_REVIEW' } }),
       prisma.tuitionFee.aggregate({
-        where: { isPaid: false },
+        where: { isPaid: false, student: studentWhere },
         _sum: { amount: true },
         _count: true,
       }),
       prisma.payment.aggregate({
-        where: { status: 'COMPLETED', paidAt: { gte: d30, lte: now } },
+        where: {
+          status: 'COMPLETED',
+          paidAt: { gte: d30, lte: now },
+          student: studentWhere,
+        },
         _sum: { amount: true },
         _count: true,
       }),
       prisma.payment.findMany({
-        where: { status: 'COMPLETED', paidAt: { gte: d180, lte: now } },
+        where: {
+          status: 'COMPLETED',
+          paidAt: { gte: d180, lte: now },
+          student: studentWhere,
+        },
         select: { amount: true, paidAt: true },
       }),
-      prisma.studentAssignment.count({ where: { submitted: true } }),
-      prisma.studentAssignment.count(),
+      prisma.studentAssignment.count({
+        where: { submitted: true, student: studentWhere },
+      }),
+      prisma.studentAssignment.count({ where: { student: studentWhere } }),
     ]);
 
     const aggCount = (a: { _count?: number | { _all?: number } }) => {
@@ -6849,6 +6972,11 @@ router.get('/report-cards/generate-data', async (req, res) => {
         id: true,
         name: true,
         code: true,
+        teacher: {
+          select: {
+            user: { select: { firstName: true, lastName: true } },
+          },
+        },
       },
     });
 
@@ -6939,7 +7067,14 @@ router.get('/report-cards/generate-data', async (req, res) => {
           class: student.class,
           grades,
           courseAverages,
-          allCourses: classCourses,
+          allCourses: classCourses.map((c) => ({
+            id: c.id,
+            name: c.name,
+            code: c.code,
+            teacherName: c.teacher?.user
+              ? `${c.teacher.user.lastName} ${c.teacher.user.firstName}`.trim()
+              : undefined,
+          })),
           average: overallAverage,
           totalStudents: students.length,
           absences,
@@ -6952,6 +7087,13 @@ router.get('/report-cards/generate-data', async (req, res) => {
     reportCardData.forEach((student: any, index) => {
       student.rank = index + 1;
     });
+
+    await enrichReportCardsWithTermHistory(
+      classId as string,
+      academicYear as string,
+      period as string,
+      reportCardData,
+    );
 
     res.json(reportCardData);
   } catch (error: any) {
@@ -7451,11 +7593,12 @@ function getPeriodLabel(period: string): string {
 // ========== GESTION DES FRAIS DE SCOLARITÉ ==========
 
 // Obtenir tous les frais de scolarité
-router.get('/tuition-fees', async (req, res) => {
+router.get('/tuition-fees', async (req: SchoolContextRequest, res) => {
   try {
     const { studentId, classId, academicYear, period, isPaid, grouped } = req.query;
+    const schoolId = req.schoolId!;
 
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (studentId) {
       where.studentId = studentId as string;
     }
@@ -7475,10 +7618,12 @@ router.get('/tuition-fees', async (req, res) => {
       where.feeType = req.query.feeType as string;
     }
 
+    const scopedWhere = mergeWhereWithSchoolScope(where, scopedTuitionFeeWhere(schoolId));
+
     // Si grouped=true, retourner les frais regroupés par élève et parent
     if (grouped === 'true') {
       const tuitionFees = await prisma.tuitionFee.findMany({
-        where,
+        where: scopedWhere,
         include: {
           student: {
             include: {
@@ -7607,7 +7752,7 @@ router.get('/tuition-fees', async (req, res) => {
 
     // Sinon, retourner la liste simple
     const tuitionFees = await prisma.tuitionFee.findMany({
-      where,
+      where: scopedWhere,
       include: {
         student: {
           include: {
@@ -7648,7 +7793,7 @@ router.get('/tuition-fees', async (req, res) => {
 });
 
 // Créer un frais de scolarité pour un élève
-router.post('/tuition-fees', async (req, res) => {
+router.post('/tuition-fees', async (req: SchoolContextRequest, res) => {
   try {
     console.log('Requête reçue pour créer un frais de scolarité:', req.body);
     const {
@@ -7683,6 +7828,15 @@ router.post('/tuition-fees', async (req, res) => {
       return res.status(404).json({ error: 'Élève non trouvé' });
     }
 
+    try {
+      await assertStudentInSchool(studentId, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
+    }
+
     // Vérifier si un frais similaire existe déjà
     const existingFee = await prisma.tuitionFee.findFirst({
       where: {
@@ -7697,19 +7851,29 @@ router.post('/tuition-fees', async (req, res) => {
       return res.status(400).json({ error: 'Un frais de scolarité existe déjà pour cet élève, cette période et cette année scolaire' });
     }
 
-    const disc = discountAmount != null ? Math.max(0, parseFloat(String(discountAmount))) : 0;
-    const baseVal = baseAmount != null ? parseFloat(String(baseAmount)) : null;
-    let amountValue = parseFloat(String(amount));
-    if (Number.isNaN(amountValue)) {
-      return res.status(400).json({ error: 'Montant invalide' });
-    }
-    if (baseVal != null && !Number.isNaN(baseVal)) {
-      amountValue = Math.max(0, Math.round(baseVal - disc));
-    } else if (disc > 0) {
-      amountValue = Math.max(0, Math.round(amountValue - disc));
-    }
-    if (amountValue <= 0) {
-      return res.status(400).json({ error: 'Le montant à payer doit être strictement positif' });
+    let amountValue: number;
+    let baseVal: number;
+    let disc: number;
+    let resolvedCatalogId: string | null = catalogId ? String(catalogId) : null;
+    try {
+      const enforced = await enforceTuitionFeeAmounts({
+        studentId,
+        academicYear: String(academicYear),
+        feeType: feeType ?? 'TUITION',
+        amount,
+        baseAmount,
+        discountAmount,
+        catalogId: resolvedCatalogId,
+      });
+      amountValue = enforced.amount;
+      baseVal = enforced.baseAmount;
+      disc = enforced.discountAmount;
+      resolvedCatalogId = enforced.catalogId;
+    } catch (e) {
+      if (e instanceof TuitionLevelAmountError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
     }
 
     const dueDateValue = new Date(dueDate);
@@ -7728,10 +7892,10 @@ router.post('/tuition-fees', async (req, res) => {
       isPaid: false,
       ...(feeType && { feeType }),
       ...(billingPeriod && { billingPeriod }),
-      ...(baseVal != null && !Number.isNaN(baseVal) && { baseAmount: baseVal }),
-      ...(disc > 0 && { discountAmount: disc }),
+      baseAmount: baseVal,
+      discountAmount: disc,
       ...(scholarshipLabel && { scholarshipLabel: String(scholarshipLabel) }),
-      ...(catalogId && { catalogId: String(catalogId) }),
+      ...(resolvedCatalogId && { catalogId: resolvedCatalogId }),
       ...(scheduleTemplateId && { scheduleTemplateId: String(scheduleTemplateId) }),
       ...(installmentIndex != null && { installmentIndex: Number(installmentIndex) }),
     };
@@ -7787,7 +7951,7 @@ router.post('/tuition-fees', async (req, res) => {
 });
 
 // Créer des frais de scolarité pour plusieurs élèves (par classe)
-router.post('/tuition-fees/bulk', async (req, res) => {
+router.post('/tuition-fees/bulk', async (req: SchoolContextRequest, res) => {
   try {
     const {
       classId,
@@ -7806,21 +7970,41 @@ router.post('/tuition-fees/bulk', async (req, res) => {
       scheduleTemplateId,
     } = req.body;
 
-    if (!academicYear || !period || amount == null || !dueDate) {
-      return res.status(400).json({ error: 'academicYear, period, amount et dueDate sont requis' });
+    if (!academicYear || !period || !dueDate) {
+      return res.status(400).json({ error: 'academicYear, period et dueDate sont requis' });
     }
 
     const discBulk = discountAmount != null ? Math.max(0, parseFloat(String(discountAmount))) : 0;
-    const baseBulk = baseAmount != null ? parseFloat(String(baseAmount)) : null;
-    let amountNet = parseFloat(String(amount));
-    if (baseBulk != null && !Number.isNaN(baseBulk)) {
-      amountNet = Math.max(0, Math.round(baseBulk - discBulk));
-    } else if (discBulk > 0) {
-      amountNet = Math.max(0, Math.round(amountNet - discBulk));
-    }
+    const feeTypeBulk = feeType ?? 'TUITION';
+    const useLevelRates = feeTypeBulk === 'TUITION';
 
     if (!classId && (!studentIds || studentIds.length === 0)) {
       return res.status(400).json({ error: 'classId ou studentIds est requis' });
+    }
+
+    if (classId) {
+      try {
+        await assertClassInSchool(String(classId), req.schoolId);
+      } catch (e) {
+        if (e instanceof SchoolAccessDeniedError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
+    }
+
+    if (!useLevelRates && amount == null) {
+      return res.status(400).json({ error: 'amount est requis pour ce type de frais' });
+    }
+
+    let amountNet = amount != null ? parseFloat(String(amount)) : 0;
+    const baseBulk = baseAmount != null ? parseFloat(String(baseAmount)) : null;
+    if (!useLevelRates) {
+      if (baseBulk != null && !Number.isNaN(baseBulk)) {
+        amountNet = Math.max(0, Math.round(baseBulk - discBulk));
+      } else if (discBulk > 0) {
+        amountNet = Math.max(0, Math.round(amountNet - discBulk));
+      }
     }
 
     // Récupérer les élèves
@@ -7831,6 +8015,7 @@ router.post('/tuition-fees/bulk', async (req, res) => {
           classId: classId as string,
           isActive: true,
         },
+        include: { class: { select: { level: true, name: true } } },
       });
     } else {
       students = await prisma.student.findMany({
@@ -7838,6 +8023,7 @@ router.post('/tuition-fees/bulk', async (req, res) => {
           id: { in: studentIds },
           isActive: true,
         },
+        include: { class: { select: { level: true, name: true } } },
       });
     }
 
@@ -7866,22 +8052,47 @@ router.post('/tuition-fees/bulk', async (req, res) => {
         continue;
       }
 
+      let lineAmount = amountNet;
+      let lineBase = baseBulk != null && !Number.isNaN(baseBulk) ? Math.round(baseBulk) : amountNet;
+      let lineCatalogId = catalogId ? String(catalogId) : null;
+
+      if (useLevelRates) {
+        try {
+          const enforced = await enforceTuitionFeeAmounts({
+            studentId: student.id,
+            academicYear: String(academicYear),
+            feeType: 'TUITION',
+            discountAmount: discBulk,
+            catalogId: lineCatalogId,
+          });
+          lineAmount = enforced.amount;
+          lineBase = enforced.baseAmount;
+          lineCatalogId = enforced.catalogId;
+        } catch (e) {
+          skippedFees.push({
+            studentId: student.id,
+            reason: e instanceof TuitionLevelAmountError ? e.message : 'Montant niveau introuvable',
+          });
+          continue;
+        }
+      }
+
       // Créer le frais de scolarité
       const tuitionFee = await prisma.tuitionFee.create({
         data: {
           studentId: student.id,
           academicYear,
           period,
-          amount: amountNet,
+          amount: lineAmount,
           dueDate: new Date(dueDate),
           description: description || null,
           isPaid: false,
-          ...(feeType && { feeType }),
+          feeType: feeTypeBulk,
           ...(billingPeriod && { billingPeriod }),
-          ...(baseBulk != null && !Number.isNaN(baseBulk) && { baseAmount: baseBulk }),
-          ...(discBulk > 0 && { discountAmount: discBulk }),
+          baseAmount: lineBase,
+          discountAmount: discBulk,
           ...(scholarshipLabel && { scholarshipLabel: String(scholarshipLabel) }),
-          ...(catalogId && { catalogId: String(catalogId) }),
+          ...(lineCatalogId && { catalogId: lineCatalogId }),
           ...(scheduleTemplateId && { scheduleTemplateId: String(scheduleTemplateId) }),
         },
         include: {
@@ -7929,9 +8140,17 @@ router.post('/tuition-fees/bulk', async (req, res) => {
 });
 
 // Mettre à jour un frais de scolarité
-router.put('/tuition-fees/:id', async (req, res) => {
+router.put('/tuition-fees/:id', async (req: SchoolContextRequest, res) => {
   try {
     const { id } = req.params;
+    try {
+      await assertTuitionFeeInSchool(id, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
+    }
     const {
       academicYear,
       period,
@@ -7957,21 +8176,50 @@ router.put('/tuition-fees/:id', async (req, res) => {
       return res.status(404).json({ error: 'Frais de scolarité non trouvé' });
     }
 
-    const nextDisc =
+    const effectiveFeeType = feeType !== undefined ? feeType : tuitionFee.feeType;
+    let computedAmount = Number(tuitionFee.amount);
+    let nextBaseParsed =
+      baseAmount !== undefined ? parseFloat(String(baseAmount)) : Number(tuitionFee.baseAmount ?? tuitionFee.amount);
+    let nextDisc =
       discountAmount !== undefined
         ? Math.max(0, parseFloat(String(discountAmount)))
         : Number(tuitionFee.discountAmount ?? 0);
-    const nextBaseParsed =
-      baseAmount !== undefined ? parseFloat(String(baseAmount)) : undefined;
+    let nextCatalogId =
+      catalogId !== undefined ? (catalogId ? String(catalogId) : null) : tuitionFee.catalogId;
 
-    let computedAmount = Number(tuitionFee.amount);
-    if (nextBaseParsed !== undefined && !Number.isNaN(nextBaseParsed)) {
-      computedAmount = Math.max(0, Math.round(nextBaseParsed - nextDisc));
-    } else if (amount !== undefined) {
-      const a = parseFloat(String(amount));
-      if (!Number.isNaN(a)) computedAmount = Math.max(0, Math.round(a));
-    } else if (discountAmount !== undefined && tuitionFee.baseAmount != null) {
-      computedAmount = Math.max(0, Math.round(Number(tuitionFee.baseAmount) - nextDisc));
+    const amountsTouched =
+      amount !== undefined || baseAmount !== undefined || discountAmount !== undefined || feeType !== undefined;
+
+    if (effectiveFeeType === 'TUITION' && amountsTouched) {
+      try {
+        const enforced = await enforceTuitionFeeAmounts({
+          studentId: tuitionFee.studentId,
+          academicYear: academicYear ? String(academicYear) : tuitionFee.academicYear,
+          feeType: 'TUITION',
+          amount,
+          baseAmount: nextBaseParsed,
+          discountAmount: nextDisc,
+          catalogId: nextCatalogId,
+        });
+        computedAmount = enforced.amount;
+        nextBaseParsed = enforced.baseAmount;
+        nextDisc = enforced.discountAmount;
+        nextCatalogId = enforced.catalogId;
+      } catch (e) {
+        if (e instanceof TuitionLevelAmountError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
+    } else if (amountsTouched) {
+      if (nextBaseParsed !== undefined && !Number.isNaN(nextBaseParsed)) {
+        computedAmount = Math.max(0, Math.round(nextBaseParsed - nextDisc));
+      } else if (amount !== undefined) {
+        const a = parseFloat(String(amount));
+        if (!Number.isNaN(a)) computedAmount = Math.max(0, Math.round(a));
+      } else if (discountAmount !== undefined && tuitionFee.baseAmount != null) {
+        computedAmount = Math.max(0, Math.round(Number(tuitionFee.baseAmount) - nextDisc));
+      }
     }
 
     const previousAmount = Number(tuitionFee.amount);
@@ -7989,14 +8237,15 @@ router.put('/tuition-fees/:id', async (req, res) => {
         ...(isPaid !== undefined && { isPaid }),
         ...(feeType !== undefined && { feeType }),
         ...(billingPeriod !== undefined && { billingPeriod }),
-        ...(baseAmount !== undefined && {
-          baseAmount: nextBaseParsed != null && !Number.isNaN(nextBaseParsed) ? nextBaseParsed : null,
+        ...(amountsTouched && {
+          baseAmount: nextBaseParsed,
+          discountAmount: nextDisc,
+          ...(effectiveFeeType === 'TUITION' && nextCatalogId != null && { catalogId: nextCatalogId }),
         }),
-        ...(discountAmount !== undefined && { discountAmount: nextDisc }),
         ...(scholarshipLabel !== undefined && {
           scholarshipLabel: scholarshipLabel ? String(scholarshipLabel) : null,
         }),
-        ...(catalogId !== undefined && { catalogId: catalogId || null }),
+        ...(catalogId !== undefined && effectiveFeeType !== 'TUITION' && { catalogId: catalogId || null }),
         ...(scheduleTemplateId !== undefined && { scheduleTemplateId: scheduleTemplateId || null }),
         ...(installmentIndex !== undefined && {
           installmentIndex: installmentIndex != null ? Number(installmentIndex) : null,
@@ -8049,9 +8298,17 @@ router.put('/tuition-fees/:id', async (req, res) => {
 });
 
 // Supprimer un frais de scolarité
-router.delete('/tuition-fees/:id', async (req, res) => {
+router.delete('/tuition-fees/:id', async (req: SchoolContextRequest, res) => {
   try {
     const { id } = req.params;
+    try {
+      await assertTuitionFeeInSchool(id, req.schoolId);
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
+    }
 
     const tuitionFee = await prisma.tuitionFee.findUnique({
       where: { id },
@@ -8235,9 +8492,11 @@ router.post('/tuition-fees/create-test', async (req, res) => {
 // ========== GESTION DES PAIEMENTS ==========
 
 // Obtenir tous les paiements regroupés par élève et par parent
-router.get('/payments/grouped', async (req, res) => {
+router.get('/payments/grouped', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId!;
     const payments = await prisma.payment.findMany({
+      where: scopedPaymentWhere(schoolId),
       include: {
         student: {
           include: {
@@ -8344,9 +8603,11 @@ router.get('/payments/grouped', async (req, res) => {
 });
 
 // Obtenir tous les paiements (liste simple)
-router.get('/payments', async (req, res) => {
+router.get('/payments', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId!;
     const payments = await prisma.payment.findMany({
+      where: scopedPaymentWhere(schoolId),
       include: {
         student: {
           select: {
@@ -8402,16 +8663,16 @@ router.get('/payments', async (req, res) => {
   }
 });
 
-router.get('/payments/pending-cash', async (_req, res) => {
+router.get('/payments/pending-cash', async (req: SchoolContextRequest, res) => {
   try {
-    const rows = await listPendingCashPayments();
+    const rows = await listPendingCashPayments(prisma, req.schoolId);
     res.json(rows);
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
   }
 });
 
-router.post('/payments/:id/validate-cash', async (req, res) => {
+router.post('/payments/:id/validate-cash', async (req: SchoolContextRequest, res) => {
   try {
     const admin = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -8423,16 +8684,19 @@ router.post('/payments/:id/validate-cash', async (req, res) => {
       id: admin.id,
       role: admin.role,
       name,
-    });
+    }, req.schoolId);
     res.json({ payment, message: 'Paiement espèces validé et pris en compte' });
   } catch (e: unknown) {
+    if (e instanceof SchoolAccessDeniedError) {
+      return res.status(e.status).json({ error: e.message });
+    }
     const err = e as Error & { status?: number };
     if (err.status && err.status !== 500) return res.status(err.status).json({ error: err.message });
     res.status(500).json({ error: err.message || 'Erreur serveur' });
   }
 });
 
-router.post('/payments/:id/reject-cash', async (req, res) => {
+router.post('/payments/:id/reject-cash', async (req: SchoolContextRequest, res) => {
   try {
     const admin = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -8440,9 +8704,12 @@ router.post('/payments/:id/reject-cash', async (req, res) => {
     });
     const name = [admin?.firstName, admin?.lastName].filter(Boolean).join(' ').trim() || 'Administration';
     const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
-    const payment = await rejectCashPayment(prisma, req.params.id, { name }, reason);
+    const payment = await rejectCashPayment(prisma, req.params.id, { name }, reason, req.schoolId);
     res.json({ payment, message: 'Déclaration espèces refusée' });
   } catch (e: unknown) {
+    if (e instanceof SchoolAccessDeniedError) {
+      return res.status(e.status).json({ error: e.message });
+    }
     const err = e as Error & { status?: number };
     if (err.status && err.status !== 500) return res.status(err.status).json({ error: err.message });
     res.status(500).json({ error: err.message || 'Erreur serveur' });
@@ -8594,11 +8861,13 @@ async function admissionsWithEnrolledStudents<A extends { enrolledStudentId: str
   }));
 }
 
-router.get('/admissions', async (req, res) => {
+router.get('/admissions', async (req: SchoolContextRequest, res) => {
   try {
     const { status, academicYear } = req.query;
+    const schoolId = req.schoolId!;
     const admissions = await prisma.admission.findMany({
       where: {
+        ...admissionScopeWhere(schoolId, req.school?.isDefault),
         ...(status && typeof status === 'string' ? { status: status as any } : {}),
         ...(academicYear && typeof academicYear === 'string'
           ? { academicYear: academicYear }
@@ -8619,13 +8888,14 @@ router.get('/admissions', async (req, res) => {
   }
 });
 
-router.get('/admissions/stats', async (_req, res) => {
+router.get('/admissions/stats', async (req: SchoolContextRequest, res) => {
   try {
+    const admissionWhere = admissionScopeWhere(req.schoolId!, req.school?.isDefault);
     const [pending, underReview, accepted, total] = await Promise.all([
-      prisma.admission.count({ where: { status: 'PENDING' } }),
-      prisma.admission.count({ where: { status: 'UNDER_REVIEW' } }),
-      prisma.admission.count({ where: { status: 'ACCEPTED' } }),
-      prisma.admission.count(),
+      prisma.admission.count({ where: { ...admissionWhere, status: 'PENDING' } }),
+      prisma.admission.count({ where: { ...admissionWhere, status: 'UNDER_REVIEW' } }),
+      prisma.admission.count({ where: { ...admissionWhere, status: 'ACCEPTED' } }),
+      prisma.admission.count({ where: admissionWhere }),
     ]);
     res.json({ pending, underReview, accepted, total });
   } catch (error: any) {
@@ -8734,156 +9004,34 @@ router.patch(
   }
 );
 
-async function generateUniqueStudentId(firstName: string, lastName: string): Promise<string> {
-  for (let i = 0; i < 20; i++) {
-    const initials = `${firstName[0]?.toUpperCase() || 'X'}${lastName[0]?.toUpperCase() || 'X'}`;
-    const random = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
-    const candidate = `STU${initials}${random}`;
-    const taken = await prisma.student.findUnique({ where: { studentId: candidate } });
-    if (!taken) return candidate;
-  }
-  return `STU${Date.now().toString(36).toUpperCase()}`;
-}
-
 router.post(
   '/admissions/:id/enroll',
   [
     body('password')
       .optional({ values: 'falsy' })
       .trim()
-      .isLength({ min: 6 })
-      .withMessage('Mot de passe : au moins 6 caractères si renseigné'),
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
   ],
-  async (req, res) => {
+  async (req: AuthRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const admission = await prisma.admission.findUnique({
-        where: { id: req.params.id },
-      });
-
-      if (!admission) {
-        return res.status(404).json({ error: 'Dossier introuvable' });
-      }
-      if (admission.status !== 'ACCEPTED') {
-        return res.status(400).json({
-          error: 'Le dossier doit être au statut « Accepté » avant de créer le compte élève',
-        });
-      }
-      if (admission.enrolledStudentId) {
-        return res.status(400).json({ error: 'Un compte élève existe déjà pour ce dossier' });
-      }
-
-      const {
-        password,
-        studentId: bodyStudentId,
-        classId: bodyClassId,
-        address,
-        emergencyContact,
-        emergencyPhone,
-        medicalInfo,
-      } = req.body;
-
-      const email = admission.email.trim().toLowerCase();
-      const existingUser = await prisma.user.findUnique({ where: { email } });
-      if (existingUser) {
-        return res.status(400).json({
-          error: 'Cet email est déjà utilisé par un compte. Utilisez un autre email sur le dossier ou fusionnez manuellement.',
-        });
-      }
-
-      let studentId = bodyStudentId ? String(bodyStudentId).trim() : '';
-      if (!studentId) {
-        studentId = await generateUniqueStudentId(admission.firstName, admission.lastName);
-      } else {
-        const taken = await prisma.student.findUnique({ where: { studentId } });
-        if (taken) {
-          return res.status(400).json({ error: 'Ce numéro d\'élève existe déjà' });
-        }
-      }
-
-      const classId = bodyClassId || admission.proposedClassId || undefined;
-      const { hashedPassword, shouldSendSetupEmail } = await resolveAdminProvidedOrInvitePassword(password);
-
-      const user = await prisma.user.create({
-        data: {
-          email,
-          password: hashedPassword,
-          firstName: admission.firstName,
-          lastName: admission.lastName,
-          phone: admission.phone ?? undefined,
-          role: 'STUDENT',
-          studentProfile: {
-            create: {
-              studentId,
-              dateOfBirth: admission.dateOfBirth,
-              gender: admission.gender,
-              address: address ?? admission.address ?? undefined,
-              emergencyContact: emergencyContact ?? admission.parentName ?? undefined,
-              emergencyPhone: emergencyPhone ?? admission.parentPhone ?? undefined,
-              medicalInfo: medicalInfo ?? undefined,
-              classId: classId ?? undefined,
-            },
-          },
-        },
-        include: {
-          studentProfile: {
-            include: { class: true },
-          },
-        },
-      });
-
-      const createdStudent = user.studentProfile;
-      if (!createdStudent) {
-        return res.status(500).json({ error: 'Profil élève non créé' });
-      }
-
-      await prisma.admission.update({
-        where: { id: admission.id },
-        data: {
-          status: 'ENROLLED',
-          enrolledStudentId: createdStudent.id,
-          reviewedById: (req as any).user?.id,
-          reviewedAt: new Date(),
-        },
-      });
-
-      try {
-        await prisma.securityEvent.create({
-          data: {
-            userId: (req as any).user?.id,
-            type: 'admission_enrolled',
-            description: `Inscription finalisée: ${admission.reference} → ${studentId}`,
-            ipAddress: req.ip || req.socket.remoteAddress,
-            userAgent: req.get('user-agent'),
-            severity: 'info',
-          },
-        });
-      } catch (_) {
-        /* ignore */
-      }
-
-      if (shouldSendSetupEmail) {
-        try {
-          await inviteNewUserToSetPassword(user.id, user.email, admission.firstName);
-        } catch (inviteErr) {
-          console.error('Invitation mot de passe (admission):', inviteErr);
-        }
-      }
-
-      const { password: _pw, ...userWithoutPassword } = user;
-      res.status(201).json({
-        message: 'Élève inscrit et compte créé',
-        user: userWithoutPassword,
-        reference: admission.reference,
-        passwordSetupEmailSent: shouldSendSetupEmail,
-      });
-    } catch (error: any) {
+      const result = await enrollStudentFromAdmission(
+        req.params.id,
+        req.user!.id,
+        req.body,
+        req,
+      );
+      res.status(201).json(result);
+    } catch (error: unknown) {
+      const err = error as Error & { statusCode?: number };
       console.error('POST /admissions/:id/enroll:', error);
-      res.status(500).json({ error: error.message || 'Erreur serveur' });
+      const code = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
+      res.status(code).json({ error: err.message || 'Erreur serveur' });
     }
   }
 );

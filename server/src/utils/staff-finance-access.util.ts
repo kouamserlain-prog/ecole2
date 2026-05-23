@@ -130,6 +130,10 @@ export function staffFinancePathAllowed(
     'admissions',
   ];
 
+  if (p === '/payments/pending-cash' || p.startsWith('/payments/')) {
+    return hasAny(visibleModules, [...financeOps, 'treasury', 'counter']);
+  }
+
   if (pathMatches(p, FINANCE_WRITE_PREFIXES)) {
     return hasAny(visibleModules, financeOps);
   }

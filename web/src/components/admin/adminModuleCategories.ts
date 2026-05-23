@@ -43,6 +43,6 @@ export const ADMIN_MODULE_CATEGORIES: {
   },
   {
     title: 'Système & conformité',
-    tabIds: ['security', 'performance', 'settings', 'workspaces'],
+    tabIds: ['security', 'performance', 'settings', 'workspaces', 'schools'],
   },
 ];

@@ -2,6 +2,21 @@ import type { Message, MessageCategory, Role } from '@prisma/client';
 import prisma from './prisma';
 import { sendWebPushToUsers } from './push-send.util';
 
+/** Rôles pouvant envoyer / recevoir des messages sur la plateforme. */
+export const PLATFORM_MESSAGING_ROLES = new Set<Role>([
+  'SUPER_ADMIN',
+  'ADMIN',
+  'TEACHER',
+  'STUDENT',
+  'PARENT',
+  'EDUCATOR',
+  'STAFF',
+]);
+
+export function isPlatformMessagingRole(role: string): role is Role {
+  return PLATFORM_MESSAGING_ROLES.has(role as Role);
+}
+
 /** Clé stable pour une conversation 1:1 entre deux utilisateurs */
 export function makeDmThreadKey(userIdA: string, userIdB: string): string {
   return `dm_${[userIdA, userIdB].sort().join('__')}`;
@@ -32,7 +47,7 @@ function portalPathForRole(role: Role): string {
     case 'SUPER_ADMIN':
       return '/admin?tab=communication';
     case 'STAFF':
-      return '/staff?tab=health_log';
+      return '/staff?tab=communication_mgmt';
     default:
       return '/';
   }

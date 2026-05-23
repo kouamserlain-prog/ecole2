@@ -5,6 +5,7 @@ import prisma from '../utils/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import {
   assertStaffHasModule,
+  getStaffMemberModuleContext,
   type StaffModuleId,
 } from '../utils/staff-visible-modules.util';
 import {
@@ -12,11 +13,42 @@ import {
   rejectCashPayment,
   validateCashPayment,
 } from '../utils/cash-payment-validation.util';
+import { enrollStudentFromAdmission } from '../utils/admission-enroll.util';
+import { admissionScopeWhere } from '../utils/school-context.util';
+import { ensureDefaultSchool } from '../utils/ensure-default-school.util';
+import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 
 const router = express.Router();
 
 router.use(authenticate);
 router.use(authorize('STAFF'));
+
+const CASH_VALIDATION_MODULES: StaffModuleId[] = [
+  'treasury',
+  'payments_mgmt',
+  'fees_mgmt',
+  'counter',
+];
+
+function requireStaffAnyModule(moduleIds: StaffModuleId[]) {
+  return async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
+    try {
+      const ctx = await getStaffMemberModuleContext(req.user!.id);
+      if (!ctx) {
+        return res.status(403).json({ error: 'Profil personnel introuvable.' });
+      }
+      if (!moduleIds.some((m) => ctx.visibleModules.includes(m))) {
+        return res.status(403).json({
+          error:
+            'Le module Paiements / Trésorerie n’est pas activé pour votre compte. Contactez l’administration.',
+        });
+      }
+      next();
+    } catch (e: unknown) {
+      next(e);
+    }
+  };
+}
 
 function requireStaffModule(moduleId: StaffModuleId) {
   return async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
@@ -24,8 +56,18 @@ function requireStaffModule(moduleId: StaffModuleId) {
       await assertStaffHasModule(req.user!.id, moduleId);
       next();
     } catch (e: unknown) {
-      if (e instanceof Error && (e.message === 'MODULE_NOT_ALLOWED' || e.message === 'STAFF_PROFILE_NOT_FOUND')) {
-        return res.status(403).json({ error: 'Module non autorisé pour votre compte.' });
+      if (e instanceof Error && e.message === 'STAFF_PROFILE_NOT_FOUND') {
+        return res.status(403).json({
+          error: 'Profil personnel introuvable. Contactez l’administration pour rattacher votre compte.',
+          code: 'STAFF_PROFILE_NOT_FOUND',
+        });
+      }
+      if (e instanceof Error && e.message === 'MODULE_NOT_ALLOWED') {
+        return res.status(403).json({
+          error:
+            'Le module « Inscriptions & admissions » n’est pas activé pour votre compte. Reconnectez-vous ou demandez l’accès à l’administration.',
+          code: 'MODULE_NOT_ALLOWED',
+        });
       }
       next(e);
     }
@@ -40,15 +82,21 @@ const SECRETARY_ADMISSION_STATUSES = new Set<AdmissionStatus>([
   'WAITLIST',
 ]);
 
+async function staffAdmissionScope(): Promise<ReturnType<typeof admissionScopeWhere>> {
+  const defaultId = await ensureDefaultSchool();
+  return admissionScopeWhere(defaultId, true);
+}
+
 // ——— Secrétariat : admissions ———
 
 router.get('/admissions/stats', requireStaffModule('admissions'), async (_req, res) => {
   try {
+    const scope = await staffAdmissionScope();
     const [pending, underReview, accepted, total] = await Promise.all([
-      prisma.admission.count({ where: { status: 'PENDING' } }),
-      prisma.admission.count({ where: { status: 'UNDER_REVIEW' } }),
-      prisma.admission.count({ where: { status: 'ACCEPTED' } }),
-      prisma.admission.count(),
+      prisma.admission.count({ where: { ...scope, status: 'PENDING' } }),
+      prisma.admission.count({ where: { ...scope, status: 'UNDER_REVIEW' } }),
+      prisma.admission.count({ where: { ...scope, status: 'ACCEPTED' } }),
+      prisma.admission.count({ where: scope }),
     ]);
     res.json({ pending, underReview, accepted, total });
   } catch (error: unknown) {
@@ -71,8 +119,10 @@ router.get('/admissions/classes', requireStaffModule('admissions'), async (_req,
 router.get('/admissions', requireStaffModule('admissions'), async (req, res) => {
   try {
     const { status, academicYear, q } = req.query;
+    const scope = await staffAdmissionScope();
     const admissions = await prisma.admission.findMany({
       where: {
+        ...scope,
         ...(status && typeof status === 'string' ? { status: status as AdmissionStatus } : {}),
         ...(academicYear && typeof academicYear === 'string' ? { academicYear } : {}),
         ...(q && typeof q === 'string' && q.trim()
@@ -137,6 +187,39 @@ router.patch(
       res.json(updated);
     } catch (error: unknown) {
       res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+    }
+  },
+);
+
+router.post(
+  '/admissions/:id/enroll',
+  requireStaffModule('admissions'),
+  [
+    body('password')
+      .optional({ values: 'falsy' })
+      .trim()
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
+  ],
+  async (req: AuthRequest, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const result = await enrollStudentFromAdmission(
+        req.params.id,
+        req.user!.id,
+        req.body,
+        req,
+      );
+      res.status(201).json(result);
+    } catch (error: unknown) {
+      const err = error as Error & { statusCode?: number };
+      console.error('POST /staff/admissions/:id/enroll:', error);
+      const code = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
+      res.status(code).json({ error: err.message || 'Erreur serveur' });
     }
   },
 );
@@ -371,7 +454,7 @@ router.get('/treasury/recent-payments', requireStaffModule('treasury'), async (_
   }
 });
 
-router.get('/treasury/pending-cash', requireStaffModule('treasury'), async (_req, res) => {
+router.get('/treasury/pending-cash', requireStaffAnyModule(CASH_VALIDATION_MODULES), async (_req, res) => {
   try {
     const rows = await listPendingCashPayments();
     res.json(rows);
@@ -380,7 +463,10 @@ router.get('/treasury/pending-cash', requireStaffModule('treasury'), async (_req
   }
 });
 
-router.post('/treasury/pending-cash/:id/validate', requireStaffModule('treasury'), async (req: AuthRequest, res) => {
+router.post(
+  '/treasury/pending-cash/:id/validate',
+  requireStaffAnyModule(CASH_VALIDATION_MODULES),
+  async (req: AuthRequest, res) => {
   try {
     const staff = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -401,7 +487,10 @@ router.post('/treasury/pending-cash/:id/validate', requireStaffModule('treasury'
   }
 });
 
-router.post('/treasury/pending-cash/:id/reject', requireStaffModule('treasury'), async (req: AuthRequest, res) => {
+router.post(
+  '/treasury/pending-cash/:id/reject',
+  requireStaffAnyModule(CASH_VALIDATION_MODULES),
+  async (req: AuthRequest, res) => {
   try {
     const staff = await prisma.user.findUnique({
       where: { id: req.user!.id },

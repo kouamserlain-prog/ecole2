@@ -1,4 +1,5 @@
 import axios, { AxiosHeaders } from 'axios';
+import type { AppBrandingUploadSlot } from '@/lib/appBrandingUpload';
 
 /**
  * Base URL sans slash final, toujours avec préfixe `/api` pour l’API Express locale.
@@ -175,8 +176,10 @@ export const authApi = {
 
 /** Formulaire public de pré-inscription et suivi de dossier (sans compte) */
 export const publicApi = {
-  submitAdmission: async (data: FormData | Record<string, unknown>) => {
-    const response = await api.post('/public/admissions', data);
+  submitAdmission: async (data: FormData | Record<string, unknown>, schoolSlug?: string) => {
+    const response = await api.post('/public/admissions', data, {
+      params: schoolSlug?.trim() ? { school: schoolSlug.trim() } : undefined,
+    });
     return response.data;
   },
   trackAdmission: async (reference: string) => {
@@ -189,6 +192,14 @@ export const publicApi = {
     const response = await api.get(
       `/public/student-card/${encodeURIComponent(publicId.trim())}`
     );
+    return response.data;
+  },
+  getAppBranding: async (params?: { school?: string }) => {
+    const response = await api.get('/public/app-branding', { params });
+    return response.data;
+  },
+  listSchools: async () => {
+    const response = await api.get('/public/schools');
     return response.data;
   },
 };
@@ -1856,7 +1867,7 @@ export const adminApi = {
     const response = await api.put('/admin/app-branding', data);
     return response.data;
   },
-  uploadAppBrandingFile: async (slot: 'navigation' | 'login' | 'favicon', file: File) => {
+  uploadAppBrandingFile: async (slot: AppBrandingUploadSlot, file: File) => {
     const formData = new FormData();
     formData.append('branding', file);
     const response = await api.post(
@@ -1883,6 +1894,26 @@ export const adminApi = {
   },
   deactivateAdminWorkspace: async (id: string) => {
     const response = await api.delete(`/admin/workspaces/${id}`);
+    return response.data;
+  },
+  listSchools: async () => {
+    const response = await api.get('/admin/schools');
+    return response.data;
+  },
+  setActiveSchool: async (schoolId: string) => {
+    const response = await api.put('/admin/schools/active', { schoolId });
+    return response.data;
+  },
+  listSchoolsManage: async () => {
+    const response = await api.get('/admin/schools/manage');
+    return response.data;
+  },
+  createSchool: async (data: Record<string, unknown>) => {
+    const response = await api.post('/admin/schools', data);
+    return response.data;
+  },
+  updateSchool: async (id: string, data: Record<string, unknown>) => {
+    const response = await api.put(`/admin/schools/${id}`, data);
     return response.data;
   },
 };

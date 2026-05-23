@@ -335,6 +335,7 @@ model User {
   orientationPlacementsCreated    StudentOrientationPlacement[]  @relation("OrientationPlacementCreatedBy")
   twoFactorSettings               UserTwoFactorSettings?
   adminWorkspaceMemberships         AdminWorkspaceMember[]
+  schoolMemberships               SchoolMember[]
 
   @@map("users")
 }
@@ -756,6 +757,9 @@ model Teacher {
   employeeId    String   @unique
   nfcId         String?
   biometricId   String?
+  /// Descripteur face-api (128 floats) pour reconnaissance faciale au pointage
+  faceDescriptor Json?
+  faceEnrolledAt DateTime?
   specialization String
   hireDate      DateTime
   contractType  String
@@ -935,6 +939,8 @@ model Student {
   studentId       String   @unique
   nfcId           String?
   biometricId     String?
+  faceDescriptor  Json?
+  faceEnrolledAt  DateTime?
   dateOfBirth     DateTime
   gender          Gender
   address         String?
@@ -952,10 +958,13 @@ model Student {
   enrollmentDate     DateTime         @default(now())
   enrollmentStatus   EnrollmentStatus @default(ACTIVE)
   isActive           Boolean          @default(true)
+  /// Établissement (collège) de rattachement — dénormalisé pour filtrage multi-sites
+  schoolId           String?          @db.ObjectId
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
   user            User     @relation(fields: [userId], references: [id])
+  school          School?  @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   classId         String?  @db.ObjectId
   class           Class?   @relation(fields: [classId], references: [id])
   classGroupId    String?  @db.ObjectId
@@ -991,6 +1000,7 @@ model Student {
 
   @@index([nfcId])
   @@index([biometricId])
+  @@index([schoolId])
   @@map("students")
 }
 
@@ -1144,12 +1154,16 @@ model StaffMember {
   bio              String?
   nfcId            String?
   biometricId      String?
+  faceDescriptor   Json?
+  faceEnrolledAt   DateTime?
   jobDescriptionId String?         @db.ObjectId
   managerId        String?         @db.ObjectId
+  schoolId         String?         @db.ObjectId
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
   user             User              @relation(fields: [userId], references: [id])
+  school           School?           @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   jobDescription   JobDescription?   @relation(fields: [jobDescriptionId], references: [id])
   manager          StaffMember?      @relation("StaffReportsTo", fields: [managerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   directReports    StaffMember[]     @relation("StaffReportsTo")
@@ -1165,6 +1179,7 @@ model StaffMember {
   @@index([nfcId])
   @@index([managerId])
   @@index([jobDescriptionId])
+  @@index([schoolId])
   @@map("staff_members")
 }
 
@@ -1432,9 +1447,11 @@ model Class {
   room        String?
   capacity    Int       @default(30)
   academicYear String
+  schoolId    String?   @db.ObjectId
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  school      School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   teacherId   String?   @db.ObjectId
   teacher     Teacher?  @relation(fields: [teacherId], references: [id])
   students    Student[]
@@ -1450,6 +1467,8 @@ model Class {
   trackId     String?      @db.ObjectId
   track       SchoolTrack? @relation(fields: [trackId], references: [id], onDelete: SetNull)
 
+  @@index([schoolId])
+  @@index([schoolId, academicYear])
   @@map("classes")
 }
 
@@ -2376,9 +2395,12 @@ model Admission {
   id               String          @id @default(auto()) @map("_id") @db.ObjectId
   reference        String          @unique
   status           AdmissionStatus @default(PENDING)
+  schoolId         String?         @db.ObjectId
 
   firstName        String
   lastName         String
+  /// Matricule déclaré par la famille (établissement précédent ou national), si connu
+  matricule        String?
   email            String
   phone            String?
   dateOfBirth      DateTime
@@ -2410,6 +2432,7 @@ model Admission {
 
   proposedClassId  String?   @db.ObjectId
   proposedClass    Class?    @relation(fields: [proposedClassId], references: [id])
+  school           School?   @relation(fields: [schoolId], references: [id], onDelete: SetNull)
 
   enrolledStudentId String?  @db.ObjectId
 
@@ -2422,8 +2445,57 @@ model Admission {
   @@index([status])
   @@index([academicYear])
   @@index([email])
+  @@index([matricule])
+  @@index([schoolId])
+  @@index([schoolId, status])
   @@index([enrolledStudentId])
   @@map("admissions")
+}
+
+/// Établissement scolaire (collège / lycée) — périmètre multi-sites
+model School {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  slug            String   @unique
+  shortName       String?
+  address         String?
+  phone           String?
+  email           String?
+  website         String?
+  principalName   String?
+  isActive        Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members         SchoolMember[]
+  classes         Class[]
+  students        Student[]
+  admissions      Admission[]
+  staffMembers    StaffMember[]
+  workspaces      AdminWorkspace[]
+  branding        AppBranding?
+
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("schools")
+}
+
+/// Accès d’un utilisateur à un ou plusieurs établissements
+model SchoolMember {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId    String   @db.ObjectId
+  userId      String   @db.ObjectId
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, userId])
+  @@index([userId])
+  @@index([userId, isDefault])
+  @@map("school_members")
 }
 
 model IdentityDocument {
@@ -2491,12 +2563,15 @@ model AdminWorkspace {
   enabledModules String[]
   isActive       Boolean  @default(true)
   isDefault      Boolean  @default(false)
+  schoolId       String?  @db.ObjectId
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  school  School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   members AdminWorkspaceMember[]
 
   @@index([isActive])
+  @@index([schoolId])
   @@map("admin_workspaces")
 }
 
@@ -2514,9 +2589,10 @@ model AdminWorkspaceMember {
   @@map("admin_workspace_members")
 }
 
-/// Identité visuelle de l’application (document unique id = "default").
+/// Identité visuelle par établissement (id = schoolId ou "default" pour rétrocompatibilité).
 model AppBranding {
   id                String   @id @map("_id")
+  schoolId          String?  @unique @db.ObjectId
   navigationLogoUrl String?
   loginLogoUrl      String?
   faviconUrl        String?
@@ -2529,7 +2605,13 @@ model AppBranding {
   schoolEmail       String?
   schoolWebsite     String?
   schoolPrincipal   String?
+  /// Portrait affiché sur la page d’accueil (section « Mot de la Directrice des Études »)
+  studiesDirectorPhotoUrl String?
+  /// Images personnalisables de la page d’accueil (clés homeHeroPlatform, homePillarPedagogy, …)
+  homePageImages        Json?
   updatedAt         DateTime @updatedAt
+
+  school School? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@map("app_branding")
 }

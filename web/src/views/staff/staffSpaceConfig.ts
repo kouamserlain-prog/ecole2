@@ -38,6 +38,8 @@ export const STAFF_KIND_LABELS: Record<SupportStaffKindKey, string> = {
 export function resolveStaffSupportKind(kind: unknown): SupportStaffKindKey {
   const k = typeof kind === 'string' ? kind.trim() : '';
   if (ALLOWED.has(k)) return k as SupportStaffKindKey;
+  // Compte soutien sans métier renseigné : aligné serveur (défaut secrétariat)
+  if (!k) return 'SECRETARY';
   return 'OTHER';
 }
 

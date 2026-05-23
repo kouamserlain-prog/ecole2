@@ -50,6 +50,45 @@ export type StaffModuleId = (typeof STAFF_MODULE_IDS)[number];
 
 const MODULE_SET = new Set<string>(STAFF_MODULE_IDS);
 
+/** Correspondance ids module ADMIN → ids module STAFF (évite perte à l’enregistrement). */
+const STAFF_MODULE_ALIASES: Record<string, StaffModuleId> = {
+  accounting: 'accounting_mgmt',
+  fees: 'fees_mgmt',
+  'tuition-fees': 'tuition_fees_mgmt',
+  payments: 'payments_mgmt',
+  administrative: 'administrative_mgmt',
+  hr: 'hr_mgmt',
+  library: 'library_mgmt',
+  material: 'material_mgmt',
+  reports: 'reports_mgmt',
+  analytics: 'analytics_mgmt',
+  schedule: 'schedule_mgmt',
+  pointage: 'pointage_mgmt',
+  attendance: 'attendance_mgmt',
+  communication: 'communication_mgmt',
+  students: 'students_mgmt',
+  classes: 'classes_mgmt',
+  teachers: 'teachers_mgmt',
+  educators: 'educators_mgmt',
+  'staff-personnel': 'staff_mgmt',
+  'parent-guardians': 'parents_mgmt',
+  pedagogical: 'pedagogical_tracking',
+  discipline: 'discipline_mgmt',
+  extracurricular: 'extracurricular_mgmt',
+  orientation: 'orientation_mgmt',
+  grading: 'grading_mgmt',
+  academic: 'academic_mgmt',
+  management: 'academic_mgmt',
+  notifications: 'notifications_mgmt',
+};
+
+export function normalizeStaffModuleId(raw: unknown): StaffModuleId | null {
+  const id = String(raw ?? '').trim();
+  if (!id) return null;
+  if (MODULE_SET.has(id)) return id as StaffModuleId;
+  return STAFF_MODULE_ALIASES[id] ?? null;
+}
+
 export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
   overview: 'Vue d’ensemble',
   counter: 'Guichet scolarité',
@@ -103,6 +142,7 @@ export function getEligibleModulesForSupportKind(
     case 'SECRETARY':
       return [
         'overview',
+        'notifications_mgmt',
         'counter',
         'admissions',
         'appointments',
@@ -152,6 +192,7 @@ export function getEligibleModulesForSupportKind(
     case 'STUDIES_DIRECTOR':
       return [
         'overview',
+        'notifications_mgmt',
         'admissions',
         'appointments',
         'student_registry',
@@ -168,13 +209,23 @@ export function getEligibleModulesForSupportKind(
         'hr_mgmt',
       ];
     case 'NURSE':
-      return ['overview', 'health_log'];
+      return ['overview', 'notifications_mgmt', 'health_log', 'communication_mgmt'];
     case 'LIBRARIAN':
-      return ['overview', 'library', 'digital_library'];
+      return ['overview', 'notifications_mgmt', 'library', 'digital_library', 'communication_mgmt'];
     case 'IT':
-      return ['overview', 'it_requests'];
+      return ['overview', 'notifications_mgmt', 'it_requests', 'communication_mgmt'];
     case 'MAINTENANCE':
-      return ['overview', 'maintenance_requests'];
+      return ['overview', 'notifications_mgmt', 'maintenance_requests', 'communication_mgmt'];
+    case 'OTHER':
+      return [
+        'overview',
+        'notifications_mgmt',
+        'counter',
+        'admissions',
+        'appointments',
+        'student_registry',
+        'communication_mgmt',
+      ];
     default:
       return ['overview'];
   }
@@ -185,7 +236,8 @@ export function getEligibleModulesForStaffMember(
   supportKind: SupportStaffKind | null | undefined,
 ): StaffModuleId[] {
   if (staffCategory === 'SUPPORT') {
-    return getEligibleModulesForSupportKind(supportKind);
+    // Comptes legacy sans métier : droits secrétariat par défaut (dont admissions)
+    return getEligibleModulesForSupportKind(supportKind ?? 'SECRETARY');
   }
   return ['overview'];
 }
@@ -201,10 +253,11 @@ export function sanitizeVisibleStaffModules(
   if (!Array.isArray(requested) || requested.length === 0) {
     return getEligibleModulesForStaffMember(staffCategory, supportKind);
   }
-  const picked = requested
-    .map((v) => String(v).trim())
-    .filter((id): id is StaffModuleId => MODULE_SET.has(id) && id !== 'overview');
-  const withOverview = new Set<StaffModuleId>(['overview', ...picked]);
+  const withOverview = new Set<StaffModuleId>(['overview']);
+  for (const raw of requested) {
+    const id = normalizeStaffModuleId(raw);
+    if (id && id !== 'overview') withOverview.add(id);
+  }
   return [...withOverview];
 }
 
@@ -220,35 +273,36 @@ export function resolveVisibleStaffModules(
   if (!stored || stored.length === 0) {
     return eligible;
   }
-  let picked = stored.filter((id): id is StaffModuleId => MODULE_SET.has(id));
+  let picked = stored
+    .map((id) => normalizeStaffModuleId(id))
+    .filter((id): id is StaffModuleId => id !== null);
   if (!picked.includes('overview')) {
     picked.unshift('overview');
   }
 
-  return [...new Set<StaffModuleId>([...eligible, ...picked])];
+  // Liste personnalisée en base : ne pas réinjecter tous les modules « recommandés » du métier.
+  return [...new Set(picked)];
 }
 
-/** Met à jour visibleStaffModules en base si le catalogue éligible a évolué. */
+/**
+ * Première connexion uniquement : enregistre les modules par défaut du métier si la liste est vide.
+ * Ne réécrit pas une personnalisation déjà enregistrée.
+ */
 export async function syncStaffVisibleModulesIfStale(staff: {
   id: string;
   staffCategory: StaffCategory;
   supportKind: SupportStaffKind | null;
   visibleStaffModules: string[];
 }): Promise<StaffModuleId[] | null> {
-  const resolved = resolveVisibleStaffModules(
-    staff.staffCategory,
-    staff.supportKind,
-    staff.visibleStaffModules,
-  );
   const stored = staff.visibleStaffModules ?? [];
-  const same =
-    resolved.length === stored.length && resolved.every((id) => stored.includes(id));
-  if (same) return null;
+  if (stored.length > 0) return null;
+
+  const defaults = getEligibleModulesForStaffMember(staff.staffCategory, staff.supportKind);
   await prisma.staffMember.update({
     where: { id: staff.id },
-    data: { visibleStaffModules: resolved },
+    data: { visibleStaffModules: defaults },
   });
-  return resolved;
+  return defaults;
 }
 
 export async function getStaffMemberModuleContext(userId: string) {
@@ -271,6 +325,21 @@ export async function getStaffMemberModuleContext(userId: string) {
 }
 
 export async function assertStaffHasModule(userId: string, moduleId: StaffModuleId): Promise<void> {
+  const staff = await prisma.staffMember.findUnique({
+    where: { userId },
+    select: {
+      id: true,
+      staffCategory: true,
+      supportKind: true,
+      visibleStaffModules: true,
+    },
+  });
+  if (!staff) {
+    const err = new Error('STAFF_PROFILE_NOT_FOUND');
+    (err as Error & { statusCode?: number }).statusCode = 403;
+    throw err;
+  }
+  await syncStaffVisibleModulesIfStale(staff);
   const ctx = await getStaffMemberModuleContext(userId);
   if (!ctx) {
     const err = new Error('STAFF_PROFILE_NOT_FOUND');

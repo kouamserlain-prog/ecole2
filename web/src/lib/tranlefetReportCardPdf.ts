@@ -1,24 +1,41 @@
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { type RowInput } from 'jspdf-autotable';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import { TRANLEFET_SCHOOL } from '../data/tranlefetSchool';
 
 export type TranlefetBranding = {
   schoolName: string;
   schoolPhone: string;
   schoolAddress: string;
+  schoolEmail: string;
+  schoolCode: string;
+  schoolLocation: string;
   regionalDirection: string;
   principalName: string;
+  studiesDirectorName: string;
   city: string;
+  motto: string;
 };
 
 export const TRANLEFET_DEFAULT_BRANDING: TranlefetBranding = {
   schoolName: 'COLLEGE PRIVE TRANLEFET DE BOUAKÉ',
   schoolPhone: '07 88 94 87 12',
   schoolAddress: 'Bouaké',
-  regionalDirection: 'Direction Régionale de Bouaké',
+  schoolEmail: 'collegetranlefet@gmail.com',
+  schoolCode: '253798',
+  schoolLocation: 'Minankro',
+  regionalDirection: 'DIRECTION REGIONALE DE BOUAKE 1',
   principalName: '',
+  studiesDirectorName: '',
   city: 'Bouaké',
+  motto: TRANLEFET_SCHOOL.motto,
+};
+
+export type TermHistoryEntry = {
+  average: number;
+  rank: number;
+  byCourse: Record<string, { average: number; rank: number }>;
 };
 
 export type ReportCardStudentPayload = {
@@ -27,6 +44,8 @@ export type ReportCardStudentPayload = {
   class?: { name: string; level: string };
   gender?: string;
   dateOfBirth?: string;
+  birthPlace?: string;
+  nationality?: string;
   address?: string | null;
   grades?: Array<{
     courseId: string;
@@ -37,28 +56,251 @@ export type ReportCardStudentPayload = {
     date: string;
     course?: { id: string; name: string; code?: string };
   }>;
-  allCourses?: Array<{ id: string; name: string; code?: string }>;
+  allCourses?: Array<{ id: string; name: string; code?: string; teacherName?: string }>;
   courseAverages?: Record<string, { average: number; count?: number }>;
   average?: number;
   rank?: number;
   totalStudents?: number;
   absences?: { total: number; unexcused: number; excused: number; late: number };
+  termHistory?: {
+    trim1?: TermHistoryEntry;
+    trim2?: TermHistoryEntry;
+    trim3?: TermHistoryEntry;
+  };
+  annualSummary?: { average: number; rank: number };
+  classStats?: {
+    periodAverage: number;
+    periodMin: number;
+    periodMax: number;
+    annualAverage?: number;
+    annualMin?: number;
+    annualMax?: number;
+  };
+  conduct?: { average: number; byTerm?: Record<string, number> };
+  distinctions?: string[];
+  sanctions?: string[];
+  repeating?: boolean;
+  yearEndDecision?: string;
 };
 
-function appreciation(average: number): string {
-  if (average <= 0) return 'Non noté';
-  if (average >= 16) return 'Excellent';
-  if (average >= 14) return 'Très bien';
-  if (average >= 12) return 'Bien';
-  if (average >= 10) return 'Assez bien';
-  if (average >= 8) return 'Passable';
-  return 'Insuffisant';
+type DisciplineRow = {
+  label: string;
+  indent?: boolean;
+  isBilan?: boolean;
+  courseIds?: string[];
+  courseMatch?: RegExp;
+  subGradeMatch?: RegExp;
+};
+
+const DISCIPLINE_TEMPLATE: DisciplineRow[] = [
+  { label: 'Français', courseMatch: /français|francais/i },
+  { label: 'Expression orale', indent: true, courseMatch: /français|francais/i, subGradeMatch: /oral/i },
+  { label: 'Orthographe -\ngrammaire', indent: true, courseMatch: /français|francais/i, subGradeMatch: /ortho|grammaire/i },
+  { label: 'Expression écrite', indent: true, courseMatch: /français|francais/i, subGradeMatch: /écrit|ecrit|rédaction|redaction/i },
+  { label: 'Anglais', courseMatch: /anglais|english/i },
+  { label: 'Histoire – géographie', courseMatch: /histoire|géographie|geographie|hg/i },
+  { label: 'BILAN LETTRES', isBilan: true, courseMatch: /français|francais|anglais|histoire|géographie|geographie|hg|lettres/i },
+  { label: 'Mathématiques', courseMatch: /math/i },
+  { label: 'Physique – chimie', courseMatch: /physique|chimie|pc/i },
+  { label: 'SVT', courseMatch: /svt|vie|terre|biolog/i },
+  { label: 'BILAN SCIENCES', isBilan: true, courseMatch: /math|physique|chimie|svt|science/i },
+  { label: 'EDHC', courseMatch: /edhc|emc|citoyen/i },
+  { label: 'EPS', courseMatch: /eps|sport/i },
+  { label: 'CONDUITE', courseMatch: /conduite|comportement/i },
+];
+
+const TRIM_KEYS = ['trim1', 'trim2', 'trim3'] as const;
+
+function fmtNote(value?: number): string {
+  if (value === undefined || value <= 0) return '';
+  return value.toFixed(2);
+}
+
+function fmtRank(value?: number): string {
+  if (value === undefined || value <= 0) return '';
+  return String(value);
 }
 
 function genderLabel(g?: string): string {
   if (g === 'FEMALE') return 'F';
   if (g === 'MALE') return 'M';
-  return '—';
+  return '';
+}
+
+function periodTitle(periodKey: string): string {
+  const map: Record<string, string> = {
+    trim1: '1er Trimestre',
+    trim2: '2ème Trimestre',
+    trim3: '3ème Trimestre',
+    sem1: '1er Semestre',
+    sem2: '2ème Semestre',
+  };
+  return map[periodKey] ?? periodKey;
+}
+
+function findCourses(
+  courses: ReportCardStudentPayload['allCourses'],
+  match?: RegExp,
+): Array<{ id: string; name: string; teacherName?: string }> {
+  if (!courses || !match) return [];
+  return courses.filter((c) => match.test(c.name) || (c.code ? match.test(c.code) : false));
+}
+
+function subGradeAverage(
+  studentData: ReportCardStudentPayload,
+  courseIds: string[],
+  subMatch: RegExp,
+): number {
+  const grades = (studentData.grades || []).filter(
+    (g) => courseIds.includes(g.courseId) && subMatch.test(g.title),
+  );
+  if (grades.length === 0) return 0;
+  let total = 0;
+  let coeff = 0;
+  grades.forEach((g) => {
+    const on20 = (g.score / g.maxScore) * 20;
+    total += on20 * g.coefficient;
+    coeff += g.coefficient;
+  });
+  return coeff > 0 ? total / coeff : 0;
+}
+
+function courseAverageFromPayload(
+  studentData: ReportCardStudentPayload,
+  courseId: string,
+): number {
+  const fromMap = studentData.courseAverages?.[courseId]?.average;
+  if (fromMap !== undefined && fromMap > 0) return fromMap;
+  const grades = (studentData.grades || []).filter((g) => g.courseId === courseId);
+  if (grades.length === 0) return 0;
+  let total = 0;
+  let coeff = 0;
+  grades.forEach((g) => {
+    const on20 = (g.score / g.maxScore) * 20;
+    total += on20 * g.coefficient;
+    coeff += g.coefficient;
+  });
+  return coeff > 0 ? total / coeff : 0;
+}
+
+function termCourseAverage(
+  studentData: ReportCardStudentPayload,
+  term: (typeof TRIM_KEYS)[number],
+  courseId: string,
+  activePeriod: string,
+): number {
+  const fromHistory = studentData.termHistory?.[term]?.byCourse[courseId]?.average;
+  if (fromHistory !== undefined && fromHistory > 0) return fromHistory;
+  if (term === activePeriod) {
+    return courseAverageFromPayload(studentData, courseId);
+  }
+  return 0;
+}
+
+function termCourseRank(
+  studentData: ReportCardStudentPayload,
+  term: (typeof TRIM_KEYS)[number],
+  courseId: string,
+): number | undefined {
+  return studentData.termHistory?.[term]?.byCourse[courseId]?.rank;
+}
+
+function resolveRowValues(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  activePeriod: string,
+): {
+  trim1: string;
+  rank1: string;
+  trim2: string;
+  rank2: string;
+  trim3: string;
+  rank3: string;
+  moy: string;
+  rang: string;
+  prof: string;
+} {
+  const courses = studentData.allCourses || [];
+  const matched = findCourses(courses, row.courseMatch);
+  const courseIds = matched.map((c) => c.id);
+
+  if (row.label === 'CONDUITE') {
+    const conduct = studentData.conduct;
+    return {
+      trim1: fmtNote(conduct?.byTerm?.trim1),
+      rank1: '',
+      trim2: fmtNote(conduct?.byTerm?.trim2),
+      rank2: '',
+      trim3: fmtNote(conduct?.byTerm?.trim3 ?? conduct?.average),
+      rank3: '',
+      moy: fmtNote(conduct?.average),
+      rang: '',
+      prof: '',
+    };
+  }
+
+  const computeForTerm = (term: (typeof TRIM_KEYS)[number]): { avg: number; rank?: number } => {
+    if (row.subGradeMatch && courseIds.length > 0) {
+      if (activePeriod === term) {
+        return { avg: subGradeAverage(studentData, courseIds, row.subGradeMatch) };
+      }
+      return { avg: 0 };
+    }
+    if (row.isBilan && row.courseMatch) {
+      const bilanCourses = findCourses(courses, row.courseMatch);
+      const avgs = TRIM_KEYS.map((t) => {
+        const values = bilanCourses
+          .map((c) => termCourseAverage(studentData, t, c.id, activePeriod))
+          .filter((v) => v > 0);
+        return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+      });
+      const idx = TRIM_KEYS.indexOf(term);
+      return { avg: avgs[idx] ?? 0 };
+    }
+    if (courseIds.length === 1) {
+      const avg = termCourseAverage(studentData, term, courseIds[0], activePeriod);
+      const rank = termCourseRank(studentData, term, courseIds[0]);
+      return { avg, rank };
+    }
+    if (courseIds.length > 1) {
+      const values = courseIds.map((id) => termCourseAverage(studentData, term, id, activePeriod)).filter((v) => v > 0);
+      const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+      return { avg };
+    }
+    return { avg: 0 };
+  };
+
+  const t1 = computeForTerm('trim1');
+  const t2 = computeForTerm('trim2');
+  const t3 = computeForTerm('trim3');
+
+  const activeTerm = (['trim1', 'trim2', 'trim3'].includes(activePeriod)
+    ? activePeriod
+    : 'trim3') as (typeof TRIM_KEYS)[number];
+  const active = computeForTerm(activeTerm);
+
+  const teacherNames = matched
+    .map((c) => c.teacherName)
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    trim1: fmtNote(t1.avg),
+    rank1: fmtRank(t1.rank),
+    trim2: fmtNote(t2.avg),
+    rank2: fmtRank(t2.rank),
+    trim3: fmtNote(t3.avg),
+    rank3: fmtRank(t3.rank),
+    moy: fmtNote(
+      active.avg > 0
+        ? active.avg
+        : courseIds.length === 1
+          ? courseAverageFromPayload(studentData, courseIds[0])
+          : 0,
+    ),
+    rang: fmtRank(active.rank),
+    prof: teacherNames,
+  };
 }
 
 function drawOfficialHeader(
@@ -66,109 +308,73 @@ function drawOfficialHeader(
   pageWidth: number,
   branding: TranlefetBranding,
   academicYear: string,
-  level: string,
-  periodLabel: string,
+  periodKey: string,
 ): number {
-  const margin = 14;
-  let y = 12;
+  const margin = 10;
+  let y = 10;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(0, 0, 0);
-
+  doc.setFontSize(7);
   doc.text('MINISTERE DE L\'EDUCATION NATIONALE', margin, y);
   doc.text('REPUBLIQUE DE COTE D\'IVOIRE', pageWidth - margin, y, { align: 'right' });
-  y += 4;
-  doc.text(branding.regionalDirection, margin, y);
+  y += 3.5;
+  doc.text('ET DE L\'ALPHABETISATION', margin, y);
   doc.setFont('helvetica', 'italic');
-  doc.text('Union — Discipline — Travail', pageWidth - margin, y, { align: 'right' });
+  doc.text('Union – Discipline – Travail', pageWidth - margin, y, { align: 'right' });
+  y += 3.5;
+  doc.setFont('helvetica', 'normal');
+  doc.text(branding.regionalDirection, margin, y);
+  y += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(branding.schoolName, pageWidth / 2, y, { align: 'center' });
   y += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.text(
+    `${branding.schoolAddress.toUpperCase()}, ${branding.schoolLocation} Cel : ${branding.schoolPhone.replace(/\s/g, '')}`,
+    pageWidth / 2,
+    y,
+    { align: 'center' },
+  );
+  y += 3.5;
+  doc.text(`E-mail : ${branding.schoolEmail}`, pageWidth / 2, y, { align: 'center' });
+  y += 4;
+
+  doc.setFontSize(7);
+  doc.text(`CODE : ${branding.schoolCode}`, margin + 2, y);
+  doc.text('Statut : Privé', pageWidth - margin - 2, y, { align: 'right' });
+  y += 5;
+
+  const boxW = 78;
+  const boxX = (pageWidth - boxW) / 2;
+  doc.setLineWidth(0.35);
+  doc.rect(boxX, y, boxW, 9);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text(branding.schoolName, margin, y);
+  doc.text('BULLETIN DE NOTES TRIMESTRIEL', pageWidth / 2, y + 4, { align: 'center' });
+  doc.setFontSize(8);
+  doc.text(periodTitle(periodKey), pageWidth / 2, y + 7.5, { align: 'center' });
+  y += 11;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(`Année scolaire ${academicYear}`, pageWidth - margin, y, { align: 'right' });
-  y += 4;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`TEL ${branding.schoolPhone}`, margin, y);
-  doc.text(`NIVEAU : ${level || '…………'}`, pageWidth - margin, y, { align: 'right' });
-  y += 6;
-
-  const titleW = 90;
-  const titleX = (pageWidth - titleW) / 2;
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.4);
-  doc.rect(titleX, y, titleW, 10);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('BULLETIN DE NOTES', pageWidth / 2, y + 6.5, { align: 'center' });
-  y += 13;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text(periodLabel.toUpperCase(), pageWidth / 2, y, { align: 'center' });
-  y += 6;
+  doc.text(`Année Scolaire ${academicYear}`, pageWidth / 2, y, { align: 'center' });
+  y += 5;
 
   return y;
 }
 
-function buildCourseRows(studentData: ReportCardStudentPayload): Array<{
-  name: string;
-  average: number;
-  appreciation: string;
-  coeff: string;
-  detail: string;
-}> {
-  const coursesMap = new Map<string, { course: { name: string }; grades: typeof studentData.grades; average: number }>();
-
-  (studentData.allCourses || []).forEach((course) => {
-    coursesMap.set(course.id, { course, grades: [], average: 0 });
-  });
-
-  (studentData.grades || []).forEach((grade) => {
-    const id = grade.courseId;
-    if (!coursesMap.has(id)) {
-      coursesMap.set(id, { course: grade.course || { name: 'Matière' }, grades: [], average: 0 });
-    }
-    coursesMap.get(id)!.grades!.push(grade);
-  });
-
-  coursesMap.forEach((entry, courseId) => {
-    const avg = studentData.courseAverages?.[courseId]?.average;
-    if (avg !== undefined) {
-      entry.average = avg;
-    } else if (entry.grades && entry.grades.length > 0) {
-      let total = 0;
-      let coeff = 0;
-      entry.grades.forEach((g) => {
-        const on20 = (g.score / g.maxScore) * 20;
-        total += on20 * g.coefficient;
-        coeff += g.coefficient;
-      });
-      entry.average = coeff > 0 ? total / coeff : 0;
-    }
-  });
-
-  return [...coursesMap.entries()]
-    .sort((a, b) => a[1].course.name.localeCompare(b[1].course.name, 'fr'))
-    .map(([, data]) => {
-      const grades = data.grades || [];
-      const detail =
-        grades.length > 0
-          ? grades
-              .slice(0, 4)
-              .map((g) => `${g.title}: ${g.score}/${g.maxScore}`)
-              .join(' · ')
-          : '—';
-      const coeffSum = grades.reduce((s, g) => s + g.coefficient, 0);
-      return {
-        name: data.course.name,
-        average: data.average,
-        appreciation: appreciation(data.average),
-        coeff: coeffSum > 0 ? String(coeffSum) : '—',
-        detail,
-      };
-    });
+function drawCheckboxLine(doc: jsPDF, x: number, y: number, label: string, checked: boolean): void {
+  doc.setLineWidth(0.25);
+  doc.rect(x, y - 2.5, 2.5, 2.5);
+  if (checked) {
+    doc.setFontSize(6);
+    doc.text('×', x + 0.45, y - 0.1);
+  }
+  doc.setFontSize(6);
+  doc.text(label, x + 3.5, y);
 }
 
 export function generateTranlefetReportCardPdf(
@@ -183,158 +389,240 @@ export function generateTranlefetReportCardPdf(
   const branding: TranlefetBranding = { ...TRANLEFET_DEFAULT_BRANDING, ...options.branding };
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 14;
+  const margin = 10;
+  const activePeriod = options.periodKey;
 
-  let y = drawOfficialHeader(
-    doc,
-    pageWidth,
-    branding,
-    options.academicYear,
-    studentData.class?.level || '',
-    options.periodLabel,
-  );
+  let y = drawOfficialHeader(doc, pageWidth, branding, options.academicYear, activePeriod);
 
   const fullName = `${studentData.user.lastName} ${studentData.user.firstName}`.toUpperCase();
   const dob = studentData.dateOfBirth
     ? format(new Date(studentData.dateOfBirth), 'dd/MM/yyyy', { locale: fr })
-    : '…………';
+    : '';
 
   autoTable(doc, {
     startY: y,
     theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 1.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.25 },
-    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold' },
+    styles: { fontSize: 7, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
     body: [
       [
-        { content: 'Matricule', styles: { fontStyle: 'bold' } },
-        studentData.studentIdNumber || '…………',
-        { content: 'Sexe (M/F)', styles: { fontStyle: 'bold' } },
-        genderLabel(studentData.gender),
-      ],
-      [
-        { content: 'Nom et Prénom(s)', styles: { fontStyle: 'bold' } },
+        { content: 'NOM ET PRENOM', styles: { fontStyle: 'bold' } },
         { content: fullName, colSpan: 3 },
       ],
       [
+        { content: 'Matricule', styles: { fontStyle: 'bold' } },
+        studentData.studentIdNumber || '',
         { content: 'Classe', styles: { fontStyle: 'bold' } },
-        studentData.class ? `${studentData.class.name}` : '…………',
-        { content: 'Date de naissance', styles: { fontStyle: 'bold' } },
-        dob,
+        studentData.class?.name || '',
       ],
       [
-        { content: 'Adresse', styles: { fontStyle: 'bold' } },
-        { content: studentData.address?.trim() || '…………', colSpan: 3 },
+        { content: 'Effectif', styles: { fontStyle: 'bold' } },
+        studentData.totalStudents ? String(studentData.totalStudents) : '',
+        { content: 'Sexe', styles: { fontStyle: 'bold' } },
+        genderLabel(studentData.gender),
+      ],
+      [
+        { content: 'Né (e) le', styles: { fontStyle: 'bold' } },
+        dob,
+        { content: 'Lieu de naissance', styles: { fontStyle: 'bold' } },
+        studentData.birthPlace || '',
+      ],
+      [
+        { content: 'Nationalité', styles: { fontStyle: 'bold' } },
+        { content: studentData.nationality || 'Ivoirienne', colSpan: 3 },
       ],
     ],
     margin: { left: margin, right: margin },
   });
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('RESULTATS SCOLAIRES', pageWidth / 2, y, { align: 'center' });
-  y += 4;
+  const tableHead: RowInput[] = [
+    [
+      { content: 'Discipline', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Trim 1', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Trim 2', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Trim 3', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Moy.', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Rang', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Professeurs', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Signature', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+    ],
+    ['', 'Moy.', 'Rang', 'Moy.', 'Rang', 'Moy.', 'Rang', '', '', '', ''],
+  ];
 
-  const courseRows = buildCourseRows(studentData);
-  autoTable(doc, {
-    startY: y,
-    head: [['Discipline', 'Moy. /20', 'Appréciation', 'Coeff.', 'Détail des évaluations']],
-    body: courseRows.map((r) => [
-      r.name,
-      r.average > 0 ? r.average.toFixed(2) : '—',
-      r.appreciation,
-      r.coeff,
-      r.detail,
-    ]),
-    theme: 'grid',
-    styles: { fontSize: 7.5, cellPadding: 1.6, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.25 },
-    headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 7.5 },
-    columnStyles: {
-      0: { cellWidth: 38 },
-      1: { halign: 'center', cellWidth: 18 },
-      2: { halign: 'center', cellWidth: 28 },
-      3: { halign: 'center', cellWidth: 14 },
-      4: { cellWidth: 'auto' },
-    },
-    margin: { left: margin, right: margin, bottom: 42 },
-    showHead: 'everyPage',
+  const tableBody = DISCIPLINE_TEMPLATE.map((row) => {
+    const values = resolveRowValues(studentData, row, activePeriod);
+    const labelStyle = row.isBilan
+      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
+      : row.indent
+        ? { cellPadding: { left: 4 } }
+        : {};
+    return [
+      { content: row.label, styles: labelStyle },
+      values.trim1,
+      values.rank1,
+      values.trim2,
+      values.rank2,
+      values.trim3,
+      values.rank3,
+      values.moy,
+      values.rang,
+      values.prof,
+      '',
+    ];
   });
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
-  const pageHeight = doc.internal.pageSize.getHeight();
+  autoTable(doc, {
+    startY: y,
+    head: tableHead,
+    body: tableBody,
+    theme: 'grid',
+    styles: { fontSize: 6, cellPadding: 0.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      1: { halign: 'center', cellWidth: 10 },
+      2: { halign: 'center', cellWidth: 8 },
+      3: { halign: 'center', cellWidth: 10 },
+      4: { halign: 'center', cellWidth: 8 },
+      5: { halign: 'center', cellWidth: 10 },
+      6: { halign: 'center', cellWidth: 8 },
+      7: { halign: 'center', cellWidth: 10 },
+      8: { halign: 'center', cellWidth: 8 },
+      9: { cellWidth: 24, fontSize: 5.5 },
+      10: { cellWidth: 14 },
+    },
+    tableWidth: pageWidth - margin * 2,
+    margin: { left: margin, right: margin },
+  });
 
-  if (y + 48 > pageHeight - 10) {
-    doc.addPage();
-    y = 20;
-  }
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
 
-  const abs = studentData.absences;
-  const absLine = abs
-    ? `Absences : ${abs.total} (non excusées : ${abs.unexcused}, excusées : ${abs.excused}, retards : ${abs.late})`
-    : 'Absences : …………';
+  const stats = studentData.classStats;
+  const termAvg =
+    studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.average ?? studentData.average;
+  const termRank =
+    studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.rank ?? studentData.rank;
+  const annual = studentData.annualSummary;
 
   autoTable(doc, {
     startY: y,
     theme: 'grid',
-    styles: { fontSize: 8.5, cellPadding: 2.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.25 },
+    styles: { fontSize: 6.5, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
     body: [
       [
-        { content: 'MOYENNE GENERALE', styles: { fontStyle: 'bold' } },
-        studentData.average !== undefined ? `${studentData.average.toFixed(2)} / 20` : '—',
-        { content: 'RANG / EFFECTIF', styles: { fontStyle: 'bold' } },
-        studentData.rank && studentData.totalStudents
-          ? `${studentData.rank} / ${studentData.totalStudents}`
-          : '—',
+        { content: 'RESUME', colSpan: 4, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 220, 220] } },
       ],
-      [{ content: absLine, colSpan: 4 }],
       [
+        { content: `Assiduité ${options.periodLabel.toLowerCase()}`, styles: { fontStyle: 'bold' } },
         {
-          content:
-            'Décision du conseil de classe : ………………………………………………………………………………………………',
-          colSpan: 4,
+          content: studentData.absences
+            ? `Abs. : ${studentData.absences.total} (J : ${studentData.absences.excused} / NJ : ${studentData.absences.unexcused})`
+            : '',
+          colSpan: 3,
         },
+      ],
+      [
+        { content: 'Moyenne Trimestrielle', styles: { fontStyle: 'bold' } },
+        termAvg !== undefined ? `${fmtNote(termAvg)} /20` : '',
+        { content: 'Rang', styles: { fontStyle: 'bold' } },
+        termRank && studentData.totalStudents ? `${termRank} sur ${studentData.totalStudents}` : '',
+      ],
+      [
+        { content: 'Moyenne générale de la classe', styles: { fontStyle: 'bold' } },
+        stats?.periodAverage ? fmtNote(stats.periodAverage) : '',
+        { content: 'Moy mini / maxi', styles: { fontStyle: 'bold' } },
+        stats ? `${fmtNote(stats.periodMin)} / ${fmtNote(stats.periodMax)}` : '',
+      ],
+      [
+        { content: 'Moyenne annuelle', styles: { fontStyle: 'bold' } },
+        annual?.average ? `${fmtNote(annual.average)} /20` : '',
+        { content: 'Rang annuel', styles: { fontStyle: 'bold' } },
+        annual?.rank && studentData.totalStudents ? `${annual.rank} sur ${studentData.totalStudents}` : '',
+      ],
+      [
+        { content: 'Résultats annuels de classe', styles: { fontStyle: 'bold' } },
+        stats?.annualAverage ? fmtNote(stats.annualAverage) : '',
+        { content: 'Moy mini / maxi annuelles', styles: { fontStyle: 'bold' } },
+        stats?.annualMin !== undefined && stats?.annualMax !== undefined
+          ? `${fmtNote(stats.annualMin)} / ${fmtNote(stats.annualMax)}`
+          : '',
       ],
     ],
     margin: { left: margin, right: margin },
   });
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
 
-  const sigY = Math.min(y, pageHeight - 32);
-  const colW = (pageWidth - margin * 2) / 3;
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  const signatures = [
-    'Le(la) Directeur(trice) des études',
-    branding.principalName ? `Le(la) Chef(fe) d\'établissement\n${branding.principalName}` : 'Le(la) Chef(fe) d\'établissement',
-    'Signature du parent / tuteur',
+  const distinctions = studentData.distinctions ?? [];
+  const sanctions = studentData.sanctions ?? [];
+  const distinctionOptions = [
+    'Tableau d\'honneur + Félicitation',
+    'Tableau d\'honneur + Encouragements',
+    'Tableau d\'honneur',
   ];
-  signatures.forEach((label, i) => {
-    const x = margin + i * colW;
-    doc.text(label, x + colW / 2, sigY, { align: 'center' });
-    doc.setLineWidth(0.3);
-    doc.line(x + 4, sigY + 14, x + colW - 4, sigY + 14);
+  const sanctionOptions = [
+    'Avertissement travail',
+    'Avertissement conduite',
+    'Blâme travail',
+    'Blâme conduite',
+  ];
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.text('Mentions du conseil de classe', margin, y);
+  y += 3;
+  doc.setFontSize(6);
+  doc.text('DISTINCTIONS', margin, y);
+  doc.text('SANCTIONS', pageWidth / 2 + 2, y);
+  y += 3;
+
+  distinctionOptions.forEach((label, i) => {
+    drawCheckboxLine(doc, margin, y + i * 3.5, label, distinctions.includes(label));
+  });
+  sanctionOptions.forEach((label, i) => {
+    drawCheckboxLine(doc, pageWidth / 2 + 2, y + i * 3.5, label, sanctions.includes(label));
   });
 
-  doc.setFontSize(7.5);
+  y += 16;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.text(`Redoublant (e) : ${studentData.repeating ? 'Oui' : 'Non'}`, margin, y);
+  doc.text(`Décision de fin d'année : ${studentData.yearEndDecision || '…………………………'}`, margin + 45, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6);
+  doc.text(branding.motto, pageWidth / 2, y, { align: 'center' });
+  y += 5;
+
+  const sigY = y + 2;
+  const colW = (pageWidth - margin * 2) / 3;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  const sigLabels = [
+    'Nom/Signature du\nprofesseur principal',
+    branding.principalName
+      ? `Chef d'Etablissement\n${branding.principalName}`
+      : 'Chef d\'Etablissement',
+    branding.studiesDirectorName
+      ? `Le Directeur des Etudes\n${branding.studiesDirectorName}`
+      : 'Le Directeur des Etudes',
+  ];
+  sigLabels.forEach((label, i) => {
+    const x = margin + i * colW;
+    const lines = doc.splitTextToSize(label, colW - 4);
+    doc.text(lines, x + colW / 2, sigY, { align: 'center' });
+    doc.line(x + 3, sigY + 10, x + colW - 3, sigY + 10);
+  });
+
+  doc.setFontSize(6.5);
   doc.text(
-    `${branding.city} le ${format(new Date(), 'dd/MM/yyyy', { locale: fr })}`,
+    `Fait à ${branding.city}, le ${format(new Date(), 'dd/MM/yyyy', { locale: fr })}`,
     pageWidth - margin,
-    sigY + 22,
+    sigY + 16,
     { align: 'right' },
   );
-  doc.text('Signature et cachet de l\'établissement', margin, sigY + 22);
-
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'italic');
-    doc.text(`${branding.schoolName} — Bulletin ${options.periodLabel}`, margin, pageHeight - 6);
-    doc.text(`Page ${i}/${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
-  }
 
   const fileName = `bulletin_${studentData.user.lastName}_${studentData.user.firstName}_${options.periodKey}_${options.academicYear}.pdf`;
   doc.save(fileName);

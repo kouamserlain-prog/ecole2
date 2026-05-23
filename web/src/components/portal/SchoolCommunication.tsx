@@ -33,6 +33,8 @@ function roleLabel(r: string | undefined) {
       return 'Enseignant';
     case 'EDUCATOR':
       return 'Éducateur';
+    case 'STAFF':
+      return 'Personnel';
     default:
       return r ?? '—';
   }
@@ -94,6 +96,8 @@ function ParentThreadedMessaging({ contextStudentId }: { contextStudentId?: stri
     | {
         admins?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
         teachers?: { id: string; firstName: string; lastName: string; email: string; role: string; label: string }[];
+        staff?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
+        educators?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
       }
     | undefined;
 
@@ -298,8 +302,8 @@ function ParentThreadedMessaging({ contextStudentId }: { contextStudentId?: stri
         <Card className="p-6 border border-orange-100 bg-white shadow-sm max-w-2xl">
           <h3 className="text-lg font-semibold text-gray-900 mb-1">Nouveau message</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Administration ou enseignant d’une de vos classes. Laissez « Administration » pour le compte admin par
-            défaut.
+            Administration, personnel (bibliothèque, secrétariat…), enseignants ou éducateurs. Laissez « Administration »
+            pour le compte admin par défaut.
           </p>
           <div className="space-y-4">
             <div>
@@ -321,6 +325,20 @@ function ParentThreadedMessaging({ contextStudentId }: { contextStudentId?: stri
                   {(contacts?.teachers ?? []).map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.firstName} {u.lastName} — {u.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Personnel">
+                  {(contacts?.staff ?? []).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Éducateurs">
+                  {(contacts?.educators ?? []).map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName}
                     </option>
                   ))}
                 </optgroup>

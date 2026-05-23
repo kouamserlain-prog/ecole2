@@ -102,6 +102,10 @@ export const parentApi = {
     const response = await api.put('/parent/notifications/read-all');
     return response.data;
   },
+  deleteNotification: async (notificationId: string) => {
+    const response = await api.delete(`/parent/notifications/${notificationId}`);
+    return response.data;
+  },
   getAnnouncements: async () => {
     const response = await api.get('/parent/announcements');
     return response.data;

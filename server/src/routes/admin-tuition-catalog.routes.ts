@@ -6,8 +6,70 @@ import {
   parseScheduleLines,
   splitTotalByPercents,
 } from '../utils/tuition-catalog.util';
+import {
+  getLevelTuitionRates,
+  upsertLevelTuitionRates,
+  resolveTuitionAmountForStudent,
+  TUITION_LEVELS,
+} from '../utils/tuition-level-amount.util';
 
 const router = express.Router();
+
+// --- Montants fixes de scolarité par niveau ---
+
+router.get('/tuition-level-rates', async (req, res) => {
+  try {
+    const academicYear = String(req.query.academicYear ?? '').trim();
+    if (!academicYear) {
+      return res.status(400).json({ error: 'academicYear est requis' });
+    }
+    const rates = await getLevelTuitionRates(academicYear);
+    res.json({ academicYear, levels: TUITION_LEVELS, rates });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
+  }
+});
+
+router.get('/tuition-level-rates/resolve', async (req, res) => {
+  try {
+    const studentId = String(req.query.studentId ?? '').trim();
+    const academicYear = String(req.query.academicYear ?? '').trim();
+    if (!studentId || !academicYear) {
+      return res.status(400).json({ error: 'studentId et academicYear sont requis' });
+    }
+    const resolved = await resolveTuitionAmountForStudent(studentId, academicYear);
+    if (!resolved) {
+      return res.status(404).json({
+        error: 'Aucun montant de scolarité défini pour le niveau de cet élève.',
+      });
+    }
+    res.json(resolved);
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
+  }
+});
+
+router.put('/tuition-level-rates', async (req, res) => {
+  try {
+    const { academicYear, rates } = req.body as {
+      academicYear?: string;
+      rates?: { level: string; amount: number }[];
+    };
+    if (!academicYear || !Array.isArray(rates)) {
+      return res.status(400).json({ error: 'academicYear et rates[] sont requis' });
+    }
+    const saved = await upsertLevelTuitionRates(String(academicYear), rates);
+    const updated = await getLevelTuitionRates(String(academicYear));
+    res.json({
+      message: 'Montants par niveau enregistrés',
+      saved: saved.length,
+      rates: updated,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Erreur serveur';
+    res.status(400).json({ error: msg });
+  }
+});
 
 // --- Catalogue de frais ---
 

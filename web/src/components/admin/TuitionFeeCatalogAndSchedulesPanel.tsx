@@ -81,7 +81,9 @@ type Props = {
 
 const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes }) => {
   const qc = useQueryClient();
-  const [sub, setSub] = useState<'catalog' | 'schedules' | 'apply'>('catalog');
+  const [sub, setSub] = useState<'levelRates' | 'catalog' | 'schedules' | 'apply'>('levelRates');
+  const [levelRatesYear, setLevelRatesYear] = useState(getCurrentAcademicYear());
+  const [levelAmounts, setLevelAmounts] = useState<Record<string, string>>({});
   const [guideOpen, setGuideOpen] = useState(true);
 
   const { data: catalog, isLoading: loadCat } = useQuery({
@@ -92,6 +94,38 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
   const { data: templates, isLoading: loadTpl } = useQuery({
     queryKey: ['admin-tuition-schedule-templates'],
     queryFn: adminTuitionCatalogApi.getScheduleTemplates,
+  });
+
+  const { data: levelRatesData, isLoading: loadLevelRates } = useQuery({
+    queryKey: ['admin-tuition-level-rates', levelRatesYear],
+    queryFn: () => adminTuitionCatalogApi.getLevelTuitionRates(levelRatesYear),
+    enabled: sub === 'levelRates',
+  });
+
+  useEffect(() => {
+    if (!levelRatesData?.rates) return;
+    const next: Record<string, string> = {};
+    for (const r of levelRatesData.rates) {
+      next[r.level] = r.amount != null ? String(r.amount) : '';
+    }
+    setLevelAmounts(next);
+  }, [levelRatesData]);
+
+  const saveLevelRatesMut = useMutation({
+    mutationFn: () =>
+      adminTuitionCatalogApi.saveLevelTuitionRates({
+        academicYear: levelRatesYear,
+        rates: Object.entries(levelAmounts)
+          .filter(([, v]) => v.trim() !== '' && !Number.isNaN(parseFloat(v)) && parseFloat(v) >= 0)
+          .map(([level, v]) => ({ level, amount: Math.round(parseFloat(v)) })),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-tuition-level-rates'] });
+      qc.invalidateQueries({ queryKey: ['admin-tuition-fee-catalog'] });
+      toast.success('Montants de scolarité par niveau enregistrés');
+    },
+    onError: (e: { response?: { data?: { error?: string } } }) =>
+      toast.error(e.response?.data?.error || 'Erreur'),
   });
 
   const [catModal, setCatModal] = useState(false);
@@ -437,8 +471,11 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
         {guideOpen && (
           <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-stone-700">
             <li>
-              <strong>Barèmes</strong> : définissez les montants par niveau, classe ou libellé de programme / filière
-              (inscription, scolarité mensuelle/trimestrielle/annuelle, cantine, transport, activités).
+              <strong>Montants par niveau</strong> : fixez la scolarité (FCFA) pour chaque niveau (6ème → Terminale) ;
+              ces montants sont appliqués automatiquement à la création des frais « Scolarité ».
+            </li>
+            <li>
+              <strong>Barèmes</strong> : autres postes (inscription, cantine, transport…) par classe ou programme.
             </li>
             <li>
               <strong>Application</strong> : générez une ligne par élève depuis un barème (avec remise ou libellé de
@@ -455,7 +492,8 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
       <div className={ADM.tabRow}>
         {(
           [
-            ['catalog', 'Barèmes (niveau / programme)'],
+            ['levelRates', 'Scolarité par niveau'],
+            ['catalog', 'Autres barèmes'],
             ['schedules', 'Gabarits d’échéancier'],
             ['apply', 'Application aux élèves'],
           ] as const
@@ -470,6 +508,67 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
           </button>
         ))}
       </div>
+
+      {sub === 'levelRates' && (
+        <Card className="space-y-4 p-4">
+          <p className="text-sm text-stone-600">
+            Définissez le <strong>montant fixe de scolarité</strong> pour chaque niveau. Lors de la création d’un frais
+            de type « Scolarité », ce montant est imposé selon la classe de l’élève (seule la remise reste modifiable).
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[10rem]">
+              <label className="mb-1 block text-xs font-medium text-stone-600">Année scolaire</label>
+              <Input
+                value={levelRatesYear}
+                onChange={(e) => setLevelRatesYear(e.target.value)}
+                placeholder="2025-2026"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => saveLevelRatesMut.mutate()}
+              disabled={saveLevelRatesMut.isPending || loadLevelRates}
+            >
+              Enregistrer les montants
+            </Button>
+          </div>
+          {loadLevelRates ? (
+            <p className="text-sm text-stone-500">Chargement…</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-stone-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-stone-50 text-left text-[10px] uppercase text-stone-600">
+                  <tr>
+                    <th className="px-3 py-2">Niveau</th>
+                    <th className="px-3 py-2">Montant scolarité (FCFA)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(levelRatesData?.rates ?? []).map((row) => (
+                    <tr key={row.level} className="border-t border-stone-100">
+                      <td className="px-3 py-2 font-medium text-stone-900">{row.level}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          value={levelAmounts[row.level] ?? ''}
+                          onChange={(e) =>
+                            setLevelAmounts((prev) => ({ ...prev, [row.level]: e.target.value }))
+                          }
+                          placeholder="Ex. 150000"
+                          className="w-full max-w-xs rounded-lg border border-stone-300 px-3 py-2 tabular-nums focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {sub === 'catalog' && (
         <Card className="space-y-3 p-3">

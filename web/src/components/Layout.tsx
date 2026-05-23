@@ -34,15 +34,15 @@ const ROLE_ACCENTS: Record<
   { bar: string; badge: string; logo: string; label: string }
 > = {
   ADMIN: {
-    bar: 'from-cptb-blue via-brand-600 to-cptb-blue-dark',
-    badge: 'bg-cptb-blue/95 text-cptb-gold ring-1 ring-cptb-gold/40',
-    logo: 'from-cptb-blue to-brand-800',
+    bar: 'from-black via-zinc-900 to-black',
+    badge: 'bg-black text-white ring-1 ring-white/20',
+    logo: 'from-zinc-900 to-black',
     label: 'Administrateur',
   },
   SUPER_ADMIN: {
-    bar: 'from-cptb-blue-dark via-cptb-blue to-brand-700',
-    badge: 'bg-cptb-gold text-cptb-blue-dark ring-1 ring-cptb-blue/30 font-bold',
-    logo: 'from-cptb-blue to-cptb-blue-dark',
+    bar: 'from-black via-zinc-900 to-black',
+    badge: 'bg-black text-white ring-1 ring-amber-400/40 font-bold',
+    logo: 'from-zinc-900 to-black',
     label: 'Super administrateur',
   },
   TEACHER: {

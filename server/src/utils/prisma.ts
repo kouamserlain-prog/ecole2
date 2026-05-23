@@ -16,11 +16,31 @@ const prismaLogLevel =
       : (['error', 'warn'] as const)
     : (['error'] as const);
 
-export const prisma =
-  global.prisma ||
-  new PrismaClient({
+function createPrismaClient(): PrismaClient {
+  return new PrismaClient({
     log: [...prismaLogLevel],
   });
+}
+
+/** En dev, tsx garde un singleton sans les nouveaux modèles après prisma generate — on le recrée. */
+function prismaClient(): PrismaClient {
+  const stale =
+    global.prisma &&
+    typeof (global.prisma as unknown as { school?: unknown }).school === 'undefined';
+  if (stale) {
+    void global.prisma?.$disconnect().catch(() => {});
+    global.prisma = undefined;
+  }
+  if (!global.prisma) {
+    global.prisma = createPrismaClient();
+  }
+  return global.prisma;
+}
+
+export const prisma =
+  process.env.NODE_ENV === 'production'
+    ? global.prisma || createPrismaClient()
+    : prismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
   global.prisma = prisma;

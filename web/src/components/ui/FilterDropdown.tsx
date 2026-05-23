@@ -18,10 +18,13 @@ interface FilterDropdownProps {
   className?: string;
   /** Bouton déclencheur plus bas (ex. barre outils Élèves) */
   compact?: boolean;
+  /** Pleine largeur, sans icône filtre — pour les formulaires (modales, etc.) */
+  variant?: 'filter' | 'field';
 }
 
-const Z_BACKDROP = 10040;
-const Z_PANEL = 10050;
+/** Au-dessus des modales (z-[9999]) et des toasts */
+const Z_BACKDROP = 100_000;
+const Z_PANEL = 100_001;
 
 const FilterDropdown: React.FC<FilterDropdownProps> = ({
   options,
@@ -31,7 +34,10 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
   label = 'Filtrer',
   className = '',
   compact = false,
+  variant = 'filter',
 }) => {
+  const isField = variant === 'field';
+  const triggerCompact = compact && !isField;
   const current = selected ?? value ?? '';
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -43,7 +49,7 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
     const el = triggerRef.current;
     if (!el || typeof window === 'undefined') return;
     const rect = el.getBoundingClientRect();
-    const panelMin = compact ? 176 : 208;
+    const panelMin = triggerCompact ? 176 : isField ? 200 : 208;
     const width = Math.max(rect.width, panelMin);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -61,7 +67,7 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
       }
     }
     setPanelPos({ top, left, width });
-  }, [compact]);
+  }, [triggerCompact, isField]);
 
   useLayoutEffect(() => {
     if (!isOpen) return;
@@ -107,10 +113,10 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
             maxWidth: 'min(100vw - 2rem, 20rem)',
           }}
         >
-          {options.map((option) => (
+          {options.map((option, index) => (
             <button
               type="button"
-              key={option.value}
+              key={`${option.value}-${option.label}-${index}`}
               role="option"
               aria-selected={current === option.value ? 'true' : 'false'}
               onClick={() => {
@@ -133,7 +139,7 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
     ) : null;
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${isField ? 'w-full' : ''} ${className}`}>
       <button
         ref={triggerRef}
         type="button"
@@ -141,36 +147,44 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
         aria-expanded={isOpen ? 'true' : 'false'}
         aria-haspopup="listbox"
         className={`flex items-center rounded-xl transition-all shadow-sm ${
-          compact
+          isField ? 'w-full justify-between gap-2 px-3 py-2.5 border text-left' : ''
+        } ${
+          triggerCompact
             ? 'space-x-1.5 px-2.5 py-2 border text-left'
-            : 'space-x-2 px-4 py-3 border-2'
+            : isField
+              ? ''
+              : 'space-x-2 px-4 py-3 border-2'
         } ${
           isOpen
             ? 'border-indigo-300/90 bg-gradient-to-r from-indigo-50/95 via-violet-50/90 to-indigo-50/95 ring-2 ring-violet-300/40'
             : 'border-stone-300/90 bg-white/90 hover:border-indigo-300/60 hover:bg-indigo-50/30'
         }`}
       >
-        <FiFilter
-          className={`shrink-0 ${compact ? 'h-4 w-4' : 'h-5 w-5'} ${
-            isOpen ? 'text-indigo-500' : 'text-indigo-400/80'
-          }`}
-        />
+        {!isField ? (
+          <FiFilter
+            className={`shrink-0 ${triggerCompact ? 'h-4 w-4' : 'h-5 w-5'} ${
+              isOpen ? 'text-indigo-500' : 'text-indigo-400/80'
+            }`}
+          />
+        ) : null}
+        {!isField ? (
+          <span
+            className={`font-medium shrink-0 ${triggerCompact ? 'text-xs' : 'text-sm'} ${
+              isOpen ? 'text-indigo-900' : 'text-stone-800'
+            }`}
+          >
+            {label}
+          </span>
+        ) : null}
         <span
-          className={`font-medium shrink-0 ${compact ? 'text-xs' : 'text-sm'} ${
-            isOpen ? 'text-indigo-900' : 'text-stone-800'
+          className={`truncate min-w-0 flex-1 ${triggerCompact || isField ? 'text-sm' : 'text-sm'} ${
+            isOpen ? 'text-violet-800' : isField ? 'text-stone-800' : 'text-stone-600'
           }`}
         >
-          {label}
-        </span>
-        <span
-          className={`truncate min-w-0 ${compact ? 'text-xs' : 'text-sm'} ${
-            isOpen ? 'text-violet-800' : 'text-stone-600'
-          }`}
-        >
-          {selectedOption?.label || (current ? current : 'Choisir…')}
+          {selectedOption?.label || (current ? current : isField ? 'Choisir…' : 'Choisir…')}
         </span>
         <FiChevronDown
-          className={`transition-transform shrink-0 ${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} ${
+          className={`transition-transform shrink-0 ${triggerCompact || isField ? 'h-4 w-4' : 'h-4 w-4'} ${
             isOpen ? 'rotate-180 text-indigo-600' : 'text-indigo-400/70'
           }`}
         />

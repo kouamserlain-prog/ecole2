@@ -1,14 +1,18 @@
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import { printHtmlDocument } from '@/lib/printHtml';
 import {
   ADMISSION_GRADE_FIELD_LABELS,
   type AdmissionGradeFieldKey,
-  admissionLevelRequiresGrades,
+  getAdmissionGradeKeysForLevel,
+  isAdmissionSecondaryLevel,
+  isLyceeAdmissionLevel,
 } from '@/utils/admissionGrades';
 
 export type AdmissionPrintFormData = {
   firstName?: string;
   lastName?: string;
+  matricule?: string;
   email?: string;
   phone?: string;
   dateOfBirth?: string;
@@ -52,18 +56,47 @@ function row(label: string, content: string, required = false): string {
   return `<tr><td class="label">${escapeHtml(label)}${required ? ' *' : ''}</td><td class="field">${content}</td></tr>`;
 }
 
+export type AdmissionFormExportOptions = {
+  schoolName?: string;
+  academicYear?: string;
+  form?: AdmissionPrintFormData;
+  bulletinFileName?: string;
+  logoUrl?: string | null;
+  reference?: string;
+  schoolSlug?: string;
+};
+
+function inscriptionOnlineUrl(schoolSlug?: string): string {
+  const base = typeof window !== 'undefined' ? window.location.origin : '';
+  const q = schoolSlug?.trim() ? `?school=${encodeURIComponent(schoolSlug.trim())}` : '';
+  return `${base}/inscription${q}`;
+}
+
 function buildPrintHtml(opts: {
   schoolName: string;
   academicYear: string;
   form?: AdmissionPrintFormData;
   bulletinFileName?: string;
   onlineUrl: string;
+  logoUrl?: string | null;
+  reference?: string;
 }): string {
   const f = opts.form ?? {};
   const generated = format(new Date(), "d MMMM yyyy", { locale: fr });
   const school = escapeHtml(opts.schoolName);
   const year = escapeHtml(opts.academicYear);
-  const showLycee = admissionLevelRequiresGrades(f.desiredLevel ?? '') || !f.desiredLevel?.trim();
+  const level = f.desiredLevel ?? '';
+  const showSecondary = isAdmissionSecondaryLevel(level) || !level.trim();
+  const showLycee = isLyceeAdmissionLevel(level) || !level.trim();
+  const gradeKeys = level.trim()
+    ? getAdmissionGradeKeysForLevel(level)
+    : ([
+        'gradeTerm1',
+        'gradeTerm2',
+        'gradeAnnualGeneral',
+        'gradeAnnualSpecific',
+        'gradeAnnualLiterary',
+      ] as AdmissionGradeFieldKey[]);
 
   const dob =
     f.dateOfBirth && /^\d{4}-\d{2}-\d{2}/.test(f.dateOfBirth)
@@ -72,18 +105,19 @@ function buildPrintHtml(opts: {
 
   const genderLabel = f.gender ? (GENDER_LABELS[f.gender] ?? f.gender) : '';
 
-  const gradeRows = (Object.keys(ADMISSION_GRADE_FIELD_LABELS) as AdmissionGradeFieldKey[])
+  const gradeRows = gradeKeys
     .map((key) => row(ADMISSION_GRADE_FIELD_LABELS[key], fieldValue(f[key], '4rem'), true))
     .join('');
 
   const bulletinNote = opts.bulletinFileName
     ? fieldValue(opts.bulletinFileName)
-    : '<span class="checkbox">☐</span> Copie jointe (PDF ou image) — obligatoire pour 2nde, 1ère, Terminale';
+    : '<span class="checkbox">☐</span> Copie jointe (PDF ou image) — obligatoire (6ème à Terminale)';
 
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8" /><title>Formulaire de pré-inscription</title><style>
     *{box-sizing:border-box}
     body{font-family:Georgia,'Times New Roman',serif;color:#0c0a09;margin:0;padding:18px 22px;font-size:11pt;line-height:1.45}
     .header{border-bottom:2px solid #b45309;padding-bottom:12px;margin-bottom:16px}
+    .logo{max-height:56px;max-width:220px;object-fit:contain;margin-bottom:10px;display:block}
     .school{font-size:9pt;color:#57534e;text-transform:uppercase;letter-spacing:.1em}
     h1{margin:8px 0 4px;font-size:18pt;color:#1c1917}
     .meta{font-size:9pt;color:#78716c}
@@ -103,9 +137,16 @@ function buildPrintHtml(opts: {
     @media print{body{padding:10mm 12mm}@page{margin:10mm}}
   </style></head><body>
   <div class="header">
+    ${
+      opts.logoUrl
+        ? `<img class="logo" src="${escapeHtml(opts.logoUrl)}" alt="${school}" />`
+        : ''
+    }
     <div class="school">${school}</div>
     <h1>Formulaire de pré-inscription</h1>
-    <div class="meta">Année scolaire ${year} · Document imprimé le ${escapeHtml(generated)}</div>
+    <div class="meta">Année scolaire ${year} · Document généré le ${escapeHtml(generated)}${
+      opts.reference ? ` · Dossier n° ${escapeHtml(opts.reference)}` : ''
+    }</div>
   </div>
   <p class="intro">Remplissez ce formulaire en lettres lisibles. Les champs marqués d’un astérisque (*) sont obligatoires.
   Vous pouvez aussi déposer votre demande en ligne : <strong>${escapeHtml(opts.onlineUrl)}</strong></p>
@@ -114,6 +155,7 @@ function buildPrintHtml(opts: {
   <table>
     ${row('Prénom', fieldValue(f.firstName), true)}
     ${row('Nom', fieldValue(f.lastName), true)}
+    ${row('Numéro matricule', fieldValue(f.matricule))}
     ${row('Date de naissance', fieldValue(dob), true)}
     ${row('Genre', fieldValue(genderLabel), true)}
     ${row('E-mail', fieldValue(f.email), true)}
@@ -128,9 +170,13 @@ function buildPrintHtml(opts: {
   </table>
 
   ${
+    showSecondary
+      ? `<h2>Résultats scolaires (6ème à Terminale)</h2>
+  <p class="lycee-note">${
     showLycee
-      ? `<h2>Résultats scolaires (lycée — 2nde, 1ère, Terminale)</h2>
-  <p class="lycee-note">À compléter uniquement pour une candidature en 2nde, 1ère ou Terminale (notes sur 20).</p>
+      ? 'Lycée (2nde, 1ère, Terminale) : cinq moyennes sur 20.'
+      : 'Collège (6ème à 3ème) : trois moyennes sur 20 (1er et 2e trimestre, moyenne générale annuelle).'
+  } Bulletin du 3e trimestre obligatoire.</p>
   <table>${gradeRows}</table>
   <table>${row('Bulletin du 3e trimestre', bulletinNote, true)}</table>`
       : ''
@@ -159,34 +205,38 @@ function buildPrintHtml(opts: {
   </body></html>`;
 }
 
-export function printAdmissionRegistrationForm(opts?: {
-  schoolName?: string;
-  academicYear?: string;
-  form?: AdmissionPrintFormData;
-  bulletinFileName?: string;
-}): void {
-  const html = buildPrintHtml({
+export function buildAdmissionRegistrationHtml(opts?: AdmissionFormExportOptions): string {
+  return buildPrintHtml({
     schoolName: opts?.schoolName?.trim() || 'Établissement scolaire',
     academicYear: opts?.academicYear?.trim() || '___________',
     form: opts?.form,
     bulletinFileName: opts?.bulletinFileName,
-    onlineUrl:
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/inscription`
-        : '/inscription',
+    logoUrl: opts?.logoUrl ?? null,
+    reference: opts?.reference?.trim(),
+    onlineUrl: inscriptionOnlineUrl(opts?.schoolSlug),
   });
+}
 
-  const win = window.open('', '_blank', 'noopener,noreferrer,width=900,height=900');
-  if (!win) {
-    throw new Error('Impossible d’ouvrir la fenêtre d’impression. Autorisez les pop-ups pour ce site.');
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  const trigger = () => {
-    win.print();
-    win.onafterprint = () => win.close();
-  };
-  setTimeout(trigger, 350);
+export function printAdmissionRegistrationForm(opts?: AdmissionFormExportOptions): void {
+  printHtmlDocument(buildAdmissionRegistrationHtml(opts), 350);
+}
+
+/** Télécharge la fiche pré-remplie (fichier HTML ouvrable dans le navigateur / imprimable en PDF). */
+export function downloadAdmissionRegistrationForm(opts: AdmissionFormExportOptions): void {
+  if (typeof document === 'undefined') return;
+  const html = buildAdmissionRegistrationHtml(opts);
+  const ref = opts.reference?.trim().replace(/[^\w-]+/g, '_');
+  const fileName = ref
+    ? `pre-inscription-${ref}.html`
+    : `pre-inscription-${opts.schoolSlug?.trim() || 'dossier'}.html`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }

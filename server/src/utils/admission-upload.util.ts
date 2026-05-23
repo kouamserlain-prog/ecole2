@@ -1,32 +1,18 @@
-import fs from 'fs';
 import type { Request } from 'express';
-import { getFileUrl } from '../middleware/upload.middleware';
+import { discardUploadedFile, persistUploadedFile } from './upload-persist.util';
 
-export function unlinkUploadedFile(file: Express.Multer.File | undefined): void {
-  if (file?.path && fs.existsSync(file.path)) {
-    try {
-      fs.unlinkSync(file.path);
-    } catch {
-      /* ignore */
-    }
-  }
-}
+export { discardUploadedFile as unlinkUploadedFile };
 
-export function term3ReportCardDataFromUpload(req: Request):
-  | {
-      term3ReportCardUrl: string;
-      term3ReportCardOriginalName: string;
-      term3ReportCardMimeType: string;
-    }
-  | null {
+export async function term3ReportCardDataFromUpload(req: Request): Promise<{
+  term3ReportCardUrl: string;
+  term3ReportCardOriginalName: string;
+  term3ReportCardMimeType: string;
+} | null> {
   const file = req.file;
   if (!file) return null;
-  const relative = getFileUrl(file.filename, 'admission-documents');
-  const host = req.get('host');
-  const protocol = req.protocol;
-  const fullUrl = host ? `${protocol}://${host}${relative}` : relative;
+  const term3ReportCardUrl = await persistUploadedFile(file, 'admission-documents', { req });
   return {
-    term3ReportCardUrl: fullUrl,
+    term3ReportCardUrl,
     term3ReportCardOriginalName: file.originalname,
     term3ReportCardMimeType: file.mimetype,
   };

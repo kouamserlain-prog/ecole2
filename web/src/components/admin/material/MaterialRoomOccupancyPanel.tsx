@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DEFAULT_SCHEDULE_START } from '../../../lib/scheduleTimeSlots';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../../services/api';
 import Card from '../../ui/Card';
@@ -25,7 +26,7 @@ const MaterialRoomOccupancyPanel: React.FC = () => {
   const [academicYear, setAcademicYear] = useState('');
   const [slotForm, setSlotForm] = useState({
     dayOfWeek: 1,
-    startTime: '08:00',
+    startTime: DEFAULT_SCHEDULE_START,
     endTime: '09:00',
     reason: '',
   });

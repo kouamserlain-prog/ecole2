@@ -44,13 +44,18 @@ export const generateToken = (userId: string, email: string, role: string): stri
       role: String(role),
     },
     jwtSecret(),
-    options
+    { ...options, algorithm: 'HS256' }
   );
 };
 
 export const verifyToken = (token: string) => {
-  return jwt.verify(token, jwtSecret());
+  return jwt.verify(token, jwtSecret(), { algorithms: ['HS256'] });
 };
+
+/** Matériel de signature pour jetons d’accès fichiers (dérivé du secret JWT). */
+export function uploadAccessSigningMaterial(): string {
+  return jwtSecret();
+}
 
 /** Vérifie un JWT d’accès et retourne un payload typé (sinon lève). */
 export function verifyAccessToken(token: string): JwtAccessPayload {

@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 import { ensureJwtConfiguration } from './utils/jwt.util';
+import { ensureDeviceApiKeyConfiguration } from './utils/device-api-key.util';
+import { useBlobStorage } from './utils/blob-storage.util';
 import { createApp } from './app/createApp';
 import { startScheduledMongoBackups } from './jobs/scheduled-mongodb-backup';
 import { startScheduledTuitionReminders } from './jobs/scheduled-tuition-reminders';
@@ -9,6 +11,7 @@ dotenv.config();
 
 try {
   ensureJwtConfiguration();
+  ensureDeviceApiKeyConfiguration();
 } catch (e) {
   console.error(e);
   if (process.env.NODE_ENV === 'production') {
@@ -16,18 +19,15 @@ try {
   }
 }
 
-if (
-  process.env.NODE_ENV === 'production' &&
-  (!process.env.NFC_API_KEY || process.env.NFC_API_KEY === 'nfc-device-key-2024')
-) {
-  console.warn(
-    '[Sécurité] NFC_API_KEY est absent ou vaut la valeur par défaut — définissez une clé forte en production.'
-  );
-}
-
 if (process.env.NODE_ENV === 'production' && !process.env.SENSITIVE_FIELD_ENCRYPTION_KEY?.trim()) {
   console.warn(
     '[Sécurité] SENSITIVE_FIELD_ENCRYPTION_KEY est absent — les champs élève sensibles (adresse, urgence, santé) sont stockés en clair. Définissez une clé forte et ré-enregistrez les données si besoin.'
+  );
+}
+
+if (process.env.VERCEL === '1' && !useBlobStorage()) {
+  console.error(
+    '[Uploads] BLOB_READ_WRITE_TOKEN manquant — les fichiers uploadés ne seront pas conservés après un redéploiement. Ajoutez un Blob store : Vercel → Storage → Blob → Connect to project.',
   );
 }
 

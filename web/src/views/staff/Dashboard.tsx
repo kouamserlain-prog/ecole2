@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -35,6 +35,7 @@ import DisciplineAdminModule from '../../components/admin/DisciplineAdminModule'
 import ExtracurricularAdminModule from '../../components/admin/ExtracurricularAdminModule';
 import OrientationAdminModule from '../../components/admin/OrientationAdminModule';
 import CommunicationHubModule from '../../components/admin/CommunicationHubModule';
+import NurseInternalMessaging from '../../components/health/NurseInternalMessaging';
 import MaterialManagementModule from '../../components/admin/material/MaterialManagementModule';
 import ReportsStatisticsModule from '../../components/admin/reports/ReportsStatisticsModule';
 import AdvancedAnalytics from '../../components/admin/AdvancedAnalytics';
@@ -56,11 +57,13 @@ import {
   getStaffTabsFromModules,
   hasPedagogyStaffAccess,
   isStaffModuleTab,
+  normalizeStaffModuleId,
   PEDAGOGY_STAFF_MODULE_IDS,
   resolveVisibleStaffModules,
   type StaffModuleId,
 } from '@/lib/staffModules';
 import { FiBookOpen, FiBriefcase, FiUser } from 'react-icons/fi';
+import { staffApi } from '@/services/api/staff.api';
 
 const StaffDashboard = () => {
   const { user, logout } = useAuth();
@@ -80,10 +83,24 @@ const StaffDashboard = () => {
   const badgeLabel = staffNavBadgeLabel(supportKind);
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || 'Collègue';
 
-  const visibleModules = useMemo(
-    () => resolveVisibleStaffModules(supportKind, sp?.visibleStaffModules, sp?.staffCategory),
-    [supportKind, sp?.visibleStaffModules, sp?.staffCategory],
-  );
+  const { data: workspace } = useQuery({
+    queryKey: ['staff-workspace'],
+    queryFn: staffApi.getWorkspace,
+    staleTime: 15_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+
+  const visibleModules = useMemo(() => {
+    const fromServer = (workspace as { visibleModules?: string[] } | undefined)?.visibleModules;
+    if (fromServer?.length) {
+      const normalized = fromServer
+        .map((id) => normalizeStaffModuleId(id))
+        .filter((id): id is StaffModuleId => id !== null);
+      return [...new Set(normalized)];
+    }
+    return resolveVisibleStaffModules(supportKind, sp?.visibleStaffModules, sp?.staffCategory);
+  }, [workspace, supportKind, sp?.visibleStaffModules, sp?.staffCategory]);
 
   const pedagogyApiEnabled = useMemo(() => hasPedagogyStaffAccess(visibleModules), [visibleModules]);
   const tabs = useMemo(() => getStaffTabsFromModules(visibleModules), [visibleModules]);
@@ -99,8 +116,22 @@ const StaffDashboard = () => {
     const fromUrl = searchParams.get('tab');
     if (isStaffModuleTab(fromUrl, visibleModules)) {
       setActiveTab(fromUrl);
+      return;
     }
-  }, [searchParams, visibleModules]);
+    if (fromUrl && !visibleModules.includes(fromUrl as StaffModuleId)) {
+      setActiveTab('overview');
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('tab');
+      const qs = params.toString();
+      router.replace(qs ? `/staff?${qs}` : '/staff', { scroll: false });
+    }
+  }, [searchParams, visibleModules, router]);
+
+  useEffect(() => {
+    if (!visibleModules.includes(activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [visibleModules, activeTab]);
 
   const changeTab = (tabId: StaffModuleId) => {
     setActiveTab(tabId);
@@ -116,6 +147,9 @@ const StaffDashboard = () => {
   const hasOperationalModules = visibleModules.length > 1;
   const isFinanceStaff = supportKind === 'BURSAR' || supportKind === 'ACCOUNTANT';
   const staffAdminReadOnly = !isFinanceStaff;
+  const staffUsesInternalMessaging = ['LIBRARIAN', 'NURSE', 'IT', 'MAINTENANCE', 'OTHER'].includes(
+    supportKind,
+  );
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -285,6 +319,9 @@ const StaffDashboard = () => {
           </StaffPedagogyShell>
         );
       case 'communication_mgmt':
+        if (staffUsesInternalMessaging) {
+          return <NurseInternalMessaging />;
+        }
         return (
           <StaffPedagogyShell readOnly={staffAdminReadOnly}>
             <CommunicationHubModule />
@@ -341,7 +378,7 @@ const StaffDashboard = () => {
       case 'notifications_mgmt':
         return (
           <StaffFinanceShell>
-            <AllNotifications />
+            <AllNotifications audience="staff" />
           </StaffFinanceShell>
         );
       case 'fees_mgmt':

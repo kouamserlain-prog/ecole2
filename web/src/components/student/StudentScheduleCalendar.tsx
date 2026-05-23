@@ -42,12 +42,9 @@ const DAYS = [
   { value: 6, label: 'Samedi', short: 'Sam' },
 ];
 
-const TIME_SLOTS = [
-  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
-  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
-  '17:00', '17:30', '18:00',
-];
+import { SCHEDULE_TIME_SLOTS } from '../../lib/scheduleTimeSlots';
+
+const TIME_SLOTS = SCHEDULE_TIME_SLOTS;
 
 const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ schedule }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());

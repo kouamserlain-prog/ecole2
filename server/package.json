@@ -13,7 +13,14 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "backup:mongodb": "tsx scripts/mongodb-backup.ts",
-    "backfill:digital-card-ids": "tsx scripts/backfill-student-digital-card-public-ids.ts"
+    "backfill:digital-card-ids": "tsx scripts/backfill-student-digital-card-public-ids.ts",
+    "test": "node --import tsx --test src/utils/password.util.test.ts src/utils/secure-compare.util.test.ts src/utils/school-access-guard.util.test.ts src/utils/upload-file-path.util.test.ts src/utils/upload-access-token.util.test.ts src/utils/admission-upload.util.test.ts src/utils/blob-storage.util.test.ts",
+    "test:integration": "tsx scripts/test-security-policies.ts",
+    "test:spaces": "tsx scripts/test-all-spaces-modules.ts",
+    "test:repair-db": "tsx scripts/repair-orphan-academic-records.ts",
+    "test:import-export": "tsx scripts/test-import-export-documents.ts",
+    "test:web-exports": "tsx --test ../web/src/lib/document-exports.test.ts",
+    "test:all": "npm run test && npm run build && npm run test:web-exports && npm run test:integration && npm run test:spaces && npm run test:import-export"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -21,6 +28,7 @@
   "dependencies": {
     "@otplib/preset-default": "^12.0.1",
     "@prisma/client": "^5.7.1",
+    "@vercel/blob": "^0.27.3",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "date-fns": "^2.30.0",

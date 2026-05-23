@@ -8,6 +8,7 @@ import parentRoutes from '../routes/parent.routes';
 import educatorRoutes from '../routes/educator.routes';
 import uploadRoutes from '../routes/upload.routes';
 import nfcRoutes from '../routes/nfc.routes';
+import faceRoutes from '../routes/face.routes';
 import pushRoutes from '../routes/push.routes';
 import admissionPublicRoutes from '../routes/admission.public.routes';
 import publicRoutes from '../routes/public.routes';
@@ -20,6 +21,9 @@ import elearningRoutes from '../routes/elearning.routes';
 import { getUploadsRootDir } from '../utils/uploads-path';
 import { getAllowedCorsOrigins } from '../utils/cors-origins.util';
 import { recordRequestMetric } from '../utils/performance-metrics.util';
+import { securityHeaders } from '../middleware/security-headers.middleware';
+import { protectSensitiveUploads } from '../middleware/protected-uploads.middleware';
+import { apiGlobalLimiter } from '../middleware/rate-limit.middleware';
 
 /**
  * Construit l’application Express (middlewares, routes, gestion d’erreurs).
@@ -33,6 +37,9 @@ export function createApp(): express.Express {
   }
 
   const corsAllowed = new Set(getAllowedCorsOrigins());
+
+  app.disable('x-powered-by');
+  app.use(securityHeaders);
 
   app.use(
     cors({
@@ -59,8 +66,8 @@ export function createApp(): express.Express {
         callback(null, false);
       },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-School-Id', 'X-NFC-API-Key'],
     })
   );
 
@@ -74,13 +81,12 @@ export function createApp(): express.Express {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    next();
-  });
+  const apiPrefix = process.env.VERCEL === '1' ? '' : '/api';
+  if (apiPrefix) {
+    app.use(apiPrefix, apiGlobalLimiter);
+  } else {
+    app.use(apiGlobalLimiter);
+  }
 
   app.use((req, res, next) => {
     const started = process.hrtime.bigint();
@@ -97,24 +103,46 @@ export function createApp(): express.Express {
   });
 
   const uploadsRoot = getUploadsRootDir();
-  app.use(
-    '/uploads',
-    express.static(uploadsRoot, {
-      dotfiles: 'deny',
-      index: false,
-      fallthrough: false,
-      setHeaders(res, filePath) {
-        const posix = filePath.replace(/\\/g, '/');
-        if (posix.includes('/identity-documents/') || posix.includes('/admission-documents/')) {
-          res.setHeader('Cache-Control', 'private, no-store, no-cache');
-        } else {
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-        }
-      },
-    })
-  );
+  const uploadsStatic = express.static(uploadsRoot, {
+    dotfiles: 'deny',
+    index: false,
+    fallthrough: true,
+    setHeaders(res, filePath) {
+      const posix = filePath.replace(/\\/g, '/');
+      if (posix.includes('/identity-documents/') || posix.includes('/admission-documents/')) {
+        res.setHeader('Cache-Control', 'private, no-store, no-cache');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+      }
+    },
+  });
 
-  const apiPrefix = process.env.VERCEL === '1' ? '' : '/api';
+  const serveUploads: express.RequestHandler = (req, res, next) => {
+    void protectSensitiveUploads(req, res, () => {
+      uploadsStatic(req, res, (err: unknown) => {
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code: unknown }).code)
+            : '';
+        if (code === 'ENOENT') {
+          if (!res.headersSent) res.status(404).end();
+          return;
+        }
+        if (err) next(err);
+      });
+    });
+  };
+
+  app.use('/uploads', serveUploads, (_req, res) => {
+    res.status(404).end();
+  });
+
+  /** En local, chemins BDD ou clients parfois en `/api/uploads/...` (aligné Vercel). */
+  if (apiPrefix === '/api') {
+    app.use('/api/uploads', serveUploads, (_req, res) => {
+      res.status(404).end();
+    });
+  }
 
   app.use(`${apiPrefix}/auth`, authRoutes);
   app.use(`${apiPrefix}/admin`, adminRoutes);
@@ -126,6 +154,7 @@ export function createApp(): express.Express {
   app.use(`${apiPrefix}/educator`, educatorRoutes);
   app.use(`${apiPrefix}/upload`, uploadRoutes);
   app.use(`${apiPrefix}/nfc`, nfcRoutes);
+  app.use(`${apiPrefix}/face`, faceRoutes);
   app.use(`${apiPrefix}/push`, pushRoutes);
   app.use(`${apiPrefix}/public/admissions`, admissionPublicRoutes);
   app.use(`${apiPrefix}/public`, publicRoutes);
@@ -150,11 +179,21 @@ export function createApp(): express.Express {
 
   app.use(
     (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code: unknown }).code)
+          : '';
+      if (code === 'ENOENT') {
+        if (!res.headersSent) res.status(404).end();
+        return;
+      }
       console.error('Erreur non gérée:', err);
       const message = err instanceof Error ? err.message : 'Erreur serveur';
-      res.status(500).json({
-        error: process.env.NODE_ENV === 'development' ? message : 'Erreur serveur',
-      });
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: process.env.NODE_ENV === 'development' ? message : 'Erreur serveur',
+        });
+      }
     }
   );
 

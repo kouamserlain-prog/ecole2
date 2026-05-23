@@ -59,6 +59,14 @@ const staffOnly = [authenticate, authorize('STAFF')];
 const libraryAccess = [...staffOnly, requireStaffModule('library')];
 const digitalAccess = [...staffOnly, requireLibraryOrDigitalModule];
 
+/** Ne pas bloquer /admissions, /pedagogy, etc. — ce routeur est monté à la racine /staff. */
+router.use((req, res, next) => {
+  if (!req.path.startsWith('/library')) {
+    return next('router');
+  }
+  next();
+});
+
 router.get('/library/users', ...libraryAccess, async (req, res) => {
   try {
     const { isActive } = req.query;

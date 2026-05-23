@@ -12,6 +12,10 @@ import {
   getStaffMemberModuleContext,
   type StaffModuleId,
 } from '../utils/staff-visible-modules.util';
+import {
+  absenceWhereRelationsExist,
+  gradeWhereRelationsExist,
+} from '../utils/prisma-relation-exists.util';
 
 const router = express.Router();
 
@@ -372,11 +376,12 @@ router.get('/grades', async (req, res) => {
     const { studentId, courseId, classId } = req.query;
     const grades = await prisma.grade.findMany({
       where: {
-        ...(studentId && typeof studentId === 'string' ? { studentId } : {}),
-        ...(courseId && typeof courseId === 'string' ? { courseId } : {}),
-        ...(classId && typeof classId === 'string'
-          ? { student: { classId } }
-          : {}),
+        AND: [
+          gradeWhereRelationsExist,
+          ...(studentId && typeof studentId === 'string' ? [{ studentId }] : []),
+          ...(courseId && typeof courseId === 'string' ? [{ courseId }] : []),
+          ...(classId && typeof classId === 'string' ? [{ student: { classId } }] : []),
+        ],
       },
       include: {
         student: { include: { user: { select: userPublic }, class: true } },
@@ -432,7 +437,9 @@ router.get('/grades/rankings', async (req, res) => {
 router.get('/grades/history/:studentId', async (req, res) => {
   try {
     const grades = await prisma.grade.findMany({
-      where: { studentId: req.params.studentId },
+      where: {
+        AND: [gradeWhereRelationsExist, { studentId: req.params.studentId }],
+      },
       include: { course: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -568,10 +575,13 @@ router.get('/absences', async (req, res) => {
     const { studentId, courseId, classId, date } = req.query;
     const absences = await prisma.absence.findMany({
       where: {
-        ...(studentId && typeof studentId === 'string' ? { studentId } : {}),
-        ...(courseId && typeof courseId === 'string' ? { courseId } : {}),
-        ...(classId && typeof classId === 'string' ? { student: { classId } } : {}),
-        ...(date && typeof date === 'string' ? { date: new Date(date) } : {}),
+        AND: [
+          absenceWhereRelationsExist,
+          ...(studentId && typeof studentId === 'string' ? [{ studentId }] : []),
+          ...(courseId && typeof courseId === 'string' ? [{ courseId }] : []),
+          ...(classId && typeof classId === 'string' ? [{ student: { classId } }] : []),
+          ...(date && typeof date === 'string' ? [{ date: new Date(date) }] : []),
+        ],
       },
       include: {
         student: { include: { user: { select: userPublic } } },

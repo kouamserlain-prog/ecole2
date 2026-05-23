@@ -98,6 +98,22 @@ export const staffApi = {
     const response = await api.patch(`/staff/admissions/${id}`, body);
     return response.data;
   },
+  enrollFromAdmission: async (
+    id: string,
+    data: {
+      password?: string;
+      studentId?: string;
+      classId?: string;
+      stateAssignment?: 'STATE_ASSIGNED' | 'NOT_STATE_ASSIGNED';
+      address?: string;
+      emergencyContact?: string;
+      emergencyPhone?: string;
+      medicalInfo?: string;
+    },
+  ) => {
+    const response = await api.post(`/staff/admissions/${id}/enroll`, data);
+    return response.data;
+  },
   getAppointmentsStats: async () => {
     const response = await api.get('/staff/appointments/stats');
     return response.data as { pending: number; today: number; confirmed: number };
@@ -188,6 +204,26 @@ export const staffApi = {
   },
   markHealthMessagingMessageRead: async (messageId: string) => {
     const response = await api.put(`/staff/health-messaging/${messageId}/read`);
+    return response.data;
+  },
+  getNotifications: async (params?: { unread?: boolean }) => {
+    const response = await api.get('/staff/notifications', { params });
+    return response.data;
+  },
+  markNotificationAsRead: async (notificationId: string) => {
+    const response = await api.put(`/staff/notifications/${notificationId}/read`);
+    return response.data;
+  },
+  markAllNotificationsAsRead: async () => {
+    const response = await api.put('/staff/notifications/read-all');
+    return response.data;
+  },
+  deleteNotification: async (notificationId: string) => {
+    const response = await api.delete(`/staff/notifications/${notificationId}`);
+    return response.data;
+  },
+  sendNotificationTest: async () => {
+    const response = await api.post('/staff/notifications/test');
     return response.data;
   },
 };

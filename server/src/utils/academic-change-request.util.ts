@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client';
 import prisma from './prisma';
 import { getStaffMemberModuleContext } from './staff-visible-modules.util';
+import { notifyParentsNewGrade } from './parent-notify.util';
 
 export type GradePayload = {
   studentId: string;
@@ -348,6 +349,23 @@ export async function applyApprovedRequest(requestId: string) {
       data: { appliedAt: new Date() },
     });
   });
+
+  if (
+    request.target === 'GRADE' &&
+    (request.kind === 'CREATE' || request.kind === 'UPDATE')
+  ) {
+    const gradePayload = payload as GradePayload;
+    const course = await prisma.course.findUnique({
+      where: { id: gradePayload.courseId },
+      select: { name: true },
+    });
+    void notifyParentsNewGrade({
+      studentId: gradePayload.studentId,
+      courseName: course?.name ?? 'matière',
+      score: gradePayload.score,
+      maxScore: gradePayload.maxScore,
+    }).catch((err) => console.error('notifyParentsNewGrade:', err));
+  }
 
   return prisma.academicChangeRequest.findUnique({ where: { id: requestId } });
 }

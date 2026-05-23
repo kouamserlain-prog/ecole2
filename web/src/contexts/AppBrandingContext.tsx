@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { publicApi } from '@/services/api/public';
 import { resolveUploadPublicUrl } from '@/lib/uploadsPublicUrl';
+import { applyBrandingToDocument } from '@/lib/applyBrandingDocument';
+import type { HomePageImagesRecord } from '@/lib/homePageImages.types';
 
 export type AppBrandingPayload = {
   navigationLogoUrl: string | null;
@@ -24,6 +26,8 @@ export type AppBrandingPayload = {
   schoolEmail: string | null;
   schoolWebsite: string | null;
   schoolPrincipal: string | null;
+  studiesDirectorPhotoUrl: string | null;
+  homePageImages: HomePageImagesRecord;
 };
 
 type AppBrandingContextValue = {
@@ -34,6 +38,7 @@ type AppBrandingContextValue = {
   navigationLogoAbsolute: string | null;
   loginLogoAbsolute: string | null;
   faviconAbsolute: string | null;
+  studiesDirectorPhotoAbsolute: string | null;
 };
 
 const DEFAULT_BRANDING: AppBrandingPayload = {
@@ -48,6 +53,8 @@ const DEFAULT_BRANDING: AppBrandingPayload = {
   schoolEmail: null,
   schoolWebsite: null,
   schoolPrincipal: null,
+  studiesDirectorPhotoUrl: null,
+  homePageImages: {},
 };
 
 const AppBrandingContext = createContext<AppBrandingContextValue | null>(null);
@@ -73,6 +80,11 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
         schoolEmail: data.schoolEmail ?? null,
         schoolWebsite: data.schoolWebsite ?? null,
         schoolPrincipal: data.schoolPrincipal ?? null,
+        studiesDirectorPhotoUrl: data.studiesDirectorPhotoUrl ?? null,
+        homePageImages:
+          data.homePageImages && typeof data.homePageImages === 'object' && !Array.isArray(data.homePageImages)
+            ? (data.homePageImages as HomePageImagesRecord)
+            : {},
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chargement de la charte impossible';
@@ -89,15 +101,9 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const href = resolveUploadPublicUrl(branding.faviconUrl);
-    if (!href || typeof document === 'undefined') return;
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.href = href;
-  }, [branding.faviconUrl]);
+    const title = branding.appTitle?.trim() || null;
+    applyBrandingToDocument(href, title);
+  }, [branding.faviconUrl, branding.appTitle]);
 
   const navigationLogoAbsolute = useMemo(
     () => resolveUploadPublicUrl(branding.navigationLogoUrl),
@@ -112,6 +118,10 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
     () => resolveUploadPublicUrl(branding.faviconUrl),
     [branding.faviconUrl]
   );
+  const studiesDirectorPhotoAbsolute = useMemo(
+    () => resolveUploadPublicUrl(branding.studiesDirectorPhotoUrl),
+    [branding.studiesDirectorPhotoUrl]
+  );
 
   const value = useMemo<AppBrandingContextValue>(
     () => ({
@@ -122,6 +132,7 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
       navigationLogoAbsolute,
       loginLogoAbsolute,
       faviconAbsolute,
+      studiesDirectorPhotoAbsolute,
     }),
     [
       branding,
@@ -131,6 +142,7 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
       navigationLogoAbsolute,
       loginLogoAbsolute,
       faviconAbsolute,
+      studiesDirectorPhotoAbsolute,
     ]
   );
 
@@ -145,6 +157,7 @@ const FALLBACK_CTX: AppBrandingContextValue = {
   navigationLogoAbsolute: null,
   loginLogoAbsolute: null,
   faviconAbsolute: null,
+  studiesDirectorPhotoAbsolute: null,
 };
 
 /** Retourne un contexte par défaut si le provider est absent (ex. tests). */

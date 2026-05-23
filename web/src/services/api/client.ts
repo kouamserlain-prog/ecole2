@@ -48,6 +48,17 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (typeof window !== 'undefined') {
+    const schoolId = localStorage.getItem('activeSchoolId');
+    if (schoolId) {
+      if (config.headers instanceof AxiosHeaders) {
+        config.headers.set('X-School-Id', schoolId);
+      } else {
+        config.headers = config.headers ?? {};
+        (config.headers as Record<string, string>)['X-School-Id'] = schoolId;
+      }
+    }
+  }
   return config;
 });
 

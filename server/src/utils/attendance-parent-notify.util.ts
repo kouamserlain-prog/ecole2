@@ -175,7 +175,7 @@ export async function notifyParentsOfAttendanceChange(
         title: inAppTitle,
         content: inAppContent,
         email: null,
-        link: '/parent',
+        link: '/parent?tab=absences',
       });
     }
 

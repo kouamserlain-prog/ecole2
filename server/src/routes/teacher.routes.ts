@@ -4,6 +4,7 @@ import prisma from '../utils/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { decryptParentTeacherAppointmentRow } from '../utils/student-sensitive-crypto.util';
 import { notifyUsersImportant } from '../utils/notify-important.util';
+import { notifyParentsNewAssignment } from '../utils/parent-notify.util';
 import { appointmentInclude } from '../utils/parent-teacher-appointment.util';
 import { punchStudentCourseAttendance } from '../utils/attendance-punch.util';
 import { EVALUATION_TYPE_VALUES } from '../utils/evaluation-type.util';
@@ -973,7 +974,9 @@ router.post(
       });
 
       // Créer les entrées pour chaque élève de la classe
+      const classStudentIds: string[] = [];
       if (course.class?.students) {
+        classStudentIds.push(...course.class.students.map((s) => s.id));
         await Promise.all(
           course.class.students.map((student) =>
             prisma.studentAssignment.create({
@@ -984,6 +987,15 @@ router.post(
             })
           )
         );
+      }
+
+      if (classStudentIds.length > 0) {
+        void notifyParentsNewAssignment({
+          studentIds: classStudentIds,
+          title,
+          courseName: course.name,
+          dueDate: new Date(dueDate),
+        }).catch((err) => console.error('notifyParentsNewAssignment:', err));
       }
 
       res.status(201).json(assignment);
@@ -1479,7 +1491,7 @@ router.get('/messaging/contacts', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Profil enseignant non trouvé' });
     }
 
-    const [admins, teachers, courses] = await Promise.all([
+    const [admins, teachers, staffUsers, educators, courses] = await Promise.all([
       prisma.user.findMany({
         where: { role: 'ADMIN', isActive: true },
         select: { id: true, firstName: true, lastName: true, email: true, role: true },
@@ -1491,6 +1503,18 @@ router.get('/messaging/contacts', async (req: AuthRequest, res) => {
         select: { id: true, firstName: true, lastName: true, email: true, role: true },
         orderBy: { lastName: 'asc' },
         take: 200,
+      }),
+      prisma.user.findMany({
+        where: { role: 'STAFF', isActive: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        orderBy: { lastName: 'asc' },
+        take: 200,
+      }),
+      prisma.user.findMany({
+        where: { role: 'EDUCATOR', isActive: true },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        orderBy: { lastName: 'asc' },
+        take: 100,
       }),
       prisma.course.findMany({
         where: { teacherId },
@@ -1539,6 +1563,8 @@ router.get('/messaging/contacts', async (req: AuthRequest, res) => {
     res.json({
       admins,
       teachers,
+      staff: staffUsers,
+      educators,
       parents: [...parentMap.values()],
     });
   } catch (error: any) {
@@ -1570,8 +1596,8 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
     const {
       createInternalPlatformMessage,
       teacherTeachesClass,
-      teacherLinkedToParentUser,
       makeDmThreadKey,
+      isPlatformMessagingRole,
     } = await import('../utils/internal-messaging.util');
 
     const validCategories = [
@@ -1643,16 +1669,7 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Destinataire introuvable' });
     }
 
-    if (recv.role === 'TEACHER' && recv.id !== req.user!.id) {
-      /* autorisé : collègue */
-    } else if (recv.role === 'ADMIN') {
-      /* ok */
-    } else if (recv.role === 'PARENT') {
-      const ok = await teacherLinkedToParentUser(req.user!.id, recv.id);
-      if (!ok) {
-        return res.status(403).json({ error: 'Ce parent n’est pas rattaché à une de vos classes.' });
-      }
-    } else {
+    if (!isPlatformMessagingRole(recv.role)) {
       return res.status(400).json({ error: 'Destinataire non autorisé pour la messagerie enseignant.' });
     }
 

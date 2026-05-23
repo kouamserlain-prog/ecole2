@@ -7,6 +7,7 @@ import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
 import toast from 'react-hot-toast';
 import NFCScanner from '../ui/NFCScanner';
+import FacePunchPanel from '../face/FacePunchPanel';
 import { FiUserCheck, FiCheck, FiX, FiClock, FiWifi } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
@@ -208,7 +209,7 @@ export default function PointageEleves({ embedded = false }: PointageElevesProps
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Pointage des élèves</h2>
               <p className="text-gray-600">
-                Deux pointages par cours : <strong>entrée</strong> (avant / début) puis <strong>sortie</strong> (après le cours). Carte NFC, empreinte ou saisie manuelle.
+                Deux pointages par cours : <strong>entrée</strong> puis <strong>sortie</strong>. Carte NFC, empreinte, reconnaissance faciale ou saisie manuelle.
               </p>
             </div>
           )}
@@ -306,6 +307,18 @@ export default function PointageEleves({ embedded = false }: PointageElevesProps
             </div>
           )}
         </Card>
+      )}
+
+      {selectedCourseId && (
+        <FacePunchPanel
+          courseId={selectedCourseId}
+          date={selectedDate}
+          personType="STUDENT"
+          notifyParentsOnSave={notifyParentsOnSave}
+          onPunchSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['admin-absences'] });
+          }}
+        />
       )}
 
       {selectedCourseId && courseDetail && (

@@ -15,6 +15,7 @@ import {
   studentApi,
   teacherApi,
 } from "@/services/api";
+import { staffApi } from "@/services/api/staff.api";
 
 export type AppNotification = {
   id: string;
@@ -64,7 +65,7 @@ export default function NotificationCenter({
         case "EDUCATOR":
           return educatorApi.getNotifications();
         case "STAFF":
-          return [];
+          return staffApi.getNotifications();
         default:
           return [];
       }
@@ -93,7 +94,7 @@ export default function NotificationCenter({
         case "EDUCATOR":
           return educatorApi.markNotificationAsRead(id);
         case "STAFF":
-          return Promise.resolve();
+          return staffApi.markNotificationAsRead(id);
       }
     },
     onSuccess: () => {
@@ -118,7 +119,7 @@ export default function NotificationCenter({
         case "EDUCATOR":
           return educatorApi.markAllNotificationsAsRead();
         case "STAFF":
-          return Promise.resolve();
+          return staffApi.markAllNotificationsAsRead();
       }
     },
     onSuccess: () => {
@@ -250,6 +251,17 @@ export default function NotificationCenter({
               <div className="border-t border-stone-200/80 bg-stone-50/50 px-3 py-2">
                 <Link
                   href="/admin/notifications"
+                  onClick={() => setOpen(false)}
+                  className="block w-full rounded-xl px-2 py-2 text-center text-xs font-semibold text-amber-900 hover:bg-amber-50/80"
+                >
+                  Voir toutes les notifications
+                </Link>
+              </div>
+            ) : null}
+            {role === "PARENT" ? (
+              <div className="border-t border-stone-200/80 bg-stone-50/50 px-3 py-2">
+                <Link
+                  href="/parent?tab=notifications"
                   onClick={() => setOpen(false)}
                   className="block w-full rounded-xl px-2 py-2 text-center text-xs font-semibold text-amber-900 hover:bg-amber-50/80"
                 >

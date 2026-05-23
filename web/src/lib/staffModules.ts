@@ -148,6 +148,56 @@ export const STAFF_MODULE_IDS = [
 
 export type StaffModuleId = (typeof STAFF_MODULE_IDS)[number];
 
+const STAFF_MODULE_SET = new Set<string>(STAFF_MODULE_IDS);
+
+const STAFF_MODULE_ALIASES: Record<string, StaffModuleId> = {
+  accounting: 'accounting_mgmt',
+  fees: 'fees_mgmt',
+  'tuition-fees': 'tuition_fees_mgmt',
+  payments: 'payments_mgmt',
+  administrative: 'administrative_mgmt',
+  hr: 'hr_mgmt',
+  library: 'library_mgmt',
+  material: 'material_mgmt',
+  reports: 'reports_mgmt',
+  analytics: 'analytics_mgmt',
+  schedule: 'schedule_mgmt',
+  pointage: 'pointage_mgmt',
+  attendance: 'attendance_mgmt',
+  communication: 'communication_mgmt',
+  students: 'students_mgmt',
+  classes: 'classes_mgmt',
+  teachers: 'teachers_mgmt',
+  educators: 'educators_mgmt',
+  'staff-personnel': 'staff_mgmt',
+  'parent-guardians': 'parents_mgmt',
+  pedagogical: 'pedagogical_tracking',
+  discipline: 'discipline_mgmt',
+  extracurricular: 'extracurricular_mgmt',
+  orientation: 'orientation_mgmt',
+  grading: 'grading_mgmt',
+  academic: 'academic_mgmt',
+  management: 'academic_mgmt',
+  notifications: 'notifications_mgmt',
+};
+
+export function normalizeStaffModuleId(raw: unknown): StaffModuleId | null {
+  const id = String(raw ?? '').trim();
+  if (!id) return null;
+  if (STAFF_MODULE_SET.has(id)) return id as StaffModuleId;
+  return STAFF_MODULE_ALIASES[id] ?? null;
+}
+
+/** Liste enregistrée en base (ids staff canoniques + overview). */
+export function sanitizeStaffModulesForSave(modules: Iterable<unknown>): StaffModuleId[] {
+  const set = new Set<StaffModuleId>(['overview']);
+  for (const raw of modules) {
+    const id = normalizeStaffModuleId(raw);
+    if (id && id !== 'overview') set.add(id);
+  }
+  return [...set];
+}
+
 /** Modules pédagogiques réutilisant les écrans admin (proxy /staff/pedagogy). */
 export const PEDAGOGY_STAFF_MODULE_IDS: StaffModuleId[] = [
   'students_mgmt',
@@ -273,7 +323,7 @@ export const STAFF_MODULE_DESCRIPTIONS: Record<StaffModuleId, string> = {
 
   counter: 'Recherche élève, encaissement espèces ou virement au guichet',
 
-  admissions: 'Pré-inscriptions, suivi des dossiers et classe proposée',
+  admissions: 'Pré-inscriptions, traitement des dossiers et inscription définitive (compte élève)',
 
   appointments: 'Planning des entretiens parents–enseignants',
 
@@ -876,6 +926,7 @@ export function getEligibleModulesForSupportKind(kind: SupportStaffKindKey): Sta
 
       return [
         'overview',
+        'notifications_mgmt',
         'counter',
         'admissions',
         'appointments',
@@ -931,6 +982,7 @@ export function getEligibleModulesForSupportKind(kind: SupportStaffKindKey): Sta
 
       return [
         'overview',
+        'notifications_mgmt',
         'admissions',
         'appointments',
         'student_registry',
@@ -949,19 +1001,31 @@ export function getEligibleModulesForSupportKind(kind: SupportStaffKindKey): Sta
 
     case 'NURSE':
 
-      return ['overview', 'health_log'];
+      return ['overview', 'notifications_mgmt', 'health_log', 'communication_mgmt'];
 
     case 'LIBRARIAN':
 
-      return ['overview', 'library', 'digital_library'];
+      return ['overview', 'notifications_mgmt', 'library', 'digital_library', 'communication_mgmt'];
 
     case 'IT':
 
-      return ['overview', 'it_requests'];
+      return ['overview', 'notifications_mgmt', 'it_requests', 'communication_mgmt'];
 
     case 'MAINTENANCE':
 
-      return ['overview', 'maintenance_requests'];
+      return ['overview', 'notifications_mgmt', 'maintenance_requests', 'communication_mgmt'];
+
+    case 'OTHER':
+
+      return [
+        'overview',
+        'notifications_mgmt',
+        'counter',
+        'admissions',
+        'appointments',
+        'student_registry',
+        'communication_mgmt',
+      ];
 
     default:
 
@@ -992,24 +1056,23 @@ export function resolveVisibleStaffModules(
     return ['overview'];
   }
 
-  const eligible = getEligibleModulesForSupportKind(kind);
-  if (!stored?.length) return eligible;
+  if (!stored?.length) {
+    return getEligibleModulesForSupportKind(kind);
+  }
 
-  let picked = stored.filter((id): id is StaffModuleId =>
-    (STAFF_MODULE_IDS as readonly string[]).includes(id),
-  );
-  if (!picked.includes('overview')) picked.unshift('overview');
-
-  const merged = new Set<StaffModuleId>([...eligible, ...picked]);
-  return [...merged];
+  return sanitizeStaffModulesForSave(stored);
 }
 
 
 
 export function getStaffTabsFromModules(moduleIds: StaffModuleId[]): StaffTabMeta[] {
-
-  return moduleIds.map((id) => ({ id, ...TAB_META[id] }));
-
+  return moduleIds
+    .map((id) => {
+      const meta = TAB_META[id];
+      if (!meta) return null;
+      return { id, ...meta };
+    })
+    .filter((tab): tab is StaffTabMeta => tab !== null);
 }
 
 

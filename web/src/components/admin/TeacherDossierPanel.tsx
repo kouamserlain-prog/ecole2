@@ -1,6 +1,5 @@
-'use client';
-
 import { useState } from 'react';
+import { DEFAULT_SCHEDULE_START } from '../../lib/scheduleTimeSlots';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import Card from '../ui/Card';
@@ -63,7 +62,7 @@ const TeacherDossierPanel: React.FC<TeacherDossierPanelProps> = ({ teacherId }) 
   });
   const [availForm, setAvailForm] = useState({
     dayOfWeek: '1',
-    startTime: '08:00',
+    startTime: DEFAULT_SCHEDULE_START,
     endTime: '09:00',
     label: '',
   });
@@ -178,7 +177,7 @@ const TeacherDossierPanel: React.FC<TeacherDossierPanelProps> = ({ teacherId }) 
     onSuccess: () => {
       invalidate();
       toast.success('Disponibilité ajoutée');
-      setAvailForm({ dayOfWeek: '1', startTime: '08:00', endTime: '09:00', label: '' });
+      setAvailForm({ dayOfWeek: '1', startTime: DEFAULT_SCHEDULE_START, endTime: '09:00', label: '' });
     },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
   });

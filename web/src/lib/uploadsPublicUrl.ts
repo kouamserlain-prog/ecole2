@@ -25,7 +25,47 @@ function normalizeUploadedAssetPathForClient(relativePath: string): string {
   ) {
     return `/api${relativePath}`;
   }
+  /** Dev local : Express sert `/uploads` ; normalise les URLs enregistrées en `/api/uploads`. */
+  if (
+    relativePath.startsWith('/api/uploads/') &&
+    process.env.NEXT_PUBLIC_EXPRESS_UPLOADS_VIA_API_PREFIX !== '1'
+  ) {
+    return relativePath.replace(/^\/api/, '');
+  }
   return relativePath;
+}
+
+/** Origine des uploads en SSR (layout, métadonnées) — sans `window`. */
+export function getServerOriginForUploads(): string {
+  const uploadsOrigin = trimSlash(process.env.NEXT_PUBLIC_UPLOADS_ORIGIN || '');
+  if (uploadsOrigin.startsWith('http://') || uploadsOrigin.startsWith('https://')) {
+    return uploadsOrigin;
+  }
+
+  const api = trimSlash(process.env.NEXT_PUBLIC_API_URL || '');
+  if (api.startsWith('http://') || api.startsWith('https://')) {
+    const withoutApi = api.replace(/\/api\/?$/i, '');
+    const base = trimSlash(withoutApi);
+    return base.length > 0 ? base : trimSlash(api);
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/^https?:\/\//, '')}`;
+  }
+
+  return 'http://localhost:5000';
+}
+
+export function resolveUploadPublicUrlForServer(relativePath: string | null | undefined): string | null {
+  if (!relativePath) return null;
+  if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
+    return relativePath;
+  }
+  const origin = getServerOriginForUploads();
+  const path = normalizeUploadedAssetPathForClient(
+    relativePath.startsWith('/') ? relativePath : `/${relativePath}`,
+  );
+  return `${origin}${path}`;
 }
 
 export function getApiOriginForUploads(): string {

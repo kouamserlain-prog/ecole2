@@ -74,6 +74,8 @@ const TeacherInternalMessaging: React.FC = () => {
     | {
         admins?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
         teachers?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
+        staff?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
+        educators?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
         parents?: { id: string; firstName: string; lastName: string; email: string; role: string; _label?: string }[];
       }
     | undefined;
@@ -290,6 +292,20 @@ const TeacherInternalMessaging: React.FC = () => {
                       </option>
                     ))}
                   </optgroup>
+                  <optgroup label="Personnel">
+                    {(contacts?.staff ?? []).map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Éducateurs">
+                    {(contacts?.educators ?? []).map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
             )}
@@ -394,7 +410,8 @@ const TeacherInternalMessaging: React.FC = () => {
           <div className="flex flex-col items-center justify-center flex-1 text-center text-stone-500 py-12">
             <p className="text-sm">Sélectionnez une conversation ou créez un nouveau message.</p>
             <p className="text-xs mt-2 max-w-md">
-              Messagerie interne : administration, collègues, familles, ou diffusion groupée aux parents d’une de vos
+              Messagerie interne : administration, collègues, familles, personnel et éducateurs, ou diffusion groupée aux
+              parents d’une de vos
               classes. Les notifications et le push web vous alertent en temps quasi réel (actualisation automatique).
             </p>
           </div>

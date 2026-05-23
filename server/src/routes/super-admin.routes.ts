@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import type { Role } from '@prisma/client';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import prisma from '../utils/prisma';
-import { hashPassword } from '../utils/password.util';
+import { hashPassword, assertPasswordPolicy, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { getAppBrandingDelegate, APP_BRANDING_ID } from '../utils/app-branding-prisma.util';
 import { runMongoBackup } from '../utils/mongodb-backup.util';
 import { getMetricsSummary } from '../utils/performance-metrics.util';
@@ -158,7 +158,7 @@ router.post(
   '/users',
   [
     body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 8 }),
+    body('password').custom(assertPasswordPolicy).withMessage(PASSWORD_POLICY_HINT),
     body('firstName').trim().notEmpty(),
     body('lastName').trim().notEmpty(),
     body('role').isIn([...PLATFORM_ROLES]),

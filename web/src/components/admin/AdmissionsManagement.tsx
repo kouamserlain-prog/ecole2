@@ -8,7 +8,6 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
 import AdmissionGradesDisplay from '../admission/AdmissionGradesDisplay';
-import { admissionLevelRequiresGrades } from '@/utils/admissionGrades';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import toast from 'react-hot-toast';
@@ -371,6 +370,12 @@ const AdmissionsManagement = () => {
                 <FiBook className="w-4 h-4 text-gray-400" />
                 Niveau souhaité : {selected.desiredLevel} ({selected.academicYear})
               </p>
+              {selected.matricule && (
+                <p>
+                  <span className="text-gray-500">Matricule déclaré :</span>{' '}
+                  <span className="font-mono font-medium">{selected.matricule}</span>
+                </p>
+              )}
               {selected.previousSchool && (
                 <p>
                   <span className="text-gray-500">Établissement précédent :</span> {selected.previousSchool}
@@ -388,9 +393,7 @@ const AdmissionsManagement = () => {
                   {selected.motivation}
                 </p>
               )}
-              {admissionLevelRequiresGrades(selected.desiredLevel) && (
-                <AdmissionGradesDisplay row={selected} />
-              )}
+              <AdmissionGradesDisplay row={selected} />
             </div>
 
             <div>

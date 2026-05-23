@@ -5,8 +5,10 @@ import { useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AppBrandingProvider } from "@/contexts/AppBrandingContext";
+import { SchoolProvider } from "@/contexts/SchoolContext";
 import ServerConnectionError from "@/components/ServerConnectionError";
 import PushNotificationsBootstrap from "@/components/PushNotificationsBootstrap";
+import ServiceWorkerDevCleanup from "@/components/ServiceWorkerDevCleanup";
 import OfflineBanner from "@/components/OfflineBanner";
 import OfflinePrefetch from "@/components/OfflinePrefetch";
 import "@/utils/debug";
@@ -17,6 +19,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <AppBrandingProvider>
         <AuthProvider>
+          <SchoolProvider>
+          <ServiceWorkerDevCleanup />
           <OfflinePrefetch />
           <OfflineBanner />
           <PushNotificationsBootstrap />
@@ -37,6 +41,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           }}
           />
           <ServerConnectionError />
+          </SchoolProvider>
         </AuthProvider>
       </AppBrandingProvider>
     </QueryClientProvider>

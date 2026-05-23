@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import HomeReveal from './HomeReveal';
 import { FiAward } from 'react-icons/fi';
+import { useAppBranding } from '@/contexts/AppBrandingContext';
 
 const DIRECTOR_NAME = "N'GUESSAN AMELA APOLLINE";
 
@@ -17,7 +18,13 @@ const DIRECTOR_MESSAGE_PARAGRAPHS = [
   'Ensemble, poursuivons notre engagement pour une école d’excellence, de discipline et de réussite.',
 ];
 
+const DEFAULT_DIRECTOR_PHOTO = '/home/directrice-etudes.png';
+
 export default function HomeDirectorSection() {
+  const { studiesDirectorPhotoAbsolute } = useAppBranding();
+  const photoSrc = studiesDirectorPhotoAbsolute ?? DEFAULT_DIRECTOR_PHOTO;
+  const useCustomPhoto = Boolean(studiesDirectorPhotoAbsolute);
+
   return (
     <section
       id="mot-directrice"
@@ -29,13 +36,22 @@ export default function HomeDirectorSection() {
           <div className="grid lg:grid-cols-12 lg:items-stretch">
             <div className="relative h-full border-b border-stone-200/80 lg:col-span-4 lg:border-b-0 lg:border-r">
               <div className="relative aspect-[3/4] w-full max-w-sm overflow-hidden sm:mx-auto lg:mx-0 lg:aspect-auto lg:h-full lg:max-w-none lg:min-h-[28rem]">
-                <Image
-                  src="/home/directrice-etudes.png"
-                  alt={`Portrait de ${DIRECTOR_NAME}, Directrice des Études du Collège Privé Tranlefet de Bouaké`}
-                  fill
-                  className="object-cover object-[center_18%]"
-                  sizes="(max-width: 1024px) 100vw, 33vw"
-                />
+                {useCustomPhoto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={photoSrc}
+                    alt={`Portrait de ${DIRECTOR_NAME}, Directrice des Études du Collège Privé Tranlefet de Bouaké`}
+                    className="absolute inset-0 h-full w-full object-cover object-[center_18%]"
+                  />
+                ) : (
+                  <Image
+                    src={DEFAULT_DIRECTOR_PHOTO}
+                    alt={`Portrait de ${DIRECTOR_NAME}, Directrice des Études du Collège Privé Tranlefet de Bouaké`}
+                    fill
+                    className="object-cover object-[center_18%]"
+                    sizes="(max-width: 1024px) 100vw, 33vw"
+                  />
+                )}
                 <div
                   className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-tran-mauve-950 via-tran-mauve-950/80 to-transparent sm:h-40"
                   aria-hidden

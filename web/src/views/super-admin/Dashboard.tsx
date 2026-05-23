@@ -136,7 +136,7 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="mb-8 flex flex-wrap gap-2">
+          <div className="mb-8 flex flex-wrap gap-2 rounded-2xl bg-black p-2 shadow-lg ring-1 ring-black/20">
             {navItems.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -144,8 +144,8 @@ export default function SuperAdminDashboard() {
                 onClick={() => setTab(id)}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
                   tab === id
-                    ? 'bg-cptb-blue text-white shadow-md'
-                    : 'bg-white text-stone-700 ring-1 ring-stone-200 hover:ring-cptb-blue/30'
+                    ? 'bg-white text-black shadow-md'
+                    : 'text-zinc-400 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 <Icon className="h-4 w-4" />

@@ -2,53 +2,38 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { getPublicUploadsUrlPrefix, getUploadsRootDir } from '../utils/uploads-path';
+import {
+  buildSafeUploadFilename,
+  folderForUploadField,
+  useBlobStorage,
+} from '../utils/blob-storage.util';
 
 const uploadsDir = getUploadsRootDir();
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+if (!useBlobStorage()) {
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+  } catch (err) {
+    console.error('uploads: impossible de créer le répertoire racine', err);
   }
-} catch (err) {
-  console.error('uploads: impossible de créer le répertoire racine', err);
 }
 
-// Configuration du stockage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let folder = 'general';
-    
-    if (file.fieldname === 'avatar') {
-      folder = 'avatars';
-    } else if (file.fieldname === 'assignment') {
-      folder = 'assignments';
-    } else if (file.fieldname === 'course') {
-      folder = 'courses';
-    } else if (file.fieldname === 'identityDocument') {
-      folder = 'identity-documents';
-    } else if (file.fieldname === 'teacherAdminDocument') {
-      folder = 'teacher-admin-documents';
-    } else if (file.fieldname === 'branding') {
-      folder = 'branding';
-    } else if (file.fieldname === 'digitalLibrary') {
-      folder = 'digital-library';
-    } else if (file.fieldname === 'elearning') {
-      folder = 'elearning';
-    } else if (file.fieldname === 'term3ReportCard') {
-      folder = 'admission-documents';
-    }
-    
+const diskStorage = multer.diskStorage({
+  destination: (_req, file, cb) => {
+    const folder = folderForUploadField(file.fieldname);
     const dir = path.join(uploadsDir, folder);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     cb(null, dir);
   },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  filename: (_req, file, cb) => {
+    cb(null, buildSafeUploadFilename(file.fieldname, file.originalname));
   },
 });
+
+const storage = useBlobStorage() ? multer.memoryStorage() : diskStorage;
 
 // Filtre des types de fichiers
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -168,14 +153,7 @@ export const admissionReportCardUpload = multer({
   },
 });
 
-// Middleware pour servir les fichiers statiques
 export const getFileUrl = (filename: string, folder: string = 'general'): string => {
   const prefix = getPublicUploadsUrlPrefix();
   return `${prefix}/${folder}/${filename}`;
 };
-
-
-
-
-
-

@@ -1,6 +1,35 @@
 import api from './client';
 
+export type TuitionLevelRateRow = {
+  level: string;
+  amount: number | null;
+  catalogId: string | null;
+};
+
 export const adminTuitionCatalogApi = {
+  getLevelTuitionRates: async (academicYear: string) => {
+    const response = await api.get('/admin/tuition-level-rates', {
+      params: { academicYear },
+    });
+    return response.data as {
+      academicYear: string;
+      levels: string[];
+      rates: TuitionLevelRateRow[];
+    };
+  },
+  saveLevelTuitionRates: async (data: {
+    academicYear: string;
+    rates: { level: string; amount: number }[];
+  }) => {
+    const response = await api.put('/admin/tuition-level-rates', data);
+    return response.data;
+  },
+  resolveTuitionForStudent: async (studentId: string, academicYear: string) => {
+    const response = await api.get('/admin/tuition-level-rates/resolve', {
+      params: { studentId, academicYear },
+    });
+    return response.data as { amount: number; classLevel: string; catalogId: string };
+  },
   getTuitionFeeCatalog: async () => {
     const response = await api.get('/admin/tuition-fee-catalog');
     return response.data;

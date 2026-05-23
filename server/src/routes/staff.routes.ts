@@ -13,6 +13,8 @@ import staffRolesRoutes from './staff-roles.routes';
 import staffPedagogyRoutes from './staff-pedagogy.routes';
 import staffHealthMessagingRoutes from './staff-health-messaging.routes';
 import staffLibraryRoutes from './staff-library.routes';
+import staffNotificationsRoutes from './staff-notifications.routes';
+import { listSchoolsForUser } from '../utils/school-context.util';
 
 const router = express.Router();
 
@@ -38,6 +40,15 @@ function requireStaffModule(moduleId: StaffModuleId) {
 
 router.use(authenticate);
 router.use(authorize('STAFF'));
+
+router.get('/schools', async (req: AuthRequest, res) => {
+  try {
+    const schools = await listSchoolsForUser(req.user!.id, 'STAFF');
+    res.json(schools);
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
 
 router.get('/workspace', async (req: AuthRequest, res) => {
   try {
@@ -348,12 +359,13 @@ router.patch('/module-records/:id', async (req: AuthRequest, res) => {
   }
 });
 
-router.use(staffLibraryRoutes);
+router.use('/', staffNotificationsRoutes);
+router.use('/', staffRolesRoutes);
 
 router.use('/health-messaging', staffHealthMessagingRoutes);
 
 router.use('/pedagogy', staffPedagogyRoutes);
 
-router.use('/', staffRolesRoutes);
+router.use(staffLibraryRoutes);
 
 export default router;
