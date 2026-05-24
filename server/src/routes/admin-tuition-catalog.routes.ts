@@ -8,8 +8,11 @@ import {
 } from '../utils/tuition-catalog.util';
 import {
   getLevelTuitionRates,
+  getClassTuitionRates,
   upsertLevelTuitionRates,
+  upsertClassTuitionRates,
   resolveTuitionAmountForStudent,
+  resolveTuitionForClass,
   TUITION_LEVELS,
 } from '../utils/tuition-level-amount.util';
 
@@ -40,7 +43,62 @@ router.get('/tuition-level-rates/resolve', async (req, res) => {
     const resolved = await resolveTuitionAmountForStudent(studentId, academicYear);
     if (!resolved) {
       return res.status(404).json({
-        error: 'Aucun montant de scolarité défini pour le niveau de cet élève.',
+        error: 'Aucun montant de scolarité défini pour la classe ou le niveau de cet élève.',
+      });
+    }
+    res.json(resolved);
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
+  }
+});
+
+router.get('/tuition-class-rates', async (req, res) => {
+  try {
+    const academicYear = String(req.query.academicYear ?? '').trim();
+    if (!academicYear) {
+      return res.status(400).json({ error: 'academicYear est requis' });
+    }
+    const rates = await getClassTuitionRates(academicYear);
+    res.json({ academicYear, rates });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
+  }
+});
+
+router.put('/tuition-class-rates', async (req, res) => {
+  try {
+    const { academicYear, rates } = req.body as {
+      academicYear?: string;
+      rates?: { classId: string; amount: number }[];
+    };
+    if (!academicYear || !Array.isArray(rates)) {
+      return res.status(400).json({ error: 'academicYear et rates[] sont requis' });
+    }
+    const saved = await upsertClassTuitionRates(String(academicYear), rates);
+    const updated = await getClassTuitionRates(String(academicYear));
+    res.json({
+      message: 'Montants par classe enregistrés',
+      saved: saved.length,
+      rates: updated,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Erreur serveur';
+    res.status(400).json({ error: msg });
+  }
+});
+
+router.get('/tuition-level-rates/resolve-for-class', async (req, res) => {
+  try {
+    const classId = String(req.query.classId ?? '').trim();
+    const academicYear = String(req.query.academicYear ?? '').trim();
+    if (!classId || !academicYear) {
+      return res.status(400).json({ error: 'classId et academicYear sont requis' });
+    }
+    const resolved = await resolveTuitionForClass(classId, academicYear);
+    if (!resolved) {
+      return res.status(404).json({
+        error:
+          'Aucun montant de scolarité défini pour cette classe ou son niveau. Configurez les barèmes (par classe ou par niveau).',
       });
     }
     res.json(resolved);
@@ -257,31 +315,46 @@ router.post('/tuition-fee-catalog/apply-to-students', async (req, res) => {
       academicYear,
       anchorDueDate,
       classId,
+      classLevel,
       studentIds,
       discountAmount,
-      scholarshipLabel,
       descriptionExtra,
     } = req.body;
+    const classIdVal =
+      typeof classId === 'string' && classId.trim() ? classId.trim() : undefined;
+    const classLevelVal =
+      typeof classLevel === 'string' && classLevel.trim() ? classLevel.trim() : undefined;
     if (!catalogId || !academicYear || !anchorDueDate) {
-      return res.status(400).json({ error: 'catalogId, academicYear et anchorDueDate sont requis' });
+      return res.status(400).json({ error: 'Barème, année scolaire et date d’échéance sont requis' });
     }
     const catalog = await prisma.tuitionFeeCatalog.findUnique({ where: { id: catalogId } });
     if (!catalog || !catalog.isActive) {
       return res.status(404).json({ error: 'Barème introuvable ou inactif' });
     }
 
+    if (catalog.feeType === 'TUITION') {
+      return res.status(400).json({
+        error:
+          'La scolarité ne s’attribue pas depuis ce barème. Utilisez « Frais de scolarité » → « Attribuer des frais » (par classe ou par niveau).',
+      });
+    }
+
+    if (classIdVal && classLevelVal) {
+      return res.status(400).json({ error: 'Indiquez une classe ou un niveau, pas les deux' });
+    }
+
+    if (!classIdVal && !classLevelVal) {
+      return res.status(400).json({ error: 'Sélectionnez une classe ou un niveau' });
+    }
+
     let students = await prisma.student.findMany({
       where: {
         isActive: true,
-        ...(classId && { classId: String(classId) }),
-        ...(Array.isArray(studentIds) && studentIds.length > 0 && { id: { in: studentIds as string[] } }),
+        ...(classIdVal && { classId: classIdVal }),
+        ...(classLevelVal && { class: { level: classLevelVal } }),
       },
       include: { class: { select: { level: true, id: true } } },
     });
-
-    if (!classId && (!studentIds || studentIds.length === 0)) {
-      return res.status(400).json({ error: 'classId ou studentIds est requis' });
-    }
 
     if (catalog.scope === 'BY_CLASS' && catalog.classId) {
       students = students.filter((s) => s.classId === catalog.classId);
@@ -303,7 +376,7 @@ router.post('/tuition-fee-catalog/apply-to-students', async (req, res) => {
     }
 
     const period = `${catalog.label} | ${academicYear}`;
-    const descParts = [catalog.programLabel, descriptionExtra, scholarshipLabel && disc > 0 ? `Remise: ${disc} FCFA` : null]
+    const descParts = [catalog.programLabel, descriptionExtra, disc > 0 ? `Remise: ${disc} FCFA` : null]
       .filter(Boolean)
       .join(' — ');
 
@@ -330,7 +403,6 @@ router.post('/tuition-fee-catalog/apply-to-students', async (req, res) => {
           billingPeriod: catalog.billingPeriod,
           baseAmount: base,
           discountAmount: disc,
-          scholarshipLabel: scholarshipLabel ? String(scholarshipLabel) : null,
           catalogId: catalog.id,
         },
       });
@@ -358,7 +430,6 @@ router.post('/tuition-payment-schedule-templates/apply-to-student', async (req, 
       anchorDueDate,
       totalAmount,
       feeType,
-      scholarshipLabel,
       catalogId,
       discountAmount: discountAmountRaw,
     } = req.body;
@@ -415,12 +486,11 @@ router.post('/tuition-payment-schedule-templates/apply-to-student', async (req, 
           period,
           amount: amounts[i],
           dueDate: due,
-          description: scholarshipLabel ? String(scholarshipLabel) : `Échéance ${i + 1}/${lines.length}`,
+          description: `Échéance ${i + 1}/${lines.length}`,
           feeType: feeType || 'TUITION',
           billingPeriod: 'ONE_TIME',
           baseAmount: lineBase,
           discountAmount: lineDisc,
-          scholarshipLabel: scholarshipLabel ? String(scholarshipLabel) : null,
           scheduleTemplateId: tpl.id,
           installmentIndex: i + 1,
           catalogId: catalogId || null,

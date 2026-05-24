@@ -22,8 +22,17 @@ import {
   FiGrid,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { useSchool } from '../../contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import {
+  buildClassMetaFromApi,
+  downloadAllClassRostersPdf,
+  downloadClassRosterCsv,
+  downloadClassRosterPdf,
+  mapApiStudentToRosterRow,
+} from '@/lib/classRosterExport';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
@@ -64,10 +73,76 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
     if (searchQuery) setSearchTerm(searchQuery);
   }, [searchQuery]);
 
+  const { activeSchoolId, activeSchool } = useSchool();
+  const schoolReady = useSchoolReady();
+
   const { data: classes, isLoading } = useQuery({
-    queryKey: ['classes'],
+    queryKey: schoolQueryKey(['classes'], activeSchoolId),
     queryFn: adminApi.getClasses,
+    enabled: schoolReady,
   });
+
+  const { data: allStudents } = useQuery({
+    queryKey: schoolQueryKey(['students'], activeSchoolId),
+    queryFn: adminApi.getStudents,
+    enabled: schoolReady,
+  });
+
+  const studentsByClassId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof mapApiStudentToRosterRow>[]>();
+    for (const s of allStudents ?? []) {
+      const cid = (s as { classId?: string | null }).classId;
+      if (!cid) continue;
+      const row = mapApiStudentToRosterRow(s as Parameters<typeof mapApiStudentToRosterRow>[0]);
+      const list = map.get(cid) ?? [];
+      list.push(row);
+      map.set(cid, list);
+    }
+    return map;
+  }, [allStudents]);
+
+  const downloadRosterForClass = (classItem: {
+    id: string;
+    name: string;
+    level?: string | null;
+    section?: string | null;
+    academicYear?: string | null;
+    room?: string | null;
+    capacity?: number | null;
+    track?: { name?: string | null } | null;
+    materialRoom?: { name?: string | null } | null;
+    teacher?: { user?: { firstName?: string; lastName?: string } | null } | null;
+  }, format: 'pdf' | 'csv') => {
+    const meta = buildClassMetaFromApi(classItem);
+    meta.schoolName = activeSchool?.name ?? null;
+    const roster = studentsByClassId.get(classItem.id) ?? [];
+    if (roster.length === 0) {
+      toast.error('Aucun élève dans cette classe');
+      return;
+    }
+    if (format === 'pdf') {
+      downloadClassRosterPdf(meta, roster);
+      toast.success(`Liste PDF — ${classItem.name}`);
+    } else {
+      downloadClassRosterCsv(meta, roster);
+      toast.success(`Liste CSV — ${classItem.name}`);
+    }
+  };
+
+  const downloadAllRosters = () => {
+    const metas = (filteredClasses ?? []).map((c: Parameters<typeof buildClassMetaFromApi>[0]) => {
+      const m = buildClassMetaFromApi(c);
+      m.schoolName = activeSchool?.name ?? null;
+      return m;
+    });
+    const withStudents = metas.filter((m) => (studentsByClassId.get(m.classId)?.length ?? 0) > 0);
+    if (withStudents.length === 0) {
+      toast.error('Aucune classe avec des élèves à exporter');
+      return;
+    }
+    downloadAllClassRostersPdf(activeSchool?.name, withStudents, studentsByClassId);
+    toast.success(`${withStudents.length} liste(s) de classe exportée(s) en PDF`);
+  };
 
   const filteredClasses = useMemo(() => {
     if (!classes) return [];
@@ -346,7 +421,10 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
               <FiDownload className="w-4 h-4 mr-1" aria-hidden /> JSON
             </Button>
             <Button variant="secondary" size="sm" onClick={exportToPDF}>
-              <FiDownload className="w-4 h-4 mr-1" aria-hidden /> PDF
+              <FiDownload className="w-4 h-4 mr-1" aria-hidden /> PDF classes
+            </Button>
+            <Button variant="secondary" size="sm" onClick={downloadAllRosters}>
+              <FiUsers className="w-4 h-4 mr-1" aria-hidden /> Listes élèves (PDF)
             </Button>
             <Button onClick={() => setIsAddModalOpen(true)}>
               <FiPlus className="w-5 h-5 mr-2 inline" aria-hidden />
@@ -507,6 +585,28 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                       </div>
                     </div>
                   )}
+                  <div className="pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="!text-xs flex-1 min-w-[7rem]"
+                      onClick={() => downloadRosterForClass(classItem, 'pdf')}
+                    >
+                      <FiDownload className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
+                      Liste PDF
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="!text-xs flex-1 min-w-[7rem]"
+                      onClick={() => downloadRosterForClass(classItem, 'csv')}
+                    >
+                      <FiDownload className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
+                      Liste CSV
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );

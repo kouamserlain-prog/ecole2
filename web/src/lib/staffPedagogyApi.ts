@@ -9,10 +9,10 @@ function isStaffPedagogyContext(): boolean {
 }
 
 /**
- * Chemins /admin laissés intacts pour le personnel (économe, comptable…).
- * Aligné sur server/src/utils/staff-finance-access.util.ts (middleware authorizeAdminOrStaffFinance).
+ * GET /admin conservés tels quels depuis /staff (finance, périmètre établissement, pas de proxy pédagogie).
+ * Tous les autres GET /admin/… sont réécrits vers /staff/pedagogy/… ; les mutations restent sur /admin.
  */
-const STAFF_DIRECT_ADMIN_PREFIXES = [
+const STAFF_GET_STAYS_ON_ADMIN_PREFIXES = [
   '/admin/payments',
   '/admin/tuition-fees',
   '/admin/tuition-fee-catalog',
@@ -22,20 +22,30 @@ const STAFF_DIRECT_ADMIN_PREFIXES = [
   '/admin/petty-cash',
   '/admin/budget-lines',
   '/admin/accounting',
+  '/admin/students',
+  '/admin/classes',
+  '/admin/admissions',
+  '/admin/staff-personnel',
+  '/admin/discipline',
+  '/admin/extracurricular',
+  '/admin/orientation',
+  '/admin/dashboard',
+  '/admin/academic-change-requests',
+  '/admin/metrics',
 ];
 
-function isStaffFinanceAdminUrl(url: string): boolean {
+function staffGetStaysOnAdmin(url: string): boolean {
   const path = url.split('?')[0] ?? '';
-  return STAFF_DIRECT_ADMIN_PREFIXES.some(
+  return STAFF_GET_STAYS_ON_ADMIN_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
 }
 
-/** Réécrit /admin/… → /staff/pedagogy/… sauf finance & établissements (chemins relatifs ou URL absolues). */
+/** Réécrit /admin/… → /staff/pedagogy/… pour les GET de consultation (pas finance ni établissements). */
 export function rewriteAdminGetUrl(url: string): string {
   if (!url || !url.includes('/admin/')) return url;
   if (url.includes('/admin/schools')) return url.replace('/admin/schools', '/staff/schools');
-  if (isStaffFinanceAdminUrl(url)) return url;
+  if (staffGetStaysOnAdmin(url)) return url;
   return url.replace('/admin/', '/staff/pedagogy/');
 }
 

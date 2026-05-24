@@ -5,8 +5,9 @@ import Layout from '../../components/Layout';
 import StudentsList from '../../components/admin/StudentsList';
 import ClassesList from '../../components/admin/ClassesList';
 import TeachersList from '../../components/admin/TeachersList';
-import EducatorsList from '../../components/admin/EducatorsList';
-import StaffPersonnelModule from '../../components/admin/staff/StaffPersonnelModule';
+import StaffPersonnelModule, {
+  type PersonnelCategoryFilter,
+} from '../../components/admin/staff/StaffPersonnelModule';
 import ParentGuardiansModule from '../../components/admin/parents/ParentGuardiansModule';
 import DashboardStats from '../../components/admin/DashboardStats';
 import SchoolOverviewCharts from '../../components/admin/SchoolOverviewCharts';
@@ -42,12 +43,12 @@ import OrientationAdminModule from '../../components/admin/OrientationAdminModul
 import ReportsStatisticsModule from '../../components/admin/reports/ReportsStatisticsModule';
 import AdminModulesHub from '../../components/admin/AdminModulesHub';
 import AdminSidebar from '../../components/admin/AdminSidebar';
+import { PremiumPortalShell, PremiumModuleHeader } from '../../components/dashboard/premium';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import AddStudentModal from '../../components/admin/AddStudentModal';
 import AddClassModal from '../../components/admin/AddClassModal';
 import AddTeacherModal from '../../components/admin/AddTeacherModal';
-import AddEducatorModal from '../../components/admin/AddEducatorModal';
 import GenerateReportModal from '../../components/admin/GenerateReportModal';
 import ExportDataModal from '../../components/admin/ExportDataModal';
 import SettingsModal from '../../components/admin/SettingsModal';
@@ -95,6 +96,7 @@ import {
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import type { IconType } from 'react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import AdminWorkspacesPanel from '../../components/admin/AdminWorkspacesPanel';
@@ -112,7 +114,7 @@ const VALID_TAB_IDS = ADMIN_VALID_TAB_IDS;
 type TabItem = {
   id: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconType;
   color: string;
   description: string;
 };
@@ -138,18 +140,26 @@ const AdminDashboard = () => {
       setActiveTab('notifications');
       return;
     }
-    const tab = searchParams?.get('tab');
+    const rawTab = searchParams?.get('tab');
+    if (rawTab === 'educators') {
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
+      params.set('tab', 'staff-personnel');
+      if (!params.get('personnel')) params.set('personnel', 'educator');
+      router.replace(`/admin?${params.toString()}`);
+      setActiveTab('staff-personnel');
+      return;
+    }
+    const tab = rawTab;
     if (tab && VALID_TAB_IDS.includes(tab as (typeof VALID_TAB_IDS)[number])) {
       setActiveTab(tab);
       return;
     }
     setActiveTab('dashboard');
-  }, [pathname, searchParams]);
+  }, [pathname, searchParams, router]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [isAddTeacherModalOpen, setIsAddTeacherModalOpen] = useState(false);
-  const [isAddEducatorModalOpen, setIsAddEducatorModalOpen] = useState(false);
   const [isGenerateReportModalOpen, setIsGenerateReportModalOpen] = useState(false);
   const [isExportDataModalOpen, setIsExportDataModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -193,13 +203,12 @@ const AdminDashboard = () => {
     { id: 'grading', label: 'Notation & évaluation', icon: FiEdit3, color: 'from-fuchsia-500 to-fuchsia-600', description: 'Notes, moyennes, bulletins PDF et rapports' },
     { id: 'classes', label: 'Classes', icon: FiBook, color: 'from-purple-500 to-purple-600', description: 'Gestion des classes' },
     { id: 'teachers', label: 'Enseignants', icon: FiUserCheck, color: 'from-indigo-500 to-indigo-600', description: 'Gestion des enseignants' },
-    { id: 'educators', label: 'Éducateurs', icon: FiShield, color: 'from-purple-500 to-purple-600', description: 'Gestion des éducateurs' },
     {
       id: 'staff-personnel',
-      label: 'Personnel administratif',
+      label: 'Personnel',
       icon: FiGitBranch,
       color: 'from-teal-600 to-emerald-800',
-      description: 'Administration, soutien, sécurité, organigramme, fiches de poste et présences',
+      description: 'Administration, soutien, éducateurs, organigramme, fiches de poste et présences',
     },
     {
       id: 'parent-guardians',
@@ -277,14 +286,28 @@ const AdminDashboard = () => {
   const visibleModules = (workspaceContext as { visibleModules?: string[] } | undefined)?.visibleModules;
   const workspaceRestricted = (workspaceContext as { unrestricted?: boolean } | undefined)?.unrestricted === false;
 
+  const effectiveVisibleModules = useMemo(() => {
+    if (!visibleModules?.length) return visibleModules;
+    const allowed = new Set(visibleModules);
+    if (allowed.has('educators')) allowed.add('staff-personnel');
+    return [...allowed];
+  }, [visibleModules]);
+
+  const personnelCategoryFilter = useMemo((): PersonnelCategoryFilter => {
+    const p = searchParams?.get('personnel');
+    if (p === 'educator') return 'EDUCATOR';
+    if (p === 'staff') return 'STAFF';
+    return 'all';
+  }, [searchParams]);
+
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const filteredTabs = useMemo(
     () =>
-      filterTabsByVisibleModules(tabs, visibleModules, {
+      filterTabsByVisibleModules(tabs, effectiveVisibleModules, {
         alwaysInclude: isSuperAdmin ? ['schools'] : [],
       }),
-    [tabs, visibleModules, isSuperAdmin],
+    [tabs, effectiveVisibleModules, isSuperAdmin],
   );
 
   const mainTabs = filteredTabs.filter((t) => t.id !== 'activities' && t.id !== 'notifications');
@@ -302,15 +325,22 @@ const AdminDashboard = () => {
   );
 
   useEffect(() => {
-    if (!visibleModules?.length) return;
+    if (!effectiveVisibleModules?.length) return;
     if (isSuperAdmin && activeTab === 'schools') return;
-    if (!isAdminModuleId(activeTab) || !visibleModules.includes(activeTab)) {
+    const moduleId = activeTab === 'educators' ? 'staff-personnel' : activeTab;
+    const allowed =
+      effectiveVisibleModules.includes(moduleId) ||
+      (activeTab === 'educators' && effectiveVisibleModules.includes('educators'));
+    if (!isAdminModuleId(activeTab) && activeTab !== 'educators') return;
+    if (!allowed) {
       setActiveTab('dashboard');
       const params = new URLSearchParams(searchParams?.toString() ?? '');
       params.set('tab', 'dashboard');
+      params.delete('personnel');
+      params.delete('action');
       router.replace(`/admin?${params.toString()}`);
     }
-  }, [activeTab, visibleModules, router, searchParams, isSuperAdmin]);
+  }, [activeTab, effectiveVisibleModules, router, searchParams, isSuperAdmin]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -319,16 +349,33 @@ const AdminDashboard = () => {
     return 'Bonsoir';
   };
 
-  const changeTab = (tabId: string) => {
-    setActiveTab(tabId);
+  const changeTab = (
+    tabId: string,
+    options?: { personnel?: 'educator' | 'staff'; action?: 'add-educator' },
+  ) => {
+    const resolvedId = tabId === 'educators' ? 'staff-personnel' : tabId;
+    setActiveTab(resolvedId);
     const params = new URLSearchParams(searchParams?.toString() ?? '');
-    params.set('tab', tabId);
+    params.set('tab', resolvedId);
+    if (options?.personnel) {
+      params.set('personnel', options.personnel);
+    } else if (resolvedId !== 'staff-personnel') {
+      params.delete('personnel');
+    } else if (tabId === 'educators') {
+      params.set('personnel', 'educator');
+    }
+    if (options?.action) {
+      params.set('action', options.action);
+    } else {
+      params.delete('action');
+    }
     router.replace(`/admin?${params.toString()}`);
   };
 
   return (
     <Layout user={user} onLogout={logout} role="ADMIN">
-      <div className="min-h-screen premium-body">
+      <PremiumPortalShell variant="admin">
+      <div className="min-h-screen">
         <AdminSidebar
           mainTabs={mainTabs}
           bottomTabs={bottomTabs}
@@ -415,46 +462,30 @@ const AdminDashboard = () => {
 
           <main className="flex-1 px-3 sm:px-6 py-4 sm:py-6 overflow-y-auto overflow-x-hidden pb-[max(1.25rem,env(safe-area-inset-bottom))] scroll-smooth">
             <div className="max-w-[1200px] mx-auto space-y-4 sm:space-y-5">
-              <div
-                className={`rounded-2xl bg-gradient-to-r ${activeTabMeta.color} p-[1px] shadow-[0_20px_40px_-18px_rgba(12,10,9,0.18)] ring-1 ring-amber-900/10`}
-              >
-                <div className="rounded-[15px] bg-white/95 backdrop-blur-xl px-3 py-3 sm:px-5 sm:py-4 border border-white/60">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div
-                        className={`mt-0.5 w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${activeTabMeta.color} text-white flex items-center justify-center shadow-md ring-1 ring-white/25`}
+              <PremiumModuleHeader
+                title={activeTabMeta.label}
+                description={activeTabMeta.description}
+                icon={ActiveTabIcon}
+                gradient={activeTabMeta.color}
+                badge="Admin"
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    {quickActions.slice(0, 2).map((qa) => (
+                      <button
+                        key={qa.label}
+                        type="button"
+                        onClick={qa.action}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-br from-stone-900 to-stone-800 text-amber-50 shadow-sm hover:from-stone-800 hover:to-stone-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-offset-2"
                       >
-                        <ActiveTabIcon className="w-5 h-5" aria-hidden />
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight">
-                          {activeTabMeta.label}
-                        </h2>
-                        <p className="text-xs sm:text-sm text-stone-600 mt-1 line-clamp-2 leading-relaxed">
-                          {activeTabMeta.description}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-700 ring-1 ring-stone-200/80">
-                        <FiCommand className="w-3.5 h-3.5 text-amber-700/90" aria-hidden />
-                        Admin
-                      </span>
-                      {quickActions.slice(0, 2).map((qa) => (
-                        <button
-                          key={qa.label}
-                          type="button"
-                          onClick={qa.action}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-br from-stone-900 to-stone-800 text-amber-50 shadow-sm hover:from-stone-800 hover:to-stone-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:ring-offset-2"
-                        >
-                          {qa.label}
-                          <FiArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                        </button>
-                      ))}
-                    </div>
+                        {qa.label}
+                        <FiArrowRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                      </button>
+                    ))}
                   </div>
-                </div>
-              </div>
+                }
+              />
+
+              
 
               {workspaceRestricted && activeTab !== 'workspaces' ? (
                 <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950">
@@ -496,7 +527,9 @@ const AdminDashboard = () => {
                     onAddStudent={() => setIsAddStudentModalOpen(true)}
                     onCreateClass={() => setIsAddClassModalOpen(true)}
                     onAddTeacher={() => setIsAddTeacherModalOpen(true)}
-                    onAddEducator={() => setIsAddEducatorModalOpen(true)}
+                    onAddEducator={() =>
+                      changeTab('staff-personnel', { personnel: 'educator', action: 'add-educator' })
+                    }
                     onGenerateReport={() => setIsGenerateReportModalOpen(true)}
                     onExportData={() => setIsExportDataModalOpen(true)}
                     onSettings={() => {
@@ -516,8 +549,9 @@ const AdminDashboard = () => {
               {activeTab === 'grading' && <GradingEvaluationManagement />}
               {activeTab === 'classes' && <ClassesList searchQuery={searchQuery} />}
               {activeTab === 'teachers' && <TeachersList searchQuery={searchQuery} />}
-              {activeTab === 'educators' && <EducatorsList searchQuery={searchQuery} />}
-              {activeTab === 'staff-personnel' && <StaffPersonnelModule />}
+              {activeTab === 'staff-personnel' && (
+                <StaffPersonnelModule initialCategoryFilter={personnelCategoryFilter} />
+              )}
               {activeTab === 'parent-guardians' && <ParentGuardiansModule />}
               {activeTab === 'management' && <CompleteManagement />}
               {activeTab === 'roles' && <MultiRolesManagement />}
@@ -609,10 +643,6 @@ const AdminDashboard = () => {
         isOpen={isAddTeacherModalOpen}
         onClose={() => setIsAddTeacherModalOpen(false)}
       />
-      <AddEducatorModal
-        isOpen={isAddEducatorModalOpen}
-        onClose={() => setIsAddEducatorModalOpen(false)}
-      />
       <GenerateReportModal
         isOpen={isGenerateReportModalOpen}
         onClose={() => setIsGenerateReportModalOpen(false)}
@@ -626,6 +656,7 @@ const AdminDashboard = () => {
         initialTab={settingsModalTab}
         onClose={() => setIsSettingsModalOpen(false)}
       />
+      </PremiumPortalShell>
     </Layout>
   );
 };

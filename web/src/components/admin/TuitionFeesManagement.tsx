@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
+import { useSchool } from '../../contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
@@ -66,19 +68,18 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
   const [filterPeriod, setFilterPeriod] = useState<string>('all');
   const [filterFeeType, setFilterFeeType] = useState<string>('all');
   const [mainTab, setMainTab] = useState<'liste' | 'baremes'>('liste');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedFee, setSelectedFee] = useState<any>(null);
   const [groupByStudent, setGroupByStudent] = useState(true);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
-  const [tuitionLevelHint, setTuitionLevelHint] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
 
   const isTuitionFeeType = (feeType: string) => feeType === 'TUITION';
 
-  // Form states
-  const [formData, setFormData] = useState({
+  const [editFormData, setEditFormData] = useState({
     studentId: '',
     classId: '',
     academicYear: getCurrentAcademicYear(),
@@ -90,11 +91,17 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
     billingPeriod: 'ONE_TIME',
     baseAmount: '',
     discountAmount: '',
-    scholarshipLabel: '',
   });
 
-  const [bulkFormData, setBulkFormData] = useState({
+  const [tuitionLevelHint, setTuitionLevelHint] = useState<string | null>(null);
+
+  const [assignStudentClassFilter, setAssignStudentClassFilter] = useState('');
+
+  const [assignFormData, setAssignFormData] = useState({
+    assignScope: 'BY_CLASS' as 'BY_CLASS' | 'BY_LEVEL' | 'BY_STUDENT',
     classId: '',
+    classLevel: '',
+    studentId: '',
     academicYear: getCurrentAcademicYear(),
     period: '',
     amount: '',
@@ -104,20 +111,23 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
     billingPeriod: 'ONE_TIME',
     baseAmount: '',
     discountAmount: '',
-    scholarshipLabel: '',
   });
 
   // Fetch data
   const { data: tuitionFees, isLoading } = useQuery({
-    queryKey: ['admin-tuition-fees', filterFeeType],
+    queryKey: schoolQueryKey(['admin-tuition-fees', filterFeeType], activeSchoolId),
     queryFn: () =>
       adminApi.getTuitionFees({
         ...(filterFeeType !== 'all' && { feeType: filterFeeType }),
       }),
+    enabled: schoolReady,
   });
 
   const { data: tuitionFeesGrouped, isLoading: isLoadingGrouped } = useQuery({
-    queryKey: ['admin-tuition-fees-grouped', filterClass, filterStatus, filterPeriod, filterFeeType],
+    queryKey: schoolQueryKey(
+      ['admin-tuition-fees-grouped', filterClass, filterStatus, filterPeriod, filterFeeType],
+      activeSchoolId,
+    ),
     queryFn: () =>
       adminApi.getTuitionFeesGrouped({
         ...(filterClass !== 'all' && { classId: filterClass }),
@@ -126,45 +136,116 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
         ...(filterPeriod !== 'all' && { period: filterPeriod }),
         ...(filterFeeType !== 'all' && { feeType: filterFeeType }),
       }),
-    enabled: groupByStudent,
+    enabled: groupByStudent && schoolReady,
   });
 
   const { data: students } = useQuery({
-    queryKey: ['admin-students'],
+    queryKey: schoolQueryKey(['admin-students'], activeSchoolId),
     queryFn: () => adminApi.getStudents(),
+    enabled: schoolReady,
   });
 
   const { data: classes } = useQuery({
-    queryKey: ['admin-classes'],
+    queryKey: schoolQueryKey(['admin-classes'], activeSchoolId),
     queryFn: () => adminApi.getClasses(),
+    enabled: schoolReady,
   });
 
-  // Mutations
-  const createMutation = useMutation({
-    mutationFn: adminApi.createTuitionFee,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees-grouped'] });
-      toast.success('Frais de scolarité créé avec succès');
-      setShowAddModal(false);
-      resetForm();
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Erreur lors de la création');
-    },
-  });
+  const classLevels = useMemo(() => {
+    const levels = new Set<string>();
+    classes?.forEach((c: { level?: string | null }) => {
+      if (c.level?.trim()) levels.add(c.level.trim());
+    });
+    return Array.from(levels).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [classes]);
 
-  const bulkCreateMutation = useMutation({
+  const assignTargetStudentCount = useMemo(() => {
+    if (!students?.length) return null;
+    const active = students.filter((s: { isActive?: boolean }) => s.isActive !== false);
+    if (assignFormData.assignScope === 'BY_CLASS' && assignFormData.classId) {
+      return active.filter((s: { classId?: string }) => s.classId === assignFormData.classId).length;
+    }
+    if (assignFormData.assignScope === 'BY_LEVEL' && assignFormData.classLevel) {
+      return active.filter(
+        (s: { class?: { level?: string | null } }) => s.class?.level === assignFormData.classLevel,
+      ).length;
+    }
+    if (assignFormData.assignScope === 'BY_STUDENT' && assignFormData.studentId) {
+      return 1;
+    }
+    return null;
+  }, [
+    students,
+    assignFormData.assignScope,
+    assignFormData.classId,
+    assignFormData.classLevel,
+    assignFormData.studentId,
+  ]);
+
+  const assignableStudents = useMemo(() => {
+    if (!students?.length) return [];
+    type StudentRow = {
+      id: string;
+      isActive?: boolean;
+      classId?: string;
+      user?: { firstName?: string; lastName?: string };
+      class?: { name?: string; level?: string };
+    };
+    let list = (students as StudentRow[]).filter((s) => s.isActive !== false);
+    if (assignStudentClassFilter) {
+      list = list.filter((s) => s.classId === assignStudentClassFilter);
+    }
+    return list.sort((a, b) => {
+      const na = `${a.user?.lastName ?? ''} ${a.user?.firstName ?? ''}`.trim();
+      const nb = `${b.user?.lastName ?? ''} ${b.user?.firstName ?? ''}`.trim();
+      return na.localeCompare(nb, 'fr');
+    });
+  }, [students, assignStudentClassFilter]);
+
+  const invalidateTuitionQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees-grouped'] });
+  };
+
+  const assignCreateMutation = useMutation({
     mutationFn: adminApi.createTuitionFeesBulk,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-tuition-fees-grouped'] });
-      toast.success(`${data.created} frais créés avec succès${data.skipped > 0 ? `, ${data.skipped} ignorés` : ''}`);
-      setShowBulkModal(false);
-      resetBulkForm();
+      invalidateTuitionQueries();
+      const created = data.created ?? 0;
+      const skipped = data.skipped ?? 0;
+      const skipReason = data.details?.skipped?.[0]?.reason as string | undefined;
+      if (created === 0) {
+        toast.error(
+          skipReason ||
+            (skipped > 0
+              ? `Aucun frais créé · ${skipped} élève(s) ignoré(s)`
+              : 'Aucun frais créé pour cette sélection'),
+        );
+      } else {
+        toast.success(
+          `${created} frais créé(s)${skipped > 0 ? ` · ${skipped} ignoré(s)` : ''}`,
+        );
+      }
+      if (created > 0) {
+        setShowAssignModal(false);
+        resetAssignForm();
+      }
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Erreur lors de la création en masse');
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Erreur lors de l’attribution');
+    },
+  });
+
+  const assignSingleStudentMutation = useMutation({
+    mutationFn: adminApi.createTuitionFee,
+    onSuccess: () => {
+      invalidateTuitionQueries();
+      toast.success('Frais attribué à l’élève');
+      setShowAssignModal(false);
+      resetAssignForm();
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Erreur lors de l’attribution');
     },
   });
 
@@ -262,67 +343,99 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
   }, [tuitionFeesGrouped, searchQuery]);
 
   useEffect(() => {
-    if (!isTuitionFeeType(formData.feeType) || !formData.studentId || !formData.academicYear) {
+    if (!isTuitionFeeType(assignFormData.feeType) || !assignFormData.academicYear.trim()) {
       setTuitionLevelHint(null);
       return;
     }
-    let cancelled = false;
-    adminTuitionCatalogApi
-      .resolveTuitionForStudent(formData.studentId, formData.academicYear)
-      .then((resolved) => {
-        if (cancelled) return;
-        const disc = formData.discountAmount.trim() ? parseFloat(formData.discountAmount) : 0;
-        const net = Math.max(0, resolved.amount - (Number.isNaN(disc) ? 0 : disc));
-        setFormData((prev) => ({
-          ...prev,
-          baseAmount: String(resolved.amount),
-          amount: String(net),
-        }));
-        setTuitionLevelHint(
-          `Montant fixe pour le niveau ${resolved.classLevel} : ${formatFCFA(resolved.amount)}`,
-        );
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setTuitionLevelHint(
-            'Aucun montant défini pour le niveau de cet élève — configurez l’onglet « Scolarité par niveau ».',
-          );
-          setFormData((prev) => ({ ...prev, baseAmount: '', amount: '' }));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [formData.studentId, formData.academicYear, formData.feeType]);
 
-  useEffect(() => {
-    if (!isTuitionFeeType(bulkFormData.feeType) || !bulkFormData.classId || !bulkFormData.academicYear) {
+    const applyAmounts = (base: number, hint: string) => {
+      setAssignFormData((prev) => {
+        const disc = prev.discountAmount.trim() ? parseFloat(prev.discountAmount) : 0;
+        const net = Math.max(0, Math.round(base - (Number.isNaN(disc) ? 0 : disc)));
+        return { ...prev, baseAmount: String(base), amount: String(net) };
+      });
+      setTuitionLevelHint(hint);
+    };
+
+    if (assignFormData.assignScope === 'BY_CLASS' && assignFormData.classId) {
+      adminTuitionCatalogApi
+        .resolveTuitionForClass(assignFormData.classId, assignFormData.academicYear)
+        .then((data) => {
+          const src =
+            data.source === 'BY_CLASS'
+              ? 'barème classe'
+              : `barème niveau ${data.classLevel}`;
+          applyAmounts(
+            data.amount,
+            `${data.className} : ${formatFCFA(data.amount)} (${src}) — modifiable ci-dessous.`,
+          );
+        })
+        .catch(() => {
+          setTuitionLevelHint(
+            'Aucun barème pour cette classe — saisissez un montant ou configurez Frais → scolarité.',
+          );
+        });
       return;
     }
-    const cls = classes?.find((c: { id: string; level?: string | null }) => c.id === bulkFormData.classId);
-    if (!cls?.level) return;
-    adminTuitionCatalogApi
-      .getLevelTuitionRates(bulkFormData.academicYear)
-      .then((data) => {
-        const row = data.rates.find((r) => r.level === cls.level);
-        if (row?.amount != null) {
-          const disc = bulkFormData.discountAmount.trim() ? parseFloat(bulkFormData.discountAmount) : 0;
-          const net = Math.max(0, row.amount - (Number.isNaN(disc) ? 0 : disc));
-          setBulkFormData((prev) => ({
-            ...prev,
-            baseAmount: String(row.amount),
-            amount: String(net),
-          }));
-        }
-      })
-      .catch(() => undefined);
+
+    if (assignFormData.assignScope === 'BY_LEVEL' && assignFormData.classLevel) {
+      adminTuitionCatalogApi
+        .getLevelTuitionRates(assignFormData.academicYear)
+        .then((data) => {
+          const row = data.rates.find((r) => r.level === assignFormData.classLevel);
+          if (row?.amount != null) {
+            applyAmounts(
+              row.amount,
+              `Niveau ${assignFormData.classLevel} : ${formatFCFA(row.amount)} — modifiable ci-dessous.`,
+            );
+          } else {
+            setTuitionLevelHint(
+              `Aucun montant pour le niveau ${assignFormData.classLevel} — saisissez un montant ou configurez le barème.`,
+            );
+          }
+        })
+        .catch(() => setTuitionLevelHint(null));
+      return;
+    }
+
+    if (assignFormData.assignScope === 'BY_STUDENT' && assignFormData.studentId) {
+      adminTuitionCatalogApi
+        .resolveTuitionForStudent(assignFormData.studentId, assignFormData.academicYear)
+        .then((data) => {
+          applyAmounts(
+            data.amount,
+            `Barème (${data.classLevel}) : ${formatFCFA(data.amount)} — vous pouvez saisir un montant spécifique pour cet élève.`,
+          );
+        })
+        .catch(() => {
+          setTuitionLevelHint(
+            'Aucun barème pour cet élève — saisissez un montant personnalisé ci-dessous.',
+          );
+        });
+      return;
+    }
+
+    setTuitionLevelHint(null);
   }, [
-    bulkFormData.classId,
-    bulkFormData.academicYear,
-    bulkFormData.feeType,
-    bulkFormData.discountAmount,
+    assignFormData.assignScope,
+    assignFormData.classId,
+    assignFormData.classLevel,
+    assignFormData.studentId,
+    assignFormData.academicYear,
+    assignFormData.feeType,
     classes,
   ]);
+
+  useEffect(() => {
+    if (!isTuitionFeeType(assignFormData.feeType) || !assignFormData.baseAmount.trim()) return;
+    const b = parseFloat(assignFormData.baseAmount);
+    if (Number.isNaN(b) || b < 0) return;
+    const d = assignFormData.discountAmount.trim() ? parseFloat(assignFormData.discountAmount) : 0;
+    const net = Math.max(0, Math.round(b - (Number.isNaN(d) ? 0 : d)));
+    setAssignFormData((prev) =>
+      prev.amount === String(net) ? prev : { ...prev, amount: String(net) },
+    );
+  }, [assignFormData.discountAmount, assignFormData.baseAmount, assignFormData.feeType]);
 
   // Expander toutes les sections par défaut au premier chargement
   useEffect(() => {
@@ -341,11 +454,13 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
     setExpandedStudents(newExpanded);
   };
 
-  // Reset forms
-  const resetForm = () => {
-    setFormData({
+  const resetAssignForm = () => {
+    setAssignStudentClassFilter('');
+    setAssignFormData({
+      assignScope: 'BY_CLASS',
+      classId: '',
+      classLevel: '',
       studentId: '',
-      classId: '',
       academicYear: getCurrentAcademicYear(),
       period: '',
       amount: '',
@@ -355,148 +470,109 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       billingPeriod: 'ONE_TIME',
       baseAmount: '',
       discountAmount: '',
-      scholarshipLabel: '',
     });
+    setTuitionLevelHint(null);
   };
 
-  const resetBulkForm = () => {
-    setBulkFormData({
-      classId: '',
-      academicYear: getCurrentAcademicYear(),
-      period: '',
-      amount: '',
-      dueDate: '',
-      description: '',
-      feeType: 'TUITION',
-      billingPeriod: 'ONE_TIME',
-      baseAmount: '',
-      discountAmount: '',
-      scholarshipLabel: '',
-    });
-  };
-
-  // Handlers
-  const handleCreate = () => {
-    if (!formData.studentId || !formData.academicYear || !formData.period || !formData.dueDate) {
+  const handleAssign = () => {
+    if (assignFormData.assignScope === 'BY_CLASS' && !assignFormData.classId) {
+      toast.error('Sélectionnez une classe');
+      return;
+    }
+    if (assignFormData.assignScope === 'BY_LEVEL' && !assignFormData.classLevel) {
+      toast.error('Sélectionnez un niveau');
+      return;
+    }
+    if (assignFormData.assignScope === 'BY_STUDENT' && !assignFormData.studentId) {
+      toast.error('Sélectionnez un élève');
+      return;
+    }
+    if (!assignFormData.academicYear || !assignFormData.period || !assignFormData.dueDate) {
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
-    const tuitionFixed = isTuitionFeeType(formData.feeType);
-    if (!tuitionFixed && !formData.amount.trim() && !formData.baseAmount.trim()) {
+    if (!assignFormData.amount.trim() && !assignFormData.baseAmount.trim()) {
       toast.error('Indiquez le montant à payer ou le montant brut (FCFA)');
       return;
     }
-    if (tuitionFixed && !formData.baseAmount.trim()) {
-      toast.error('Configurez le montant de scolarité pour le niveau de l’élève (barèmes → Scolarité par niveau)');
-      return;
-    }
 
-    let amountValue = parseFloat(formData.amount);
-    if (formData.baseAmount.trim()) {
-      const b = parseFloat(formData.baseAmount);
-      const d = formData.discountAmount.trim() ? parseFloat(formData.discountAmount) : 0;
-      if (Number.isNaN(b) || b <= 0) {
-        toast.error('Montant brut invalide');
-        return;
-      }
-      amountValue = Math.max(0, Math.round(b - (Number.isNaN(d) ? 0 : d)));
-    } else if (formData.discountAmount.trim()) {
-      const d = parseFloat(formData.discountAmount);
-      if (Number.isNaN(amountValue) || amountValue <= 0) {
-        toast.error('Montant à payer requis si vous indiquez une remise');
-        return;
-      }
-      amountValue = Math.max(0, Math.round(amountValue - (Number.isNaN(d) ? 0 : d)));
-    }
-    if (isNaN(amountValue) || amountValue <= 0) {
-      toast.error('Le montant à payer doit être strictement positif');
-      return;
-    }
-
-    // Validation de la date
-    const dueDateValue = new Date(formData.dueDate);
-    if (isNaN(dueDateValue.getTime())) {
-      toast.error('La date d\'échéance est invalide');
-      return;
-    }
-
-    // Formatage de la date au format ISO
-    const formattedDate = dueDateValue.toISOString().split('T')[0];
-
-    const payload: Record<string, unknown> = {
-      studentId: formData.studentId,
-      academicYear: formData.academicYear,
-      period: formData.period,
-      amount: amountValue,
-      dueDate: formattedDate,
-      description: formData.description || undefined,
-      feeType: formData.feeType,
-      billingPeriod: formData.billingPeriod,
-    };
-    if (formData.baseAmount.trim()) {
-      payload.baseAmount = parseFloat(formData.baseAmount);
-    }
-    if (formData.discountAmount.trim()) {
-      payload.discountAmount = parseFloat(formData.discountAmount);
-    }
-    if (formData.scholarshipLabel.trim()) {
-      payload.scholarshipLabel = formData.scholarshipLabel.trim();
-    }
-    createMutation.mutate(payload);
-  };
-
-  const handleBulkCreate = () => {
-    if (!bulkFormData.classId || !bulkFormData.academicYear || !bulkFormData.period || !bulkFormData.dueDate) {
-      toast.error('Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-    const bulkTuition = isTuitionFeeType(bulkFormData.feeType);
-    if (!bulkTuition && !bulkFormData.amount.trim() && !bulkFormData.baseAmount.trim()) {
-      toast.error('Indiquez le montant à payer ou le montant brut (FCFA)');
-      return;
-    }
-    let bulkAmount = bulkTuition ? 0 : parseFloat(bulkFormData.amount);
-    if (bulkFormData.baseAmount.trim()) {
-      const b = parseFloat(bulkFormData.baseAmount);
-      const d = bulkFormData.discountAmount.trim() ? parseFloat(bulkFormData.discountAmount) : 0;
+    let bulkAmount = parseFloat(assignFormData.amount);
+    if (assignFormData.baseAmount.trim()) {
+      const b = parseFloat(assignFormData.baseAmount);
+      const d = assignFormData.discountAmount.trim() ? parseFloat(assignFormData.discountAmount) : 0;
       if (Number.isNaN(b) || b <= 0) {
         toast.error('Montant brut invalide');
         return;
       }
       bulkAmount = Math.max(0, Math.round(b - (Number.isNaN(d) ? 0 : d)));
-    } else if (bulkFormData.discountAmount.trim()) {
-      const d = parseFloat(bulkFormData.discountAmount);
+    } else if (assignFormData.discountAmount.trim()) {
+      const d = parseFloat(assignFormData.discountAmount);
       bulkAmount = Math.max(0, Math.round(bulkAmount - (Number.isNaN(d) ? 0 : d)));
     }
-    if (!bulkTuition && (Number.isNaN(bulkAmount) || bulkAmount <= 0)) {
+    if (Number.isNaN(bulkAmount) || bulkAmount <= 0) {
       toast.error('Le montant à payer doit être strictement positif');
       return;
     }
-    const bulkPayload: Record<string, unknown> = {
-      classId: bulkFormData.classId,
-      academicYear: bulkFormData.academicYear,
-      period: bulkFormData.period,
-      ...(bulkTuition ? {} : { amount: bulkAmount }),
-      dueDate: bulkFormData.dueDate,
-      description: bulkFormData.description || undefined,
-      feeType: bulkFormData.feeType,
-      billingPeriod: bulkFormData.billingPeriod,
+    if (assignFormData.assignScope !== 'BY_STUDENT' && assignTargetStudentCount === 0) {
+      toast.error(
+        assignFormData.assignScope === 'BY_LEVEL'
+          ? 'Aucun élève actif pour ce niveau dans l’établissement sélectionné'
+          : 'Aucun élève actif dans cette classe pour l’établissement sélectionné',
+      );
+      return;
+    }
+
+    const levelStudentIds =
+      assignFormData.assignScope === 'BY_LEVEL' && students?.length
+        ? students
+            .filter(
+              (s: { isActive?: boolean; class?: { level?: string | null } }) =>
+                s.isActive !== false && s.class?.level === assignFormData.classLevel,
+            )
+            .map((s: { id: string }) => s.id)
+        : [];
+
+    if (assignFormData.assignScope === 'BY_LEVEL' && levelStudentIds.length === 0) {
+      toast.error('Aucun élève actif pour ce niveau');
+      return;
+    }
+
+    const commonPayload = {
+      academicYear: assignFormData.academicYear.trim(),
+      period: assignFormData.period.trim(),
+      amount: bulkAmount,
+      dueDate: assignFormData.dueDate.trim(),
+      description: assignFormData.description.trim() || undefined,
+      feeType: assignFormData.feeType,
+      billingPeriod: assignFormData.billingPeriod,
+      ...(assignFormData.baseAmount.trim()
+        ? { baseAmount: parseFloat(assignFormData.baseAmount) }
+        : {}),
+      ...(assignFormData.discountAmount.trim()
+        ? { discountAmount: parseFloat(assignFormData.discountAmount) }
+        : {}),
     };
-    if (bulkFormData.baseAmount.trim()) {
-      bulkPayload.baseAmount = parseFloat(bulkFormData.baseAmount);
+
+    if (assignFormData.assignScope === 'BY_STUDENT') {
+      assignSingleStudentMutation.mutate({
+        studentId: assignFormData.studentId.trim(),
+        ...commonPayload,
+      });
+      return;
     }
-    if (bulkFormData.discountAmount.trim()) {
-      bulkPayload.discountAmount = parseFloat(bulkFormData.discountAmount);
-    }
-    if (bulkFormData.scholarshipLabel.trim()) {
-      bulkPayload.scholarshipLabel = bulkFormData.scholarshipLabel.trim();
-    }
-    bulkCreateMutation.mutate(bulkPayload);
+
+    const payload: Record<string, unknown> = {
+      ...commonPayload,
+      ...(assignFormData.assignScope === 'BY_CLASS'
+        ? { classId: assignFormData.classId.trim() }
+        : { studentIds: levelStudentIds }),
+    };
+    assignCreateMutation.mutate(payload);
   };
 
   const handleEdit = (fee: any) => {
     setSelectedFee(fee);
-    setFormData({
+    setEditFormData({
       studentId: fee.studentId,
       classId: fee.student?.classId || '',
       academicYear: fee.academicYear,
@@ -508,28 +584,27 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       billingPeriod: fee.billingPeriod || 'ONE_TIME',
       baseAmount: fee.baseAmount != null ? String(fee.baseAmount) : '',
       discountAmount: fee.discountAmount != null ? String(fee.discountAmount) : '',
-      scholarshipLabel: fee.scholarshipLabel || '',
     });
     setShowEditModal(true);
   };
 
   const handleUpdate = () => {
     if (!selectedFee) return;
-    if (!formData.amount.trim() && !formData.baseAmount.trim()) {
+    if (!editFormData.amount.trim() && !editFormData.baseAmount.trim()) {
       toast.error('Indiquez le montant à payer ou le montant brut (FCFA)');
       return;
     }
-    let amountValue = parseFloat(formData.amount);
-    if (formData.baseAmount.trim()) {
-      const b = parseFloat(formData.baseAmount);
-      const d = formData.discountAmount.trim() ? parseFloat(formData.discountAmount) : 0;
+    let amountValue = parseFloat(editFormData.amount);
+    if (editFormData.baseAmount.trim()) {
+      const b = parseFloat(editFormData.baseAmount);
+      const d = editFormData.discountAmount.trim() ? parseFloat(editFormData.discountAmount) : 0;
       if (Number.isNaN(b) || b <= 0) {
         toast.error('Montant brut invalide');
         return;
       }
       amountValue = Math.max(0, Math.round(b - (Number.isNaN(d) ? 0 : d)));
-    } else if (formData.discountAmount.trim()) {
-      const d = parseFloat(formData.discountAmount);
+    } else if (editFormData.discountAmount.trim()) {
+      const d = parseFloat(editFormData.discountAmount);
       if (Number.isNaN(amountValue) || amountValue <= 0) {
         toast.error('Montant à payer requis si vous indiquez une remise');
         return;
@@ -541,21 +616,20 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       return;
     }
     const upd: Record<string, unknown> = {
-      academicYear: formData.academicYear,
-      period: formData.period,
+      academicYear: editFormData.academicYear,
+      period: editFormData.period,
       amount: amountValue,
-      dueDate: formData.dueDate,
-      description: formData.description || undefined,
-      feeType: formData.feeType,
-      billingPeriod: formData.billingPeriod,
+      dueDate: editFormData.dueDate,
+      description: editFormData.description || undefined,
+      feeType: editFormData.feeType,
+      billingPeriod: editFormData.billingPeriod,
     };
-    if (formData.baseAmount.trim()) {
-      upd.baseAmount = parseFloat(formData.baseAmount);
+    if (editFormData.baseAmount.trim()) {
+      upd.baseAmount = parseFloat(editFormData.baseAmount);
     } else {
       upd.baseAmount = null;
     }
-    upd.discountAmount = formData.discountAmount.trim() ? parseFloat(formData.discountAmount) : 0;
-    upd.scholarshipLabel = formData.scholarshipLabel.trim() || null;
+    upd.discountAmount = editFormData.discountAmount.trim() ? parseFloat(editFormData.discountAmount) : 0;
     updateMutation.mutate({
       id: selectedFee.id,
       data: upd,
@@ -613,7 +687,7 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Gestion des Frais de Scolarité</h2>
             <p className="mt-0.5 text-xs leading-snug text-gray-600 sm:text-sm">
-              Attribuez et gérez les frais de scolarité des élèves
+              Attribuez les frais par classe ou par niveau, puis suivez le paiement par élève
             </p>
           </div>
         )}
@@ -643,22 +717,14 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
           </Button>
           <Button
             size={btnSize}
-            variant="secondary"
-            onClick={() => setShowBulkModal(true)}
-          >
-            <FiUsers className="mr-1.5 h-3.5 w-3.5 shrink-0" />
-            Par classe
-          </Button>
-          <Button
-            size={btnSize}
             variant="primary"
             onClick={() => {
-              resetForm();
-              setShowAddModal(true);
+              resetAssignForm();
+              setShowAssignModal(true);
             }}
           >
             <FiPlus className="mr-1.5 h-3.5 w-3.5 shrink-0" />
-            Ajouter
+            Attribuer des frais
           </Button>
         </div>
       </div>
@@ -676,7 +742,7 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
           onClick={() => setMainTab('baremes')}
           className={ADM.tabBtn(mainTab === 'baremes', 'bg-amber-50 text-amber-950 ring-1 ring-amber-200')}
         >
-          Barèmes, bourses & échéanciers
+          Barèmes & échéanciers
         </button>
       </div>
 
@@ -1121,240 +1187,183 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
       </>
       )}
 
-      {/* Add Modal */}
+      {/* Assign Modal (par classe, niveau ou élève) */}
       <Modal
-        isOpen={showAddModal}
+        isOpen={showAssignModal}
         onClose={() => {
-          setShowAddModal(false);
-          resetForm();
+          setShowAssignModal(false);
+          resetAssignForm();
         }}
-        title="Ajouter un frais de scolarité"
+        title="Attribuer des frais"
         size="lg"
       >
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Élève <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={formData.studentId}
-              onChange={(e) => {
-                const student = students?.find((s: any) => s.id === e.target.value);
-                setFormData({
-                  ...formData,
-                  studentId: e.target.value,
-                  classId: student?.classId || '',
-                });
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 p-1">
+            <button
+              type="button"
+              onClick={() =>
+                setAssignFormData((prev) => ({
+                  ...prev,
+                  assignScope: 'BY_CLASS',
+                  classLevel: '',
+                  studentId: '',
+                }))
+              }
+              className={`flex-1 min-w-[5.5rem] rounded-md px-3 py-2 text-sm font-medium transition ${
+                assignFormData.assignScope === 'BY_CLASS'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
             >
-              <option value="">Sélectionner un élève</option>
-              {students?.map((student: any) => (
-                <option key={student.id} value={student.id}>
-                  {student.user.firstName} {student.user.lastName} {student.class?.name ? `(${student.class.name})` : ''}
-                </option>
-              ))}
-            </select>
+              Par classe
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setAssignFormData((prev) => ({
+                  ...prev,
+                  assignScope: 'BY_LEVEL',
+                  classId: '',
+                  studentId: '',
+                }))
+              }
+              className={`flex-1 min-w-[5.5rem] rounded-md px-3 py-2 text-sm font-medium transition ${
+                assignFormData.assignScope === 'BY_LEVEL'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Par niveau
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setAssignFormData((prev) => ({
+                  ...prev,
+                  assignScope: 'BY_STUDENT',
+                  classId: '',
+                  classLevel: '',
+                }))
+              }
+              className={`flex-1 min-w-[5.5rem] rounded-md px-3 py-2 text-sm font-medium transition ${
+                assignFormData.assignScope === 'BY_STUDENT'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Par élève
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {assignFormData.assignScope === 'BY_CLASS' ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Année scolaire <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.academicYear}
-                onChange={(e) => setFormData({ ...formData, academicYear: e.target.value })}
-                placeholder="2024-2025"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Période <span className="text-red-500">*</span>
+                Classe <span className="text-red-500">*</span>
               </label>
               <select
-                value={formData.period}
-                onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                value={assignFormData.classId}
+                onChange={(e) => setAssignFormData({ ...assignFormData, classId: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">Sélectionner une période</option>
-                <option value="Trimestre 1">Trimestre 1</option>
-                <option value="Trimestre 2">Trimestre 2</option>
-                <option value="Trimestre 3">Trimestre 3</option>
-                <option value="Semestre 1">Semestre 1</option>
-                <option value="Semestre 2">Semestre 2</option>
-                <option value="Frais d'inscription">Frais d'inscription</option>
-                <option value="Frais de scolarité annuelle">Frais de scolarité annuelle</option>
+                <option value="">Sélectionner une classe</option>
+                {classes?.map((cls: any) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name} - {cls.level}
+                  </option>
+                ))}
               </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type de frais</label>
-              <select
-                value={formData.feeType}
-                onChange={(e) => setFormData({ ...formData, feeType: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="ENROLLMENT">Inscription</option>
-                <option value="TUITION">Scolarité</option>
-                <option value="CANTEEN">Cantine</option>
-                <option value="TRANSPORT">Transport</option>
-                <option value="ACTIVITY">Activités</option>
-                <option value="MATERIAL">Matériel</option>
-                <option value="OTHER">Autre</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rythme de facturation</label>
-              <select
-                value={formData.billingPeriod}
-                onChange={(e) => setFormData({ ...formData, billingPeriod: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="ONE_TIME">Ponctuel</option>
-                <option value="MONTHLY">Mensuel</option>
-                <option value="QUARTERLY">Trimestriel</option>
-                <option value="SEMIANNUAL">Semestriel</option>
-                <option value="ANNUAL">Annuel</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Montant brut (FCFA), optionnel</label>
-              <input
-                type="number"
-                value={formData.baseAmount}
-                onChange={(e) => setFormData({ ...formData, baseAmount: e.target.value })}
-                placeholder="Ex. barème avant remise"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Remise (FCFA), optionnel</label>
-              <input
-                type="number"
-                value={formData.discountAmount}
-                onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })}
-                placeholder="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Montant à payer (FCFA){' '}
-                {!formData.baseAmount.trim() ? <span className="text-red-500">*</span> : null}
-              </label>
-              <input
-                type="number"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                placeholder="100000"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              {formData.baseAmount.trim() ? (
-                <p className="text-xs text-gray-500 mt-1">Avec un montant brut, le net est recalculé (brut − remise).</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Les frais seront attribués à tous les élèves actifs de cette classe
+                {assignTargetStudentCount != null ? ` (${assignTargetStudentCount} élève(s))` : ''}
+              </p>
+              {assignTargetStudentCount === 0 ? (
+                <p className="text-xs text-red-600 mt-1">
+                  Aucun élève actif dans cette classe pour l’établissement courant.
+                </p>
               ) : null}
             </div>
-
+          ) : assignFormData.assignScope === 'BY_LEVEL' ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date d'échéance <span className="text-red-500">*</span>
+                Niveau <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+              <select
+                value={assignFormData.classLevel}
+                onChange={(e) => setAssignFormData({ ...assignFormData, classLevel: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+              >
+                <option value="">Sélectionner un niveau</option>
+                {classLevels.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Les frais seront attribués à tous les élèves actifs des classes de ce niveau
+                {assignTargetStudentCount != null ? ` (${assignTargetStudentCount} élève(s))` : ''}
+              </p>
+              {assignTargetStudentCount === 0 ? (
+                <p className="text-xs text-red-600 mt-1">
+                  Aucun élève actif pour ce niveau dans l’établissement courant.
+                </p>
+              ) : null}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Libellé bourse / aide (optionnel)</label>
-            <input
-              type="text"
-              value={formData.scholarshipLabel}
-              onChange={(e) => setFormData({ ...formData, scholarshipLabel: e.target.value })}
-              placeholder="Ex. Bourse mérite 2025"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description (optionnel)
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Description du frais..."
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setShowAddModal(false);
-                resetForm();
-              }}
-            >
-              Annuler
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleCreate}
-              disabled={createMutation.isPending}
-            >
-              {createMutation.isPending ? 'Création...' : 'Créer'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Bulk Create Modal */}
-      <Modal
-        isOpen={showBulkModal}
-        onClose={() => {
-          setShowBulkModal(false);
-          resetBulkForm();
-        }}
-        title="Attribuer des frais à une classe"
-        size="lg"
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Classe <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={bulkFormData.classId}
-              onChange={(e) => setBulkFormData({ ...bulkFormData, classId: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Sélectionner une classe</option>
-              {classes?.map((cls: any) => (
-                <option key={cls.id} value={cls.id}>
-                  {cls.name} - {cls.level}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Les frais seront attribués à tous les élèves actifs de cette classe
-            </p>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filtrer par classe <span className="text-stone-400 font-normal">(optionnel)</span>
+                </label>
+                <select
+                  value={assignStudentClassFilter}
+                  onChange={(e) => {
+                    setAssignStudentClassFilter(e.target.value);
+                    setAssignFormData((prev) => ({ ...prev, studentId: '' }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Toutes les classes</option>
+                  {classes?.map((cls: { id: string; name: string; level?: string }) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name}
+                      {cls.level ? ` — ${cls.level}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Élève <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={assignFormData.studentId}
+                  onChange={(e) =>
+                    setAssignFormData({ ...assignFormData, studentId: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Sélectionner un élève</option>
+                  {assignableStudents.map((s) => {
+                    const name =
+                      `${s.user?.lastName ?? ''} ${s.user?.firstName ?? ''}`.trim() || 'Élève';
+                    const cls = s.class?.name
+                      ? `${s.class.name}${s.class.level ? ` (${s.class.level})` : ''}`
+                      : '';
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {name}
+                        {cls ? ` — ${cls}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Montant personnalisable pour cet élève (bourse, tarif spécial, etc.).
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1363,8 +1372,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               </label>
               <input
                 type="text"
-                value={bulkFormData.academicYear}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, academicYear: e.target.value })}
+                value={assignFormData.academicYear}
+                onChange={(e) => setAssignFormData({ ...assignFormData, academicYear: e.target.value })}
                 placeholder="2024-2025"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -1375,8 +1384,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
                 Période <span className="text-red-500">*</span>
               </label>
               <select
-                value={bulkFormData.period}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, period: e.target.value })}
+                value={assignFormData.period}
+                onChange={(e) => setAssignFormData({ ...assignFormData, period: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Sélectionner une période</option>
@@ -1395,8 +1404,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Type de frais</label>
               <select
-                value={bulkFormData.feeType}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, feeType: e.target.value })}
+                value={assignFormData.feeType}
+                onChange={(e) => setAssignFormData({ ...assignFormData, feeType: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="ENROLLMENT">Inscription</option>
@@ -1411,8 +1420,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Rythme de facturation</label>
               <select
-                value={bulkFormData.billingPeriod}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, billingPeriod: e.target.value })}
+                value={assignFormData.billingPeriod}
+                onChange={(e) => setAssignFormData({ ...assignFormData, billingPeriod: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="ONE_TIME">Ponctuel</option>
@@ -1424,35 +1433,38 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             </div>
           </div>
 
-          {isTuitionFeeType(bulkFormData.feeType) ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              Scolarité : le montant est appliqué automatiquement selon le niveau de la classe sélectionnée (un
-              montant par élève si les niveaux diffèrent).
+          {isTuitionFeeType(assignFormData.feeType) ? (
+            <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+              Scolarité : montant prérempli depuis le barème
+              {assignFormData.assignScope === 'BY_STUDENT'
+                ? ' (ou saisissez un montant spécifique pour cet élève)'
+                : ' (modifiable avant attribution)'}
+              .
+              {tuitionLevelHint ? ` ${tuitionLevelHint}` : null}
             </p>
           ) : null}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Montant brut (FCFA){isTuitionFeeType(bulkFormData.feeType) ? ' — fixe par niveau' : ', optionnel'}
+                Montant brut (FCFA)
+                {isTuitionFeeType(assignFormData.feeType) ? '' : ', optionnel'}
               </label>
               <input
                 type="number"
-                value={bulkFormData.baseAmount}
-                readOnly={isTuitionFeeType(bulkFormData.feeType)}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, baseAmount: e.target.value })}
+                min={0}
+                value={assignFormData.baseAmount}
+                onChange={(e) => setAssignFormData({ ...assignFormData, baseAmount: e.target.value })}
                 placeholder="Ex. barème avant remise"
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isTuitionFeeType(bulkFormData.feeType) ? 'bg-gray-100 cursor-not-allowed' : ''
-                }`}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Remise (FCFA), optionnel</label>
               <input
                 type="number"
-                value={bulkFormData.discountAmount}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, discountAmount: e.target.value })}
+                value={assignFormData.discountAmount}
+                onChange={(e) => setAssignFormData({ ...assignFormData, discountAmount: e.target.value })}
                 placeholder="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -1463,21 +1475,17 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Montant à payer (FCFA){' '}
-                {!isTuitionFeeType(bulkFormData.feeType) && !bulkFormData.baseAmount.trim() ? (
-                  <span className="text-red-500">*</span>
-                ) : null}
+                {!assignFormData.baseAmount.trim() ? <span className="text-red-500">*</span> : null}
               </label>
               <input
                 type="number"
-                value={bulkFormData.amount}
-                readOnly={isTuitionFeeType(bulkFormData.feeType)}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, amount: e.target.value })}
+                min={0}
+                value={assignFormData.amount}
+                onChange={(e) => setAssignFormData({ ...assignFormData, amount: e.target.value })}
                 placeholder="100000"
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  isTuitionFeeType(bulkFormData.feeType) ? 'bg-gray-100 cursor-not-allowed' : ''
-                }`}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              {bulkFormData.baseAmount.trim() ? (
+              {assignFormData.baseAmount.trim() ? (
                 <p className="text-xs text-gray-500 mt-1">Avec un montant brut, le net est recalculé (brut − remise).</p>
               ) : null}
             </div>
@@ -1488,31 +1496,18 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               </label>
               <input
                 type="date"
-                value={bulkFormData.dueDate}
-                onChange={(e) => setBulkFormData({ ...bulkFormData, dueDate: e.target.value })}
+                value={assignFormData.dueDate}
+                onChange={(e) => setAssignFormData({ ...assignFormData, dueDate: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Libellé bourse / aide (optionnel)</label>
-            <input
-              type="text"
-              value={bulkFormData.scholarshipLabel}
-              onChange={(e) => setBulkFormData({ ...bulkFormData, scholarshipLabel: e.target.value })}
-              placeholder="Ex. Bourse mérite 2025"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description (optionnel)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (optionnel)</label>
             <textarea
-              value={bulkFormData.description}
-              onChange={(e) => setBulkFormData({ ...bulkFormData, description: e.target.value })}
+              value={assignFormData.description}
+              onChange={(e) => setAssignFormData({ ...assignFormData, description: e.target.value })}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Description du frais..."
@@ -1523,30 +1518,30 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <Button
               variant="secondary"
               onClick={() => {
-                setShowBulkModal(false);
-                resetBulkForm();
+                setShowAssignModal(false);
+                resetAssignForm();
               }}
             >
               Annuler
             </Button>
             <Button
               variant="primary"
-              onClick={handleBulkCreate}
-              disabled={bulkCreateMutation.isPending}
+              onClick={handleAssign}
+              disabled={assignCreateMutation.isPending || assignSingleStudentMutation.isPending}
             >
-              {bulkCreateMutation.isPending ? 'Création...' : 'Attribuer à la classe'}
+              {assignCreateMutation.isPending || assignSingleStudentMutation.isPending
+                ? 'Attribution...'
+                : 'Attribuer'}
             </Button>
           </div>
         </div>
       </Modal>
-
       {/* Edit Modal */}
       <Modal
         isOpen={showEditModal}
         onClose={() => {
           setShowEditModal(false);
           setSelectedFee(null);
-          resetForm();
         }}
         title="Modifier un frais de scolarité"
         size="lg"
@@ -1559,8 +1554,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               </label>
               <input
                 type="text"
-                value={formData.academicYear}
-                onChange={(e) => setFormData({ ...formData, academicYear: e.target.value })}
+                value={editFormData.academicYear}
+                onChange={(e) => setEditFormData({ ...editFormData, academicYear: e.target.value })}
                 placeholder="2024-2025"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -1571,8 +1566,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
                 Période <span className="text-red-500">*</span>
               </label>
               <select
-                value={formData.period}
-                onChange={(e) => setFormData({ ...formData, period: e.target.value })}
+                value={editFormData.period}
+                onChange={(e) => setEditFormData({ ...editFormData, period: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="Trimestre 1">Trimestre 1</option>
@@ -1590,8 +1585,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Type de frais</label>
               <select
-                value={formData.feeType}
-                onChange={(e) => setFormData({ ...formData, feeType: e.target.value })}
+                value={editFormData.feeType}
+                onChange={(e) => setEditFormData({ ...editFormData, feeType: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="ENROLLMENT">Inscription</option>
@@ -1606,8 +1601,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Rythme de facturation</label>
               <select
-                value={formData.billingPeriod}
-                onChange={(e) => setFormData({ ...formData, billingPeriod: e.target.value })}
+                value={editFormData.billingPeriod}
+                onChange={(e) => setEditFormData({ ...editFormData, billingPeriod: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="ONE_TIME">Ponctuel</option>
@@ -1624,8 +1619,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-1">Montant brut (FCFA), optionnel</label>
               <input
                 type="number"
-                value={formData.baseAmount}
-                onChange={(e) => setFormData({ ...formData, baseAmount: e.target.value })}
+                value={editFormData.baseAmount}
+                onChange={(e) => setEditFormData({ ...editFormData, baseAmount: e.target.value })}
                 placeholder="Ex. barème avant remise"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -1634,8 +1629,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-1">Remise (FCFA), optionnel</label>
               <input
                 type="number"
-                value={formData.discountAmount}
-                onChange={(e) => setFormData({ ...formData, discountAmount: e.target.value })}
+                value={editFormData.discountAmount}
+                onChange={(e) => setEditFormData({ ...editFormData, discountAmount: e.target.value })}
                 placeholder="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -1646,16 +1641,16 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Montant à payer (FCFA){' '}
-                {!formData.baseAmount.trim() ? <span className="text-red-500">*</span> : null}
+                {!editFormData.baseAmount.trim() ? <span className="text-red-500">*</span> : null}
               </label>
               <input
                 type="number"
-                value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                value={editFormData.amount}
+                onChange={(e) => setEditFormData({ ...editFormData, amount: e.target.value })}
                 placeholder="100000"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              {formData.baseAmount.trim() ? (
+              {editFormData.baseAmount.trim() ? (
                 <p className="text-xs text-gray-500 mt-1">Avec un montant brut, le net est recalculé (brut − remise).</p>
               ) : null}
             </div>
@@ -1666,22 +1661,11 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               </label>
               <input
                 type="date"
-                value={formData.dueDate}
-                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                value={editFormData.dueDate}
+                onChange={(e) => setEditFormData({ ...editFormData, dueDate: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Libellé bourse / aide (optionnel)</label>
-            <input
-              type="text"
-              value={formData.scholarshipLabel}
-              onChange={(e) => setFormData({ ...formData, scholarshipLabel: e.target.value })}
-              placeholder="Ex. Bourse mérite 2025"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
           </div>
 
           <div>
@@ -1689,8 +1673,8 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               Description (optionnel)
             </label>
             <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              value={editFormData.description}
+              onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="Description du frais..."
@@ -1703,7 +1687,6 @@ const TuitionFeesManagement: React.FC<TuitionFeesManagementProps> = ({
               onClick={() => {
                 setShowEditModal(false);
                 setSelectedFee(null);
-                resetForm();
               }}
             >
               Annuler

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FiTrendingUp, FiPieChart, FiBarChart2 } from 'react-icons/fi';
 import Card from '../../ui/Card';
 import {
   BarChart,
@@ -9,10 +10,30 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Legend,
+  LineChart,
+  Line,
 } from 'recharts';
-import { CHART_GRID, CHART_MARGIN_COMPACT, chartBlueRed, CHART_BLUE, CHART_ANIMATION_MS } from '../../charts';
+import {
+  CHART_GRID_SOFT,
+  CHART_MARGIN_COMPACT,
+  CHART_MARGIN_TILTED,
+  CHART_AXIS_TICK,
+  chartBlueRed,
+  CHART_BLUE,
+  PremiumTooltip,
+  PremiumChartCard,
+  RechartsViewport,
+  BarGradientsMulti,
+  LineAreaGradient,
+  PREMIUM_BAR_RADIUS_TOP,
+  PREMIUM_BAR_RADIUS_H_RIGHT,
+  PREMIUM_BAR_MAX_SIZE,
+  PREMIUM_CHART_ANIMATION,
+  PREMIUM_LEGEND_STYLE,
+  premiumLegendFormatter,
+  CHART_CURSOR,
+} from '../../charts';
 import { adminApi } from '../../../services/api';
 
 type Props = {
@@ -275,31 +296,40 @@ const ReportsFinancialPanel: React.FC<Props> = ({ summary, isLoading }) => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {revFeeChart.length > 0 && (
-              <Card className="p-5 border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900 mb-2">Revenus par source (type de frais)</h3>
-                <p className="text-[11px] text-gray-500 mb-3">Paiements complétés sur la période filtrée.</p>
-                <div className="h-64 w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={revFeeChart} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 4 }}>
-                      <CartesianGrid {...CHART_GRID} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}k`} />
-                      <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
-                      <Tooltip
-                        formatter={(v: number, _n, p) => {
-                          const full = p?.payload?.montantFull;
-                          return [`${fmtMoney(typeof full === 'number' ? full : v * 1000)} FCFA`, 'Montant'];
-                        }}
-                      />
-                      <Bar dataKey="montant" radius={[0, 4, 4, 0]} isAnimationActive animationDuration={CHART_ANIMATION_MS}>
-                        {revFeeChart.map((_, i) => (
-                          <Cell key={i} fill={chartBlueRed(i)} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">Axe horizontal : milliers de FCFA.</p>
-              </Card>
+              <PremiumChartCard
+                title="Revenus par source"
+                subtitle="Paiements complétés — milliers FCFA"
+                icon={FiPieChart}
+                accent="indigo"
+                height={264}
+              >
+                <RechartsViewport height={228}>
+                  <BarChart data={revFeeChart} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 4 }}>
+                    <BarGradientsMulti count={revFeeChart.length} idPrefix="fin-rev-fee" />
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis type="number" tick={CHART_AXIS_TICK} tickFormatter={(v) => `${v}k`} />
+                    <YAxis type="category" dataKey="name" width={100} tick={CHART_AXIS_TICK} />
+                    <Tooltip
+                      formatter={(v: number, _n, p) => {
+                        const full = p?.payload?.montantFull;
+                        return [`${fmtMoney(typeof full === 'number' ? full : v * 1000)} FCFA`, 'Montant'];
+                      }}
+                      content={(p) => <PremiumTooltip {...p} />}
+                      cursor={CHART_CURSOR}
+                    />
+                    <Bar
+                      dataKey="montant"
+                      radius={PREMIUM_BAR_RADIUS_H_RIGHT}
+                      maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                      {...PREMIUM_CHART_ANIMATION}
+                    >
+                      {revFeeChart.map((_, i) => (
+                        <Cell key={i} fill={`url(#fin-rev-fee-${i})`} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </RechartsViewport>
+              </PremiumChartCard>
             )}
 
             <Card className="p-5 border border-gray-200">
@@ -323,72 +353,91 @@ const ReportsFinancialPanel: React.FC<Props> = ({ summary, isLoading }) => {
           </div>
 
           {expCatChart.length > 0 && (
-            <Card className="p-5 border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-4">Dépenses par catégorie (période)</h3>
-              <div className="h-72 w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={expCatChart} margin={CHART_MARGIN_COMPACT}>
-                    <CartesianGrid {...CHART_GRID} />
-                    <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-25} textAnchor="end" height={70} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}k`} width={36} />
-                    <Tooltip
-                      formatter={(v: number, _n, p) => {
-                        const full = p?.payload?.montantFull;
-                        return [`${fmtMoney(typeof full === 'number' ? full : v * 1000)} FCFA`, 'Dépenses'];
-                      }}
-                    />
-                    <Bar dataKey="montant" fill={CHART_BLUE} radius={[4, 4, 0, 0]} isAnimationActive animationDuration={CHART_ANIMATION_MS} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+            <PremiumChartCard
+              title="Dépenses par catégorie"
+              subtitle="Période filtrée — milliers FCFA"
+              icon={FiBarChart2}
+              accent="rose"
+              height={300}
+            >
+              <RechartsViewport height={264}>
+                <BarChart data={expCatChart} margin={CHART_MARGIN_TILTED}>
+                  <BarGradientsMulti count={1} idPrefix="fin-exp-cat" />
+                  <CartesianGrid {...CHART_GRID_SOFT} />
+                  <XAxis dataKey="name" tick={CHART_AXIS_TICK} interval={0} angle={-25} textAnchor="end" height={70} />
+                  <YAxis tick={CHART_AXIS_TICK} tickFormatter={(v) => `${v}k`} width={36} />
+                  <Tooltip
+                    formatter={(v: number, _n, p) => {
+                      const full = p?.payload?.montantFull;
+                      return [`${fmtMoney(typeof full === 'number' ? full : v * 1000)} FCFA`, 'Dépenses'];
+                    }}
+                    content={(p) => <PremiumTooltip {...p} />}
+                    cursor={CHART_CURSOR}
+                  />
+                  <Bar
+                    dataKey="montant"
+                    fill="url(#fin-exp-cat-0)"
+                    radius={PREMIUM_BAR_RADIUS_TOP}
+                    maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                    {...PREMIUM_CHART_ANIMATION}
+                  />
+                </BarChart>
+              </RechartsViewport>
+            </PremiumChartCard>
           )}
 
           {budgetChart.length > 0 && (
-            <Card className="p-5 border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-1">Budget vs réalisé</h3>
-              <p className="text-[11px] text-gray-500 mb-3">
-                Année budgétaire : {fin.budgetVsActual.academicYear ?? '—'} — {fin.budgetVsActual.expenseScopeNote}
-              </p>
-              <div className="h-80 w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={budgetChart} margin={{ ...CHART_MARGIN_COMPACT, bottom: 8 }}>
-                    <CartesianGrid {...CHART_GRID} />
-                    <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-30} textAnchor="end" height={80} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}k`} />
-                    <Tooltip formatter={(v: number) => [`${fmtMoney(v * 1000)} FCFA`, '']} />
-                    <Legend />
-                    <Bar
-                      dataKey="budget"
-                      name="Budget"
-                      fill="#6366f1"
-                      radius={[4, 4, 0, 0]}
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
-                    />
-                    <Bar
-                      dataKey="realise"
-                      name="Réalisé"
-                      fill="#0d9488"
-                      radius={[4, 4, 0, 0]}
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-700">
-                <span>
-                  Total budget : <strong>{fmtMoney(fin.budgetVsActual.totals.budgeted)}</strong> FCFA
-                </span>
-                <span>
-                  Total réalisé : <strong>{fmtMoney(fin.budgetVsActual.totals.realized)}</strong> FCFA
-                </span>
-                <span>
-                  Écart : <strong>{fmtMoney(fin.budgetVsActual.totals.variance)}</strong> FCFA
-                </span>
-              </div>
-            </Card>
+            <PremiumChartCard
+              title="Budget vs réalisé"
+              subtitle={`${fin.budgetVsActual.academicYear ?? '—'} · ${fin.budgetVsActual.expenseScopeNote}`}
+              icon={FiTrendingUp}
+              accent="emerald"
+              height={320}
+              footer={
+                <div className="flex flex-wrap gap-4 text-sm text-stone-700">
+                  <span>
+                    Total budget : <strong>{fmtMoney(fin.budgetVsActual.totals.budgeted)}</strong> FCFA
+                  </span>
+                  <span>
+                    Total réalisé : <strong>{fmtMoney(fin.budgetVsActual.totals.realized)}</strong> FCFA
+                  </span>
+                  <span>
+                    Écart : <strong>{fmtMoney(fin.budgetVsActual.totals.variance)}</strong> FCFA
+                  </span>
+                </div>
+              }
+            >
+              <RechartsViewport height={268}>
+                <BarChart data={budgetChart} margin={{ ...CHART_MARGIN_TILTED, bottom: 8 }}>
+                  <BarGradientsMulti count={2} idPrefix="fin-budget" />
+                  <CartesianGrid {...CHART_GRID_SOFT} />
+                  <XAxis dataKey="name" tick={CHART_AXIS_TICK} interval={0} angle={-30} textAnchor="end" height={80} />
+                  <YAxis tick={CHART_AXIS_TICK} tickFormatter={(v) => `${v}k`} />
+                  <Tooltip
+                    formatter={(v: number) => [`${fmtMoney(v * 1000)} FCFA`, '']}
+                    content={(p) => <PremiumTooltip {...p} />}
+                    cursor={CHART_CURSOR}
+                  />
+                  <Legend {...PREMIUM_LEGEND_STYLE} formatter={premiumLegendFormatter} />
+                  <Bar
+                    dataKey="budget"
+                    name="Budget"
+                    fill="url(#fin-budget-0)"
+                    radius={PREMIUM_BAR_RADIUS_TOP}
+                    maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                    {...PREMIUM_CHART_ANIMATION}
+                  />
+                  <Bar
+                    dataKey="realise"
+                    name="Réalisé"
+                    fill="url(#fin-budget-1)"
+                    radius={PREMIUM_BAR_RADIUS_TOP}
+                    maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                    {...PREMIUM_CHART_ANIMATION}
+                  />
+                </BarChart>
+              </RechartsViewport>
+            </PremiumChartCard>
           )}
 
           <Card className="p-5 border border-violet-100 bg-violet-50/30">
@@ -444,31 +493,36 @@ const ReportsFinancialPanel: React.FC<Props> = ({ summary, isLoading }) => {
         </>
       )}
 
-      <Card className="p-5 border border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Paiements complétés (6 derniers mois)</h3>
-        <div className="h-72 w-full min-w-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={CHART_MARGIN_COMPACT}>
-              <CartesianGrid {...CHART_GRID} />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}k`} />
-              <Tooltip
-                formatter={(value: number) => [`${fmtMoney(value * 1000)} FCFA`, 'Montant']}
-                labelFormatter={(label) => `Période ${label}`}
-              />
-              <Bar
-                dataKey="amountK"
-                name="Montant (milliers FCFA)"
-                fill={CHART_BLUE}
-                radius={[4, 4, 0, 0]}
-                isAnimationActive
-                animationDuration={CHART_ANIMATION_MS}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">L’axe vertical est exprimé en milliers de FCFA (arrondi).</p>
-      </Card>
+      <PremiumChartCard
+        title="Paiements complétés"
+        subtitle="6 derniers mois — milliers FCFA"
+        icon={FiTrendingUp}
+        accent="sky"
+        height={300}
+      >
+        <RechartsViewport height={264}>
+          <BarChart data={chartData} margin={CHART_MARGIN_COMPACT}>
+            <BarGradientsMulti count={1} idPrefix="fin-monthly" />
+            <CartesianGrid {...CHART_GRID_SOFT} />
+            <XAxis dataKey="label" tick={CHART_AXIS_TICK} />
+            <YAxis tick={CHART_AXIS_TICK} tickFormatter={(v) => `${v}k`} />
+            <Tooltip
+              formatter={(value: number) => [`${fmtMoney(value * 1000)} FCFA`, 'Montant']}
+              labelFormatter={(label) => `Période ${label}`}
+              content={(p) => <PremiumTooltip {...p} />}
+              cursor={CHART_CURSOR}
+            />
+            <Bar
+              dataKey="amountK"
+              name="Montant (milliers FCFA)"
+              fill="url(#fin-monthly-0)"
+              radius={PREMIUM_BAR_RADIUS_TOP}
+              maxBarSize={PREMIUM_BAR_MAX_SIZE}
+              {...PREMIUM_CHART_ANIMATION}
+            />
+          </BarChart>
+        </RechartsViewport>
+      </PremiumChartCard>
 
       <Card className="p-5 border border-gray-200 overflow-x-auto">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Synthèse par statut de paiement (vue globale)</h3>

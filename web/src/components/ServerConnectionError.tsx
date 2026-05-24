@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Card from './ui/Card';
 import { FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import api from '../services/api';
@@ -22,25 +22,29 @@ const ServerConnectionError: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    checkServerConnection();
-  }, []);
-
-  const checkServerConnection = async () => {
+  const checkServerConnection = useCallback(async () => {
     setIsChecking(true);
     try {
       const response = await api.get('/health');
       if (response.status === 200) {
         setIsServerDown(false);
       }
-    } catch (error: any) {
-      if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+    } catch (error: unknown) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: string }).code)
+          : '';
+      if (code === 'ERR_NETWORK' || code === 'ECONNREFUSED') {
         setIsServerDown(true);
       }
     } finally {
       setIsChecking(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void checkServerConnection();
+  }, [checkServerConnection]);
 
   if (!isServerDown || browserOffline) {
     return null;

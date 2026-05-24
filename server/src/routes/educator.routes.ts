@@ -1,8 +1,18 @@
 import express from 'express';
+import type { Prisma } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { decryptStudentRecord } from '../utils/student-sensitive-crypto.util';
+import { findSchedulesWithRelations } from '../utils/safe-schedule-query.util';
+import {
+  classIdFilter,
+  educatorClassAssignmentInclude,
+  getAssignedClassIdsForUserId,
+  isClassInEducatorScope,
+  isStudentInEducatorScope,
+  studentClassFilter,
+} from '../utils/educator-class-assignment.util';
 
 const router = express.Router();
 
@@ -17,6 +27,10 @@ const getEducatorId = async (userId: string) => {
   });
   return educator?.id;
 };
+
+async function resolveEducatorClassScope(userId: string): Promise<string[] | null> {
+  return getAssignedClassIdsForUserId(userId);
+}
 
 router.get('/notifications', async (req: AuthRequest, res) => {
   try {
@@ -85,6 +99,7 @@ router.get('/profile', async (req: AuthRequest, res) => {
             createdAt: true,
           },
         },
+        ...educatorClassAssignmentInclude,
       },
     });
 
@@ -92,7 +107,8 @@ router.get('/profile', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Profil éducateur non trouvé' });
     }
 
-    res.json(educator);
+    const assignedClasses = educator.classAssignments.map((a) => a.class);
+    res.json({ ...educator, assignedClasses });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -143,12 +159,22 @@ router.put(
 // Lister tous les élèves (filtre optionnel par classe)
 router.get('/students', async (req: AuthRequest, res) => {
   try {
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const { classId } = req.query;
+    const requestedClassId =
+      classId && typeof classId === 'string' && classId.trim() ? classId.trim() : null;
+    if (requestedClassId && !classIds.includes(requestedClassId)) {
+      return res.json([]);
+    }
+
     const students = await prisma.student.findMany({
       where: {
-        ...(classId && typeof classId === 'string' && classId.trim()
-          ? { classId: classId.trim() }
-          : {}),
+        ...studentClassFilter(classIds),
+        ...(requestedClassId ? { classId: requestedClassId } : {}),
       },
       include: {
         user: {
@@ -188,9 +214,22 @@ router.get('/students', async (req: AuthRequest, res) => {
 router.get('/students/:studentId', async (req: AuthRequest, res) => {
   try {
     const { studentId } = req.params;
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+    if (classIds.length === 0) {
+      return res.status(403).json({
+        error:
+          'Aucune classe ne vous est assignée. Demandez à l’administration de configurer votre périmètre.',
+      });
+    }
 
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
+    const student = await prisma.student.findFirst({
+      where: {
+        id: studentId,
+        ...studentClassFilter(classIds),
+      },
       include: {
         user: {
           select: {
@@ -250,11 +289,37 @@ router.get('/students/:studentId', async (req: AuthRequest, res) => {
           },
           take: 10,
         },
+        parents: {
+          include: {
+            parent: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            grades: true,
+            absences: true,
+          },
+        },
       },
     });
 
     if (!student) {
-      return res.status(404).json({ error: 'Élève non trouvé' });
+      return res.status(404).json({
+        error:
+          'Élève introuvable ou hors de vos classes assignées.',
+      });
     }
 
     res.json(decryptStudentRecord(student as Record<string, unknown>));
@@ -327,9 +392,8 @@ router.post(
     body('studentId').notEmpty().withMessage('ID élève requis'),
     body('period').notEmpty().withMessage('Période requise'),
     body('academicYear').notEmpty().withMessage('Année scolaire requise'),
-    body('punctuality').isFloat({ min: 0, max: 20 }).withMessage('Ponctualité entre 0 et 20'),
-    body('respect').isFloat({ min: 0, max: 20 }).withMessage('Respect entre 0 et 20'),
-    body('participation').isFloat({ min: 0, max: 20 }).withMessage('Participation entre 0 et 20'),
+    body('punctuality').isFloat({ min: 0, max: 20 }).withMessage('Assiduité entre 0 et 20'),
+    body('respect').isFloat({ min: 0, max: 20 }).withMessage('Tenue vestimentaire entre 0 et 20'),
     body('behavior').isFloat({ min: 0, max: 20 }).withMessage('Comportement entre 0 et 20'),
   ],
   async (req: AuthRequest, res) => {
@@ -351,13 +415,16 @@ router.post(
         academicYear,
         punctuality,
         respect,
-        participation,
         behavior,
         comments,
       } = req.body;
 
-      // Calculer la moyenne
-      const average = (punctuality + respect + participation + behavior) / 4;
+      const inScope = await isStudentInEducatorScope(req.user!.id, studentId);
+      if (!inScope) {
+        return res.status(403).json({ error: 'Élève hors de votre périmètre de classes' });
+      }
+
+      const average = (punctuality + respect + behavior) / 3;
 
       // Vérifier si une évaluation existe déjà
       const existingConduct = await prisma.conduct.findUnique({
@@ -379,7 +446,7 @@ router.post(
           data: {
             punctuality,
             respect,
-            participation,
+            participation: 0,
             behavior,
             average,
             comments,
@@ -408,7 +475,7 @@ router.post(
             academicYear,
             punctuality,
             respect,
-            participation,
+            participation: 0,
             behavior,
             average,
             comments,
@@ -495,7 +562,6 @@ router.put(
   [
     body('punctuality').optional().isFloat({ min: 0, max: 20 }),
     body('respect').optional().isFloat({ min: 0, max: 20 }),
-    body('participation').optional().isFloat({ min: 0, max: 20 }),
     body('behavior').optional().isFloat({ min: 0, max: 20 }),
   ],
   async (req: AuthRequest, res) => {
@@ -506,7 +572,7 @@ router.put(
       }
 
       const { conductId } = req.params;
-      const { punctuality, respect, participation, behavior, comments } = req.body;
+      const { punctuality, respect, behavior, comments } = req.body;
 
       // Vérifier que l'évaluation existe et appartient à cet éducateur
       const existingConduct = await prisma.conduct.findUnique({
@@ -524,16 +590,15 @@ router.put(
       // Calculer la nouvelle moyenne si les notes changent
       const newPunctuality = punctuality !== undefined ? punctuality : existingConduct.punctuality;
       const newRespect = respect !== undefined ? respect : existingConduct.respect;
-      const newParticipation = participation !== undefined ? participation : existingConduct.participation;
       const newBehavior = behavior !== undefined ? behavior : existingConduct.behavior;
-      const average = (newPunctuality + newRespect + newParticipation + newBehavior) / 4;
+      const average = (newPunctuality + newRespect + newBehavior) / 3;
 
       const updatedConduct = await prisma.conduct.update({
         where: { id: conductId },
         data: {
           ...(punctuality !== undefined && { punctuality }),
           ...(respect !== undefined && { respect }),
-          ...(participation !== undefined && { participation }),
+          participation: 0,
           ...(behavior !== undefined && { behavior }),
           average,
           ...(comments !== undefined && { comments }),
@@ -604,8 +669,13 @@ router.get('/stats', async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Profil éducateur non trouvé' });
     }
 
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const totalStudents = await prisma.student.count({
-      where: { isActive: true },
+      where: studentClassFilter(classIds),
     });
 
     const totalConducts = await prisma.conduct.count({
@@ -640,9 +710,15 @@ const DAY_SHORT = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 
 // ========== CLASSES, ENSEIGNANTS, PARENTS ==========
 
-router.get('/classes', async (_req: AuthRequest, res) => {
+router.get('/classes', async (req: AuthRequest, res) => {
   try {
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const classes = await prisma.class.findMany({
+      where: classIdFilter(classIds),
       include: {
         teacher: {
           include: {
@@ -659,9 +735,23 @@ router.get('/classes', async (_req: AuthRequest, res) => {
   }
 });
 
-router.get('/teachers', async (_req: AuthRequest, res) => {
+router.get('/teachers', async (req: AuthRequest, res) => {
   try {
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const teachers = await prisma.teacher.findMany({
+      where:
+        classIds.length === 0
+          ? { id: { in: [] } }
+          : {
+              OR: [
+                { classes: { some: { id: { in: classIds } } } },
+                { courses: { some: { classId: { in: classIds } } } },
+              ],
+            },
       include: {
         user: {
           select: {
@@ -687,20 +777,31 @@ router.get('/teachers', async (_req: AuthRequest, res) => {
 
 router.get('/parents', async (req: AuthRequest, res) => {
   try {
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const { classId } = req.query;
     const classFilter =
       classId && typeof classId === 'string' && classId.trim() ? classId.trim() : null;
+    if (classFilter && !classIds.includes(classFilter)) {
+      return res.json([]);
+    }
+
+    const scopeClassIds = classFilter ? [classFilter] : classIds;
 
     const parents = await prisma.parent.findMany({
-      where: classFilter
-        ? {
-            students: {
-              some: {
-                student: { classId: classFilter, isActive: true },
+      where:
+        scopeClassIds.length === 0
+          ? { id: { in: [] } }
+          : {
+              students: {
+                some: {
+                  student: { classId: { in: scopeClassIds }, isActive: true },
+                },
               },
             },
-          }
-        : undefined,
       include: {
         user: {
           select: {
@@ -737,45 +838,35 @@ router.get('/parents', async (req: AuthRequest, res) => {
 
 router.get('/schedules', async (req: AuthRequest, res) => {
   try {
+    const classIds = await resolveEducatorClassScope(req.user!.id);
+    if (classIds === null) {
+      return res.status(404).json({ error: 'Profil éducateur non trouvé' });
+    }
+
     const { classId, teacherId } = req.query;
-    const schedules = await prisma.schedule.findMany({
-      where: {
-        ...(classId && typeof classId === 'string' && classId.trim()
-          ? { classId: classId.trim() }
-          : {}),
-        ...(teacherId && typeof teacherId === 'string' && teacherId.trim()
-          ? {
-              OR: [
-                { course: { teacherId: teacherId.trim() } },
-                { substituteTeacherId: teacherId.trim() },
-              ],
-            }
-          : {}),
-      },
-      include: {
-        class: { select: { id: true, name: true, level: true } },
-        course: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            teacher: {
-              select: {
-                id: true,
-                user: { select: { firstName: true, lastName: true, email: true } },
-              },
-            },
-          },
-        },
-        substituteTeacher: {
-          select: {
-            id: true,
-            user: { select: { firstName: true, lastName: true, email: true } },
-          },
-        },
-      },
-      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-    });
+    const requestedClassId =
+      classId && typeof classId === 'string' && classId.trim() ? classId.trim() : null;
+    if (requestedClassId && !classIds.includes(requestedClassId)) {
+      return res.json({ slots: [] });
+    }
+
+    const where: Prisma.ScheduleWhereInput = {
+      classId: requestedClassId
+        ? requestedClassId
+        : classIds.length > 0
+          ? { in: classIds }
+          : { in: [] },
+      ...(teacherId && typeof teacherId === 'string' && teacherId.trim()
+        ? {
+            OR: [
+              { course: { teacherId: teacherId.trim() } },
+              { substituteTeacherId: teacherId.trim() },
+            ],
+          }
+        : {}),
+    };
+
+    const schedules = await findSchedulesWithRelations(where);
 
     const slots = schedules.map((s) => ({
       id: s.id,
@@ -785,8 +876,10 @@ router.get('/schedules', async (req: AuthRequest, res) => {
       classId: s.class.id,
       className: s.class.name,
       classLevel: s.class.level,
-      teacherId: s.course.teacher.id,
-      teacherName: `${s.course.teacher.user?.firstName ?? ''} ${s.course.teacher.user?.lastName ?? ''}`.trim(),
+      teacherId: s.course.teacher?.id ?? null,
+      teacherName: s.course.teacher
+        ? `${s.course.teacher.user.firstName} ${s.course.teacher.user.lastName}`.trim()
+        : 'Non assigné',
       dayOfWeek: s.dayOfWeek,
       dayLabel: DAY_LABELS[s.dayOfWeek] ?? `J${s.dayOfWeek}`,
       dayShort: DAY_SHORT[s.dayOfWeek] ?? String(s.dayOfWeek),
@@ -796,8 +889,8 @@ router.get('/schedules', async (req: AuthRequest, res) => {
       substituteTeacher: s.substituteTeacher
         ? {
             id: s.substituteTeacher.id,
-            firstName: s.substituteTeacher.user?.firstName,
-            lastName: s.substituteTeacher.user?.lastName,
+            firstName: s.substituteTeacher.user.firstName,
+            lastName: s.substituteTeacher.user.lastName,
           }
         : null,
     }));
@@ -1039,6 +1132,10 @@ router.post('/messaging/send', async (req: AuthRequest, res) => {
 
     if (broadcastClassId && typeof broadcastClassId === 'string' && broadcastClassId.trim()) {
       const classId = broadcastClassId.trim();
+      const allowed = await isClassInEducatorScope(req.user!.id, classId);
+      if (!allowed) {
+        return res.status(403).json({ error: 'Classe hors de votre périmètre' });
+      }
       if (!content || typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: 'Contenu requis' });
       }

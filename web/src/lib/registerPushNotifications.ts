@@ -29,7 +29,11 @@ export async function registerPushNotifications(): Promise<boolean> {
     }
     if (permission !== 'granted') return false;
 
-    const vapidRes = await api.get<{ publicKey?: string }>('/push/vapid-public');
+    const vapidRes = await api.get<{ publicKey?: string | null; configured?: boolean }>(
+      '/push/vapid-public',
+      { validateStatus: (s) => s < 500 },
+    );
+    if (vapidRes.status >= 400 || vapidRes.data?.configured === false) return false;
     const pubKey = vapidRes.data?.publicKey;
     if (!pubKey) return false;
 

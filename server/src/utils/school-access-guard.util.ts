@@ -16,45 +16,87 @@ export function isObjectId(value: string): boolean {
   return OBJECT_ID.test(value);
 }
 
-export async function studentBelongsToSchool(studentId: string, schoolId: string): Promise<boolean> {
-  if (!isObjectId(studentId)) return false;
-  const row = await prisma.student.findFirst({
-    where: { id: studentId, ...studentScopeWhere(schoolId) },
-    select: { id: true },
-  });
-  return !!row;
+function isUnsetSchoolId(value: string | null | undefined): boolean {
+  return value == null || value === '';
 }
 
-export async function assertStudentInSchool(studentId: string, schoolId: string | undefined): Promise<void> {
+/**
+ * Vérifie l’appartenance à l’établissement (logique explicite, fiable MongoDB legacy).
+ * Alignée sur studentScopeWhere : schoolId direct, classe rattachée, orphelins → établissement par défaut.
+ */
+export async function studentBelongsToSchool(
+  studentId: string,
+  schoolId: string,
+  isDefaultSchool = false,
+): Promise<boolean> {
+  if (!isObjectId(studentId)) return false;
+
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      schoolId: true,
+      classId: true,
+      class: { select: { schoolId: true } },
+    },
+  });
+  if (!student) return false;
+
+  const directSchoolId = student.schoolId;
+  const classSchoolId = student.class?.schoolId ?? null;
+
+  if (directSchoolId === schoolId || classSchoolId === schoolId) return true;
+
+  if (!isDefaultSchool) return false;
+
+  return isUnsetSchoolId(directSchoolId) && isUnsetSchoolId(classSchoolId);
+}
+
+export async function assertStudentInSchool(
+  studentId: string,
+  schoolId: string | undefined,
+  isDefaultSchool = false,
+): Promise<void> {
   if (!schoolId) throw new SchoolAccessDeniedError('Établissement actif requis (en-tête X-School-Id).');
-  if (!(await studentBelongsToSchool(studentId, schoolId))) {
+  if (!(await studentBelongsToSchool(studentId, schoolId, isDefaultSchool))) {
     throw new SchoolAccessDeniedError('Élève introuvable dans cet établissement.');
   }
 }
 
-export async function assertClassInSchool(classId: string, schoolId: string | undefined): Promise<void> {
+export async function assertClassInSchool(
+  classId: string,
+  schoolId: string | undefined,
+  isDefaultSchool = false,
+): Promise<void> {
   if (!schoolId) throw new SchoolAccessDeniedError('Établissement actif requis (en-tête X-School-Id).');
   if (!isObjectId(classId)) throw new SchoolAccessDeniedError('Classe invalide.');
   const row = await prisma.class.findFirst({
-    where: { id: classId, ...classScopeWhere(schoolId) },
+    where: { id: classId, ...classScopeWhere(schoolId, isDefaultSchool) },
     select: { id: true },
   });
   if (!row) throw new SchoolAccessDeniedError('Classe introuvable dans cet établissement.');
 }
 
-export async function assertTuitionFeeInSchool(feeId: string, schoolId: string | undefined): Promise<void> {
+export async function assertTuitionFeeInSchool(
+  feeId: string,
+  schoolId: string | undefined,
+  isDefaultSchool = false,
+): Promise<void> {
   if (!schoolId) throw new SchoolAccessDeniedError('Établissement actif requis (en-tête X-School-Id).');
   const row = await prisma.tuitionFee.findFirst({
-    where: { id: feeId, student: studentScopeWhere(schoolId) },
+    where: { id: feeId, student: studentScopeWhere(schoolId, isDefaultSchool) },
     select: { id: true },
   });
   if (!row) throw new SchoolAccessDeniedError('Frais introuvable dans cet établissement.');
 }
 
-export async function assertPaymentInSchool(paymentId: string, schoolId: string | undefined): Promise<void> {
+export async function assertPaymentInSchool(
+  paymentId: string,
+  schoolId: string | undefined,
+  isDefaultSchool = false,
+): Promise<void> {
   if (!schoolId) throw new SchoolAccessDeniedError('Établissement actif requis (en-tête X-School-Id).');
   const row = await prisma.payment.findFirst({
-    where: { id: paymentId, student: studentScopeWhere(schoolId) },
+    where: { id: paymentId, student: studentScopeWhere(schoolId, isDefaultSchool) },
     select: { id: true },
   });
   if (!row) throw new SchoolAccessDeniedError('Paiement introuvable dans cet établissement.');

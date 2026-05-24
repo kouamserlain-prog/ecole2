@@ -40,12 +40,26 @@ import {
   FiTrendingUp,
   FiPieChart,
   FiLayers,
+  FiDollarSign,
+  FiAlertCircle,
+  FiInbox,
+  FiZap,
+  FiBell,
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import RecentActivity from './RecentActivity';
 import QuickActions from './QuickActions';
 import NotificationsWidget from './NotificationsWidget';
+import { useSchool } from '../../contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
+import {
+  PremiumDashboardHero,
+  PremiumDashboardShell,
+  PremiumKpiCard,
+  PremiumSectionTitle,
+} from '../dashboard/premium';
+import { PremiumChartCard } from '../charts';
 
 interface DashboardStatsProps {
   onAddStudent?: () => void;
@@ -155,208 +169,101 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({
       value: stats?.totalStudents ?? 0,
       subtitle: `${stats?.activeStudents ?? 0} actifs`,
       icon: FiUsers,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
+      accent: 'blue' as const,
     },
     {
       title: 'Enseignants',
       value: stats?.totalTeachers ?? 0,
       subtitle: 'En poste',
       icon: FiBookOpen,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
+      accent: 'emerald' as const,
     },
     {
       title: 'Éducateurs',
       value: stats?.totalEducators ?? 0,
       subtitle: 'En poste',
       icon: FiShield,
-      color: 'text-violet-600',
-      bg: 'bg-violet-50',
+      accent: 'violet' as const,
     },
     {
       title: 'Classes',
       value: stats?.totalClasses ?? 0,
       subtitle: 'Niveaux',
       icon: FiBook,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-50',
+      accent: 'indigo' as const,
     },
     {
       title: 'Parents',
       value: stats?.totalParents ?? 0,
       subtitle: 'Inscrits',
       icon: FiUserCheck,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
+      accent: 'amber' as const,
     },
   ];
+
+  const fmtFcfa = (n: number) =>
+    new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n ?? 0);
 
   const lastSync =
     dataUpdatedAt > 0 ? format(new Date(dataUpdatedAt), "HH:mm:ss", { locale: fr }) : null;
 
   return (
+    <PremiumDashboardShell>
     <div className="space-y-5">
-      <div className="rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-600 p-px shadow-sm">
-        <Card variant="premium" className="!p-0 border-0 shadow-none bg-white/98 rounded-[11px] overflow-hidden" hover={false}>
-          <div className="p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 sm:gap-3">
-            <div>
-              <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-wider">
-                Pilotage établissement
-              </p>
-              <h2 className="font-display text-base sm:text-lg font-bold text-slate-900 mt-0.5">
-                Vue d’ensemble opérationnelle
-              </h2>
-              <p className="text-[10px] sm:text-xs text-slate-600 mt-1 max-w-2xl leading-snug">
-                Résumé au {format(new Date(), "d MMMM yyyy", { locale: fr })}
-                {totalStudents > 0 && (
-                  <>
-                    {' — '}
-                    <strong className="text-slate-800">{totalStudents}</strong> élève{totalStudents > 1 ? 's' : ''},{' '}
-                    <strong className="text-slate-800">{totalStaff}</strong> personnel.
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0">
-              <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-900 text-[9px] font-semibold">
-                <FiTrendingUp className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                Données consolidées
-              </div>
-              {lastSync && (
-                <div className="text-[9px] text-slate-500 tabular-nums">
-                  {isFetching ? 'Actualisation…' : `Synchro ${lastSync}`}
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
-      </div>
+      <PremiumDashboardHero
+        eyebrow="Pilotage établissement"
+        title="Vue d'ensemble opérationnelle"
+        description={
+          <>
+            Résumé au {format(new Date(), 'd MMMM yyyy', { locale: fr })}
+            {totalStudents > 0 && (
+              <>
+                {' — '}
+                <strong className="text-white/95">{totalStudents}</strong> élève{totalStudents > 1 ? 's' : ''},{' '}
+                <strong className="text-white/95">{totalStaff}</strong> personnel.
+              </>
+            )}
+          </>
+        }
+        badge="Données consolidées"
+        lastSync={lastSync}
+        isFetching={isFetching}
+      />
 
-      {/* Indicateurs clés */}
-      <div>
-        <h3 className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-          Indicateurs clés de performance (KPI) — effectifs
-        </h3>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-2">
-          {indicators.map((ind, index) => {
-            const Icon = ind.icon;
-            return (
-              <Card
-                key={index}
-                variant="premium"
-                className="p-2 sm:p-2.5 ring-1 ring-slate-900/5 hover:shadow-sm transition-shadow rounded-lg"
-                hover={false}
-              >
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="min-w-0">
-                    <p className="text-[8px] font-semibold text-slate-500 uppercase tracking-wide leading-tight">
-                      {ind.title}
-                    </p>
-                    <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 tabular-nums tracking-tight leading-none">
-                      {ind.value}
-                    </p>
-                    {ind.subtitle && (
-                      <p className="text-[8px] text-slate-500 mt-0.5 leading-tight">{ind.subtitle}</p>
-                    )}
-                  </div>
-                  <div className={`p-1 rounded-md ${ind.bg} shrink-0 ring-1 ring-black/5`}>
-                    <Icon className={`w-3.5 h-3.5 ${ind.color}`} aria-hidden />
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
+      <section>
+        <PremiumSectionTitle
+          title="Indicateurs clés — effectifs"
+          subtitle="Population scolaire et personnel"
+          icon={FiUsers}
+        />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {indicators.map((ind) => (
+            <PremiumKpiCard
+              key={ind.title}
+              label={ind.title}
+              value={ind.value}
+              subtitle={ind.subtitle}
+              icon={ind.icon}
+              accent={ind.accent}
+            />
+          ))}
         </div>
-      </div>
+      </section>
 
       {kpis?.cards && (
-        <div className="space-y-3">
-          <h3 className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-            KPI — inscriptions, finances & pédagogie
-          </h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2">
-            <Card variant="premium" className="p-2.5 ring-1 ring-slate-900/5" hover={false}>
-              <p className="text-[8px] font-semibold text-slate-500 uppercase">Dossiers admission</p>
-              <p className="text-lg font-bold text-slate-900 mt-0.5">
-                {(kpis.cards.admissionsPending ?? 0) + (kpis.cards.admissionsUnderReview ?? 0)}
-              </p>
-              <p className="text-[8px] text-slate-500">
-                {kpis.cards.admissionsPending} attente · {kpis.cards.admissionsUnderReview} examen
-              </p>
-            </Card>
-            <Card variant="premium" className="p-2.5 ring-1 ring-slate-900/5" hover={false}>
-              <p className="text-[8px] font-semibold text-slate-500 uppercase">Impayés scolarité</p>
-              <p className="text-lg font-bold text-rose-800 mt-0.5 tabular-nums">
-                {new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(
-                  kpis.cards.tuitionUnpaidAmount ?? 0
-                )}{' '}
-                <span className="text-[10px] font-semibold text-slate-600">FCFA</span>
-              </p>
-              <p className="text-[8px] text-slate-500">{kpis.cards.tuitionUnpaidCount} ligne(s)</p>
-            </Card>
-            <Card variant="premium" className="p-2.5 ring-1 ring-slate-900/5" hover={false}>
-              <p className="text-[8px] font-semibold text-slate-500 uppercase">Encaissements (30 j.)</p>
-              <p className="text-lg font-bold text-emerald-800 mt-0.5 tabular-nums">
-                {new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(
-                  kpis.cards.paymentsCompleted30dAmount ?? 0
-                )}{' '}
-                <span className="text-[10px] font-semibold text-slate-600">FCFA</span>
-              </p>
-              <p className="text-[8px] text-slate-500">{kpis.cards.paymentsCompleted30dCount} paiement(s)</p>
-            </Card>
-            <Card variant="premium" className="p-2.5 ring-1 ring-slate-900/5" hover={false}>
-              <p className="text-[8px] font-semibold text-slate-500 uppercase">Risque & devoirs</p>
-              <p className="text-lg font-bold text-slate-900 mt-0.5">
-                {kpis.cards.atRiskHigh ?? 0} / {kpis.cards.atRiskMedium ?? 0}
-              </p>
-              <p className="text-[8px] text-slate-500">
-                Élèves à risque (élevé / modéré) · Rendus devoirs :{' '}
-                {kpis.cards.studentAssignmentsSubmissionRate != null
-                  ? `${kpis.cards.studentAssignmentsSubmissionRate} %`
-                  : '—'}
-              </p>
-            </Card>
+        <section>
+          <PremiumSectionTitle title="KPI — inscriptions, finances & pédagogie" subtitle="Suivi opérationnel et trésorerie" icon={FiDollarSign} />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <PremiumKpiCard label="Dossiers admission" value={(kpis.cards.admissionsPending ?? 0) + (kpis.cards.admissionsUnderReview ?? 0)} subtitle={`${kpis.cards.admissionsPending} attente · ${kpis.cards.admissionsUnderReview} examen`} icon={FiInbox} accent="indigo" />
+            <PremiumKpiCard label="Impayés scolarité" value={`${fmtFcfa(kpis.cards.tuitionUnpaidAmount)} FCFA`} subtitle={`${kpis.cards.tuitionUnpaidCount} ligne(s)`} icon={FiAlertCircle} accent="rose" />
+            <PremiumKpiCard label="Encaissements (30 j.)" value={`${fmtFcfa(kpis.cards.paymentsCompleted30dAmount)} FCFA`} subtitle={`${kpis.cards.paymentsCompleted30dCount} paiement(s)`} icon={FiTrendingUp} accent="emerald" />
+            <PremiumKpiCard label="Risque & devoirs" value={`${kpis.cards.atRiskHigh ?? 0} / ${kpis.cards.atRiskMedium ?? 0}`} subtitle={kpis.cards.studentAssignmentsSubmissionRate != null ? `Rendus : ${kpis.cards.studentAssignmentsSubmissionRate} %` : 'Élèves à risque'} icon={FiShield} accent="amber" />
           </div>
-          {Array.isArray(kpis.charts?.paymentsByMonth) && kpis.charts.paymentsByMonth.length > 0 && (
-            <Card variant="premium" className="p-3 ring-1 ring-slate-900/5" hover={false}>
-              <p className="text-[9px] font-bold text-slate-500 uppercase mb-2">Encaissements complétés (6 mois)</p>
-              <div className="h-44 w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={kpis.charts.paymentsByMonth.map((x: { label: string; amount: number }) => ({
-                      ...x,
-                      amountK: Math.round(x.amount / 1000),
-                    }))}
-                    margin={CHART_MARGIN_COMPACT}
-                  >
-                    <CartesianGrid {...CHART_GRID_SOFT} />
-                    <XAxis dataKey="label" tick={CHART_AXIS_TICK} />
-                    <YAxis tick={CHART_AXIS_TICK} tickFormatter={(v) => `${v}k`} width={32} />
-                    <Tooltip
-                      formatter={(value: number) => [
-                        `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value * 1000)} FCFA`,
-                        'Montant',
-                      ]}
-                      labelFormatter={(label) => `Période ${label}`}
-                    />
-                    <Bar dataKey="amountK" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={CHART_ANIMATION_MS}>
-                      {kpis.charts.paymentsByMonth.map((_: unknown, i: number) => (
-                        <Cell key={i} fill={chartBlueRed(i)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          )}
-        </div>
+        </section>
       )}
 
-      <div>
-        <h3 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-          Actions rapides
-        </h3>
+      <section>
+        <PremiumSectionTitle title="Actions rapides" subtitle="Raccourcis vers les tâches fréquentes" icon={FiZap} />
         <QuickActions
           onAddStudent={onAddStudent}
           onCreateClass={onCreateClass}
@@ -366,21 +273,21 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({
           onExportData={onExportData}
           onSettings={onSettings}
         />
-      </div>
+      </section>
 
-      <div>
-        <h3 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-          Notifications
-        </h3>
+      <section>
+        <PremiumSectionTitle title="Notifications" subtitle="Alertes et messages récents" icon={FiBell} />
         <NotificationsWidget />
-      </div>
+      </section>
 
       {/* Graphiques + activité */}
       <div className="space-y-4">
-          <div>
-            <h3 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-              Répartition des effectifs
-            </h3>
+          <section>
+            <PremiumSectionTitle
+              title="Répartition des effectifs"
+              subtitle="Visualisation par classe"
+              icon={FiPieChart}
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               <Card
                 variant="premium"
@@ -655,16 +562,15 @@ const DashboardStats: React.FC<DashboardStatsProps> = ({
                 </div>
               </Card>
             )}
-          </div>
+          </section>
 
-          <div>
-            <h3 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-              Activité récente
-            </h3>
+          <section>
+            <PremiumSectionTitle title="Activité récente" subtitle="Dernières actions sur la plateforme" icon={FiActivity} />
             <RecentActivity />
-          </div>
+          </section>
       </div>
     </div>
+    </PremiumDashboardShell>
   );
 };
 

@@ -2,7 +2,9 @@ import express from 'express';
 import type { InfirmaryVisitOutcome, HealthCampaignKind, HealthEmergencySeverity, Role } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
+import { attachSchoolContext } from '../middleware/school-context.middleware';
 import { assertHealthModuleAccess } from '../utils/health-access.util';
+import { studentScopeWhere, type SchoolContextRequest } from '../utils/school-context.util';
 
 const router = express.Router();
 
@@ -18,6 +20,20 @@ async function healthGuard(req: AuthRequest, res: express.Response, next: expres
 }
 
 router.use(healthGuard);
+router.use((req, res, next) => attachSchoolContext(req as SchoolContextRequest, res, next));
+
+function scopedStudentWhere(req: SchoolContextRequest) {
+  return {
+    isActive: true,
+    ...studentScopeWhere(req.schoolId!, req.school?.isDefault ?? false),
+  };
+}
+
+async function findScopedStudent(req: SchoolContextRequest, studentId: string) {
+  return prisma.student.findFirst({
+    where: { id: studentId, ...scopedStudentWhere(req) },
+  });
+}
 
 async function getStaffMemberId(userId: string): Promise<string | null> {
   const s = await prisma.staffMember.findUnique({ where: { userId }, select: { id: true } });
@@ -29,13 +45,13 @@ const studentInclude = {
   class: { select: { name: true, level: true } },
 } as const;
 
-router.get('/students/search', async (req: AuthRequest, res) => {
+router.get('/students/search', async (req: SchoolContextRequest, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
     const students = await prisma.student.findMany({
       where: {
-        isActive: true,
+        ...scopedStudentWhere(req),
         OR: [
           { studentId: { contains: q } },
           { user: { firstName: { contains: q } } },
@@ -52,13 +68,13 @@ router.get('/students/search', async (req: AuthRequest, res) => {
   }
 });
 
-router.get('/dossiers', async (req, res) => {
+router.get('/dossiers', async (req: SchoolContextRequest, res) => {
   try {
     const q = String(req.query.q || '').trim();
     const status = String(req.query.status || 'all');
     const students = await prisma.student.findMany({
       where: {
-        isActive: true,
+        ...scopedStudentWhere(req),
         ...(q.length >= 2
           ? {
               OR: [
@@ -124,10 +140,10 @@ router.get('/dossiers', async (req, res) => {
   }
 });
 
-router.get('/students/:studentId/dossier', async (req, res) => {
+router.get('/students/:studentId/dossier', async (req: SchoolContextRequest, res) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { id: req.params.studentId, isActive: true },
+      where: { id: req.params.studentId, ...scopedStudentWhere(req) },
       include: {
         ...studentInclude,
         healthDossier: true,
@@ -144,9 +160,9 @@ router.get('/students/:studentId/dossier', async (req, res) => {
   }
 });
 
-router.put('/students/:studentId/dossier', async (req: AuthRequest, res) => {
+router.put('/students/:studentId/dossier', async (req: SchoolContextRequest, res) => {
   try {
-    const student = await prisma.student.findFirst({ where: { id: req.params.studentId, isActive: true } });
+    const student = await findScopedStudent(req, req.params.studentId);
     if (!student) return res.status(404).json({ error: 'Élève introuvable' });
 
     const {
@@ -213,8 +229,10 @@ router.put('/students/:studentId/dossier', async (req: AuthRequest, res) => {
   }
 });
 
-router.post('/students/:studentId/vaccinations', async (req, res) => {
+router.post('/students/:studentId/vaccinations', async (req: SchoolContextRequest, res) => {
   try {
+    const student = await findScopedStudent(req, req.params.studentId);
+    if (!student) return res.status(404).json({ error: 'Élève introuvable' });
     const { vaccineName, administeredAt, doseLabel, batchNumber, campaignId, notes } = req.body ?? {};
     if (!vaccineName || !administeredAt) {
       return res.status(400).json({ error: 'vaccineName et administeredAt requis' });
@@ -479,7 +497,7 @@ router.patch('/emergencies/:id/resolve', async (req, res) => {
   }
 });
 
-router.get('/reports', async (req, res) => {
+router.get('/reports', async (req: SchoolContextRequest, res) => {
   try {
     const now = new Date();
     const fromRaw = req.query.from ? new Date(String(req.query.from)) : new Date(now.getFullYear(), now.getMonth(), 1);
@@ -488,7 +506,12 @@ router.get('/reports', async (req, res) => {
     from.setHours(0, 0, 0, 0);
     const to = new Date(toRaw);
     to.setHours(23, 59, 59, 999);
-    const visitWhere = { visitedAt: { gte: from, lte: to } };
+    const studentFilter = scopedStudentWhere(req);
+    const visitWhere = {
+      visitedAt: { gte: from, lte: to },
+      student: studentFilter,
+    };
+    const visitScope = { student: studentFilter };
 
     const [
       visitsPeriod,
@@ -505,8 +528,8 @@ router.get('/reports', async (req, res) => {
       parentNotifiedPeriod,
     ] = await Promise.all([
       prisma.infirmaryVisit.count({ where: visitWhere }),
-      prisma.infirmaryVisit.count(),
-      prisma.student.count({ where: { isActive: true } }),
+      prisma.infirmaryVisit.count({ where: visitScope }),
+      prisma.student.count({ where: studentFilter }),
       prisma.studentHealthDossier.count(),
       prisma.studentAllergyRecord.count(),
       prisma.studentTreatment.count({ where: { isActive: true } }),
@@ -533,7 +556,7 @@ router.get('/reports', async (req, res) => {
           select: { bloodGroup: true, medicalHistory: true, familyDoctorName: true },
         }),
         prisma.student.findMany({
-          where: { isActive: true },
+          where: studentFilter,
           select: {
             id: true,
             medicalInfo: true,

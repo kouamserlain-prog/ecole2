@@ -1,6 +1,7 @@
-import Card from '../ui/Card';
-import Button from '../ui/Button';
+'use client';
+
 import { FiUserPlus, FiBook, FiUsers, FiFileText, FiSettings, FiDownload, FiShield } from 'react-icons/fi';
+import PremiumGlassCard from '../dashboard/premium/PremiumGlassCard';
 
 interface QuickActionsProps {
   onAddStudent?: () => void;
@@ -12,6 +13,65 @@ interface QuickActionsProps {
   onSettings?: () => void;
 }
 
+const ACTIONS = [
+  {
+    icon: FiUserPlus,
+    label: 'Ajouter un élève',
+    description: 'Inscrire un nouvel élève',
+    gradient: 'from-blue-600 via-indigo-600 to-violet-700',
+    ring: 'ring-blue-500/20',
+    onKey: 'onAddStudent' as const,
+  },
+  {
+    icon: FiBook,
+    label: 'Créer une classe',
+    description: 'Nouveau groupe pédagogique',
+    gradient: 'from-emerald-600 via-teal-600 to-cyan-700',
+    ring: 'ring-emerald-500/20',
+    onKey: 'onCreateClass' as const,
+  },
+  {
+    icon: FiUsers,
+    label: 'Ajouter un enseignant',
+    description: 'Recruter du personnel',
+    gradient: 'from-indigo-600 via-blue-600 to-sky-700',
+    ring: 'ring-indigo-500/20',
+    onKey: 'onAddTeacher' as const,
+  },
+  {
+    icon: FiShield,
+    label: 'Ajouter un éducateur',
+    description: 'Encadrement & vie scolaire',
+    gradient: 'from-violet-600 via-purple-600 to-fuchsia-700',
+    ring: 'ring-violet-500/20',
+    onKey: 'onAddEducator' as const,
+  },
+  {
+    icon: FiFileText,
+    label: 'Générer un rapport',
+    description: 'Exports et synthèses',
+    gradient: 'from-amber-500 via-orange-600 to-red-600',
+    ring: 'ring-amber-500/20',
+    onKey: 'onGenerateReport' as const,
+  },
+  {
+    icon: FiDownload,
+    label: 'Exporter les données',
+    description: 'CSV, Excel, archives',
+    gradient: 'from-slate-700 via-stone-800 to-slate-900',
+    ring: 'ring-slate-500/20',
+    onKey: 'onExportData' as const,
+  },
+  {
+    icon: FiSettings,
+    label: 'Paramètres',
+    description: 'Configuration établissement',
+    gradient: 'from-stone-600 via-zinc-700 to-stone-800',
+    ring: 'ring-stone-500/20',
+    onKey: 'onSettings' as const,
+  },
+] as const;
+
 const QuickActions: React.FC<QuickActionsProps> = ({
   onAddStudent,
   onCreateClass,
@@ -21,74 +81,49 @@ const QuickActions: React.FC<QuickActionsProps> = ({
   onExportData,
   onSettings,
 }) => {
-  const actions = [
-    {
-      icon: FiUserPlus,
-      label: 'Ajouter un élève',
-      color: 'from-blue-500 to-blue-600',
-      onClick: () => onAddStudent?.(),
-    },
-    {
-      icon: FiBook,
-      label: 'Créer une classe',
-      color: 'from-green-500 to-green-600',
-      onClick: () => onCreateClass?.(),
-    },
-    {
-      icon: FiUsers,
-      label: 'Ajouter un enseignant',
-      color: 'from-indigo-500 to-indigo-600',
-      onClick: () => onAddTeacher?.(),
-    },
-    {
-      icon: FiShield,
-      label: 'Ajouter un éducateur',
-      color: 'from-purple-500 to-purple-600',
-      onClick: () => onAddEducator?.(),
-    },
-    {
-      icon: FiFileText,
-      label: 'Générer un rapport',
-      color: 'from-orange-500 to-orange-600',
-      onClick: () => onGenerateReport?.(),
-    },
-    {
-      icon: FiDownload,
-      label: 'Exporter les données',
-      color: 'from-indigo-500 to-indigo-600',
-      onClick: () => onExportData?.(),
-    },
-    {
-      icon: FiSettings,
-      label: 'Paramètres',
-      color: 'from-gray-500 to-gray-600',
-      onClick: () => onSettings?.(),
-    },
-  ];
+  const handlerMap = {
+    onAddStudent,
+    onCreateClass,
+    onAddTeacher,
+    onAddEducator,
+    onGenerateReport,
+    onExportData,
+    onSettings,
+  };
 
   return (
-    <Card className="p-5">
-      <h3 className="font-semibold text-gray-900 mb-4">Actions rapides</h3>
-      <div className="grid grid-cols-2 gap-2">
-        {actions.map((action, index) => {
+    <PremiumGlassCard padding="sm" className="!p-0 overflow-hidden">
+      <div className="grid grid-cols-1 gap-px bg-stone-200/80 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {ACTIONS.map((action) => {
           const Icon = action.icon;
+          const onClick = handlerMap[action.onKey];
           return (
             <button
-              key={index}
-              onClick={action.onClick}
-              className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 hover:border-gray-200 text-left transition-colors"
+              key={action.label}
+              type="button"
+              onClick={() => onClick?.()}
+              className={`group relative flex items-start gap-3 bg-white/95 p-4 text-left transition-all duration-200 hover:bg-gradient-to-br hover:from-white hover:to-indigo-50/40 hover:shadow-inner focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${action.ring}`}
             >
-              <div className={`p-2 rounded-lg bg-gradient-to-br ${action.color} text-white shrink-0`}>
-                <Icon className="w-4 h-4" />
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${action.gradient} text-white shadow-lg transition-transform duration-200 group-hover:scale-105 group-hover:shadow-xl`}
+              >
+                <Icon className="h-5 w-5" aria-hidden />
               </div>
-              <span className="text-sm font-medium text-gray-700 truncate">{action.label}</span>
+              <div className="min-w-0 pt-0.5">
+                <span className="block text-sm font-bold text-stone-900 group-hover:text-indigo-950">
+                  {action.label}
+                </span>
+                <span className="mt-0.5 block text-[11px] font-medium text-stone-500">
+                  {action.description}
+                </span>
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 scale-x-0 bg-gradient-to-r from-indigo-500 to-violet-500 transition-transform duration-300 group-hover:scale-x-100" />
             </button>
           );
         })}
       </div>
-    </Card>
+    </PremiumGlassCard>
   );
 };
 
 export default QuickActions;
-

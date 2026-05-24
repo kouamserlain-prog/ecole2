@@ -2,13 +2,19 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/Layout';
-import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
+import {
+  PremiumDashboardHero,
+  PremiumDashboardShell,
+  PremiumGlassCard,
+  PremiumKpiCard,
+  PremiumSectionTitle,
+  PremiumTabNav,
+} from '@/components/dashboard/premium';
 import { superAdminApi } from '@/services/api/superAdmin.api';
 import { ROLE_LABELS } from '@/lib/rolePaths';
 import { TRANLEFET_SCHOOL } from '@/data/tranlefetSchool';
@@ -23,6 +29,8 @@ import {
   FiRefreshCw,
   FiUserPlus,
   FiBook,
+  FiDollarSign,
+  FiGlobe,
 } from 'react-icons/fi';
 
 type TabId = 'overview' | 'users' | 'system';
@@ -91,113 +99,108 @@ export default function SuperAdminDashboard() {
       toast.error(e?.response?.data?.error || 'Mise à jour impossible'),
   });
 
-  const navItems: { id: TabId; label: string; icon: typeof FiShield }[] = [
-    { id: 'overview', label: 'Vue plateforme', icon: FiActivity },
-    { id: 'users', label: 'Comptes', icon: FiUsers },
-    { id: 'system', label: 'Système', icon: FiDatabase },
+  const navItems = [
+    { id: 'overview' as const, label: 'Vue plateforme', icon: FiActivity },
+    { id: 'users' as const, label: 'Comptes', icon: FiUsers },
+    { id: 'system' as const, label: 'Système', icon: FiDatabase },
   ];
 
   return (
     <Layout user={user} onLogout={logout} role="SUPER_ADMIN">
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-amber-50/30">
-        <div className="border-b border-cptb-blue/10 bg-gradient-to-r from-cptb-blue via-brand-700 to-cptb-blue-dark text-white">
-          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-5">
-              <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-cptb-gold bg-cptb-blue text-lg font-bold text-cptb-gold shadow-lux">
-                <Image
-                  src="/branding/cptb-logo.png"
-                  alt="Logo CPTB"
-                  width={72}
-                  height={72}
-                  className="object-contain"
-                />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-cptb-gold">Super administration</p>
-                <h1 className="font-display text-2xl font-bold sm:text-3xl">{TRANLEFET_SCHOOL.fullName}</h1>
-                <p className="mt-1 text-sm text-white/80">Science · Humanisme · Excellence</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin">
-                <span className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold backdrop-blur hover:bg-white/20">
-                  <FiBook className="h-4 w-4" />
+      <PremiumDashboardShell variant="super">
+        <div className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6">
+          <PremiumDashboardHero
+            variant="super"
+            eyebrow="Super administration"
+            title={TRANLEFET_SCHOOL.fullName}
+            icon={FiShield}
+            badge="Plateforme opérationnelle"
+            description="Science · Humanisme · Excellence — pilotage global des comptes, données et paramètres système."
+            actions={
+              <>
+                <Link
+                  href="/admin"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                >
+                  <FiBook className="h-4 w-4" aria-hidden />
                   Admin établissement
-                  <FiExternalLink className="h-3.5 w-3.5 opacity-70" />
-                </span>
-              </Link>
-              <Link href="/">
-                <span className="inline-flex items-center gap-2 rounded-xl border border-cptb-gold/40 bg-cptb-gold px-4 py-2.5 text-sm font-bold text-cptb-blue-dark hover:bg-cptb-gold-light">
+                  <FiExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
+                </Link>
+                <Link
+                  href="/"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2.5 text-sm font-bold text-slate-900 shadow-lg shadow-amber-500/25 transition hover:from-amber-300 hover:to-amber-400"
+                >
+                  <FiGlobe className="h-4 w-4" aria-hidden />
                   Site public
-                </span>
-              </Link>
-            </div>
-          </div>
-        </div>
+                </Link>
+              </>
+            }
+          />
 
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="mb-8 flex flex-wrap gap-2 rounded-2xl bg-black p-2 shadow-lg ring-1 ring-black/20">
-            {navItems.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                  tab === id
-                    ? 'bg-white text-black shadow-md'
-                    : 'text-zinc-400 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
-          </div>
+          <PremiumTabNav items={navItems} active={tab} onChange={setTab} variant="dark" />
 
           {tab === 'overview' && (
             <div className="space-y-8">
               {isLoading ? (
-                <p className="text-stone-500">Chargement…</p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="h-28 animate-pulse rounded-2xl bg-white/60 ring-1 ring-stone-200/80" />
+                  ))}
+                </div>
               ) : (
                 <>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {[
-                      { label: 'Utilisateurs actifs', value: overview?.counts.usersActive, color: 'text-cptb-blue' },
-                      { label: 'Élèves', value: overview?.counts.students, color: 'text-cptb-green' },
-                      { label: 'Enseignants', value: overview?.counts.teachers, color: 'text-brand-600' },
-                      { label: 'Frais ouverts', value: overview?.counts.tuitionOpen, color: 'text-cptb-red' },
-                    ].map((kpi) => (
-                      <Card key={kpi.label} className="border-l-4 border-cptb-gold bg-white/90">
-                        <p className="text-xs font-bold uppercase tracking-wider text-stone-500">{kpi.label}</p>
-                        <p className={`mt-2 font-display text-3xl font-bold tabular-nums ${kpi.color}`}>
-                          {kpi.value ?? '—'}
-                        </p>
-                      </Card>
-                    ))}
+                    <PremiumKpiCard
+                      label="Utilisateurs actifs"
+                      value={overview?.counts.usersActive ?? '—'}
+                      icon={FiUsers}
+                      accent="indigo"
+                    />
+                    <PremiumKpiCard
+                      label="Élèves"
+                      value={overview?.counts.students ?? '—'}
+                      icon={FiActivity}
+                      accent="emerald"
+                    />
+                    <PremiumKpiCard
+                      label="Enseignants"
+                      value={overview?.counts.teachers ?? '—'}
+                      icon={FiBook}
+                      accent="violet"
+                    />
+                    <PremiumKpiCard
+                      label="Frais ouverts"
+                      value={overview?.counts.tuitionOpen ?? '—'}
+                      icon={FiDollarSign}
+                      accent="rose"
+                    />
                   </div>
 
                   <div className="grid gap-6 lg:grid-cols-2">
-                    <Card>
-                      <h2 className="font-display text-lg font-semibold text-stone-900">Répartition par rôle</h2>
-                      <ul className="mt-4 space-y-2">
+                    <PremiumGlassCard accent="gold">
+                      <PremiumSectionTitle title="Répartition par rôle" icon={FiUsers} />
+                      <ul className="space-y-2">
                         {(overview?.usersByRole ?? []).map((r) => (
-                          <li key={r.role} className="flex items-center justify-between text-sm">
-                            <span className="font-medium text-stone-700">{ROLE_LABELS[r.role] ?? r.role}</span>
+                          <li
+                            key={r.role}
+                            className="flex items-center justify-between rounded-xl bg-stone-50/80 px-3 py-2.5 text-sm ring-1 ring-stone-200/60"
+                          >
+                            <span className="font-semibold text-stone-800">{ROLE_LABELS[r.role] ?? r.role}</span>
                             <Badge variant="info">{r.count}</Badge>
                           </li>
                         ))}
                       </ul>
-                    </Card>
-                    <Card>
-                      <h2 className="font-display text-lg font-semibold text-stone-900">Derniers comptes</h2>
-                      <ul className="mt-4 divide-y divide-stone-100">
+                    </PremiumGlassCard>
+                    <PremiumGlassCard accent="indigo">
+                      <PremiumSectionTitle title="Derniers comptes" icon={FiUserPlus} />
+                      <ul className="divide-y divide-stone-100">
                         {(overview?.recentUsers ?? []).map((u) => (
-                          <li key={u.id} className="flex items-center justify-between py-3 text-sm">
-                            <div>
-                              <p className="font-medium text-stone-900">
+                          <li key={u.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-stone-900">
                                 {u.firstName} {u.lastName}
                               </p>
-                              <p className="text-stone-500">{u.email}</p>
+                              <p className="truncate text-stone-500">{u.email}</p>
                             </div>
                             <Badge variant={u.isActive ? 'success' : 'warning'}>
                               {ROLE_LABELS[u.role] ?? u.role}
@@ -205,7 +208,7 @@ export default function SuperAdminDashboard() {
                           </li>
                         ))}
                       </ul>
-                    </Card>
+                    </PremiumGlassCard>
                   </div>
                 </>
               )}
@@ -214,66 +217,71 @@ export default function SuperAdminDashboard() {
 
           {tab === 'users' && (
             <div className="grid gap-8 lg:grid-cols-3">
-              <Card className="lg:col-span-2">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="font-display text-lg font-semibold">Tous les comptes</h2>
-                  <div className="flex flex-wrap gap-2">
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Rechercher…"
-                      className="rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-cptb-blue focus:outline-none focus:ring-2 focus:ring-cptb-blue/20"
-                    />
-                    <select
-                      value={roleFilter}
-                      onChange={(e) => setRoleFilter(e.target.value)}
-                      className="rounded-xl border border-stone-200 px-3 py-2 text-sm"
-                    >
-                      <option value="">Tous les rôles</option>
-                      {ROLE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>
-                          {ROLE_LABELS[r]}
-                        </option>
-                      ))}
-                    </select>
+              <PremiumGlassCard className="lg:col-span-2" accent="indigo" padding="md">
+                <PremiumSectionTitle
+                  title="Tous les comptes"
+                  subtitle="Recherche, filtrage et gestion des accès"
+                  icon={FiUsers}
+                  action={
                     <button
                       type="button"
                       onClick={() => refetchUsers()}
-                      className="rounded-xl border border-stone-200 p-2 text-stone-600 hover:bg-stone-50"
+                      className="rounded-xl border border-stone-200 bg-white p-2 text-stone-600 shadow-sm transition hover:bg-stone-50"
                       aria-label="Actualiser"
                     >
                       <FiRefreshCw className="h-4 w-4" />
                     </button>
-                  </div>
+                  }
+                />
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Rechercher…"
+                    className="flex-1 rounded-xl border border-stone-200 bg-white/90 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="rounded-xl border border-stone-200 bg-white/90 px-3 py-2.5 text-sm shadow-sm"
+                    aria-label="Filtrer par rôle"
+                  >
+                    <option value="">Tous les rôles</option>
+                    {ROLE_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-xl ring-1 ring-stone-200/80">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-stone-200 text-left text-stone-500">
-                        <th className="pb-2 pr-4">Nom</th>
-                        <th className="pb-2 pr-4">E-mail</th>
-                        <th className="pb-2 pr-4">Rôle</th>
-                        <th className="pb-2">Statut</th>
+                    <thead className="bg-stone-50/90">
+                      <tr className="border-b border-stone-200 text-left text-xs font-bold uppercase tracking-wider text-stone-500">
+                        <th className="px-4 py-3">Nom</th>
+                        <th className="px-4 py-3">E-mail</th>
+                        <th className="px-4 py-3">Rôle</th>
+                        <th className="px-4 py-3">Statut</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white/95">
                       {(usersData?.users ?? []).map((u) => (
-                        <tr key={u.id} className="border-b border-stone-100">
-                          <td className="py-3 pr-4 font-medium">
+                        <tr key={u.id} className="border-b border-stone-100 last:border-0">
+                          <td className="px-4 py-3 font-semibold text-stone-900">
                             {u.firstName} {u.lastName}
                           </td>
-                          <td className="py-3 pr-4 text-stone-600">{u.email}</td>
-                          <td className="py-3 pr-4">{ROLE_LABELS[u.role] ?? u.role}</td>
-                          <td className="py-3">
+                          <td className="px-4 py-3 text-stone-600">{u.email}</td>
+                          <td className="px-4 py-3">{ROLE_LABELS[u.role] ?? u.role}</td>
+                          <td className="px-4 py-3">
                             <button
                               type="button"
                               onClick={() =>
                                 toggleActiveMutation.mutate({ id: u.id, isActive: !u.isActive })
                               }
-                              className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+                              className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
                                 u.isActive
-                                  ? 'bg-cptb-green/15 text-cptb-green'
-                                  : 'bg-cptb-red/10 text-cptb-red'
+                                  ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
                               }`}
                             >
                               {u.isActive ? 'Actif' : 'Inactif'}
@@ -284,15 +292,12 @@ export default function SuperAdminDashboard() {
                     </tbody>
                   </table>
                 </div>
-              </Card>
+              </PremiumGlassCard>
 
-              <Card className="h-fit border-t-4 border-cptb-gold bg-gradient-to-b from-amber-50/80 to-white">
-                <h2 className="flex items-center gap-2 font-display text-lg font-semibold">
-                  <FiUserPlus className="h-5 w-5 text-cptb-blue" />
-                  Nouveau compte
-                </h2>
+              <PremiumGlassCard accent="gold" padding="md" className="h-fit">
+                <PremiumSectionTitle title="Nouveau compte" icon={FiUserPlus} />
                 <form
-                  className="mt-4 space-y-3"
+                  className="mt-2 space-y-3"
                   onSubmit={(e) => {
                     e.preventDefault();
                     createUserMutation.mutate(createForm);
@@ -314,13 +319,14 @@ export default function SuperAdminDashboard() {
                       }
                       value={createForm[field]}
                       onChange={(e) => setCreateForm((f) => ({ ...f, [field]: e.target.value }))}
-                      className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm focus:border-cptb-blue focus:outline-none focus:ring-2 focus:ring-cptb-blue/20"
+                      className="w-full rounded-xl border border-stone-200 bg-white/90 px-3 py-2.5 text-sm shadow-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
                   ))}
                   <select
                     value={createForm.role}
                     onChange={(e) => setCreateForm((f) => ({ ...f, role: e.target.value }))}
-                    className="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-stone-200 bg-white/90 px-3 py-2.5 text-sm"
+                    aria-label="Rôle du compte"
                   >
                     {ROLE_OPTIONS.map((r) => (
                       <option key={r} value={r}>
@@ -332,18 +338,20 @@ export default function SuperAdminDashboard() {
                     Créer le compte
                   </Button>
                 </form>
-              </Card>
+              </PremiumGlassCard>
             </div>
           )}
 
           {tab === 'system' && (
             <div className="grid gap-6 md:grid-cols-2">
-              <Card className="border-l-4 border-cptb-blue">
-                <div className="flex items-start gap-3">
-                  <FiDatabase className="mt-1 h-6 w-6 text-cptb-blue" />
+              <PremiumGlassCard accent="indigo">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 text-white shadow-lg">
+                    <FiDatabase className="h-6 w-6" aria-hidden />
+                  </div>
                   <div>
-                    <h2 className="font-display text-lg font-semibold">Sauvegarde MongoDB</h2>
-                    <p className="mt-2 text-sm text-stone-600">
+                    <h2 className="font-display text-lg font-bold text-stone-900">Sauvegarde MongoDB</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-stone-600">
                       Lance une sauvegarde complète de la base de données.
                     </p>
                     <Button
@@ -355,13 +363,15 @@ export default function SuperAdminDashboard() {
                     </Button>
                   </div>
                 </div>
-              </Card>
-              <Card className="border-l-4 border-cptb-gold">
-                <div className="flex items-start gap-3">
-                  <FiSettings className="mt-1 h-6 w-6 text-cptb-gold-dark" />
+              </PremiumGlassCard>
+              <PremiumGlassCard accent="gold">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg">
+                    <FiSettings className="h-6 w-6" aria-hidden />
+                  </div>
                   <div>
-                    <h2 className="font-display text-lg font-semibold">Charte & paramètres</h2>
-                    <p className="mt-2 text-sm text-stone-600">
+                    <h2 className="font-display text-lg font-bold text-stone-900">Charte & paramètres</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-stone-600">
                       Logos, titre et coordonnées de l&apos;établissement.
                     </p>
                     <Link href="/admin?tab=settings">
@@ -371,23 +381,25 @@ export default function SuperAdminDashboard() {
                     </Link>
                   </div>
                 </div>
-              </Card>
-              <Card className="md:col-span-2 border-l-4 border-cptb-green">
-                <div className="flex items-start gap-3">
-                  <FiShield className="mt-1 h-6 w-6 text-cptb-green" />
+              </PremiumGlassCard>
+              <PremiumGlassCard accent="emerald" className="md:col-span-2">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-lg">
+                    <FiShield className="h-6 w-6" aria-hidden />
+                  </div>
                   <div>
-                    <h2 className="font-display text-lg font-semibold">Sécurité plateforme</h2>
-                    <p className="mt-2 text-sm text-stone-600">
+                    <h2 className="font-display text-lg font-bold text-stone-900">Sécurité plateforme</h2>
+                    <p className="mt-2 text-sm leading-relaxed text-stone-600">
                       Le super administrateur gère les comptes globaux et accède à tous les modules admin.
                       Limitez le nombre de comptes SUPER_ADMIN.
                     </p>
                   </div>
                 </div>
-              </Card>
+              </PremiumGlassCard>
             </div>
           )}
         </div>
-      </div>
+      </PremiumDashboardShell>
     </Layout>
   );
 }

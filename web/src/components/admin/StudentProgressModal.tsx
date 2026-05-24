@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getEvaluationTypeLabel } from '@/lib/evaluationTypes';
 import { adminApi } from '../../services/api';
+import { useSchool } from '@/contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '@/hooks/useSchoolReady';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
@@ -44,23 +46,20 @@ const StudentProgressModal: React.FC<StudentProgressModalProps> = ({
   onClose,
   studentId,
 }) => {
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
+  const studentQueryKey = schoolQueryKey(['student', studentId], activeSchoolId);
+
   const { data: studentProgress, isLoading: isLoadingProgress } = useQuery({
-    queryKey: ['student-progress', studentId],
+    queryKey: schoolQueryKey(['student-progress', studentId], activeSchoolId),
     queryFn: () => adminApi.getStudentProgress(studentId),
-    enabled: isOpen && !!studentId,
+    enabled: isOpen && !!studentId && schoolReady,
   });
 
   const { data: student } = useQuery({
-    queryKey: ['student', studentId],
+    queryKey: studentQueryKey,
     queryFn: () => adminApi.getStudent(studentId),
-    enabled: isOpen && !!studentId,
-  });
-
-  // Get student first to get the student ID
-  const { data: studentData } = useQuery({
-    queryKey: ['student', studentId],
-    queryFn: () => adminApi.getStudent(studentId),
-    enabled: isOpen && !!studentId,
+    enabled: isOpen && !!studentId && schoolReady,
   });
 
   const { data: allGrades } = useQuery({
@@ -70,7 +69,7 @@ const StudentProgressModal: React.FC<StudentProgressModalProps> = ({
   });
 
   // Filter grades for this student
-  const grades = allGrades?.filter((g: any) => g.studentId === studentData?.id) || [];
+  const grades = allGrades?.filter((g: any) => g.studentId === student?.id) || [];
 
   if (!isOpen) return null;
 

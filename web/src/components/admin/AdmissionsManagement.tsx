@@ -23,7 +23,11 @@ import {
   FiPhone,
   FiCalendar,
   FiBook,
+  FiDownload,
 } from 'react-icons/fi';
+import { downloadStudentEnrollmentDossier } from '@/lib/downloadStudentEnrollmentDossier';
+import EnrollmentTuitionSummary from './EnrollmentTuitionSummary';
+import { getCurrentAcademicYear } from '@/utils/academicYear';
 
 type AdmissionStatus =
   | 'PENDING'
@@ -93,6 +97,10 @@ const AdmissionsManagement = () => {
     queryFn: adminApi.getClasses,
   });
 
+  const enrollSelectedClass = (classes as { id: string; name: string; level?: string; academicYear?: string }[] | undefined)?.find(
+    (c) => c.id === enrollClassId
+  );
+
   const updateMutation = useMutation({
     mutationFn: ({
       id,
@@ -129,12 +137,40 @@ const AdmissionsManagement = () => {
       queryClient.invalidateQueries({ queryKey: ['admissions'] });
       queryClient.invalidateQueries({ queryKey: ['admission-stats'] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
-      const sent = (data as { passwordSetupEmailSent?: boolean })?.passwordSetupEmailSent;
-      toast.success(
-        sent
-          ? 'Compte élève créé. Un lien pour choisir le mot de passe a été envoyé à l’adresse du dossier (48 h).'
-          : 'Compte élève créé et dossier marqué comme inscrit'
-      );
+      queryClient.invalidateQueries({ queryKey: ['admin-parents'] });
+      const d = data as {
+        passwordSetupEmailSent?: boolean;
+        user?: { studentProfile?: { id?: string } };
+        parentAccount?: {
+          created?: boolean;
+          linked?: boolean;
+          parentSetupEmailSent?: boolean;
+          skippedReason?: string;
+        };
+      };
+      const sent = d?.passwordSetupEmailSent;
+      const pa = d?.parentAccount;
+      let msg = sent
+        ? 'Compte élève créé. Un lien pour choisir le mot de passe a été envoyé à l’adresse du dossier (48 h).'
+        : 'Compte élève créé et dossier marqué comme inscrit';
+      if (pa?.created && pa.parentSetupEmailSent) {
+        msg += ' Compte parent créé et invitation envoyée à l’e-mail du tuteur.';
+      } else if (pa?.linked && !pa.created) {
+        msg += ' Parent existant rattaché à l’élève.';
+      } else if (pa?.skippedReason === 'parent_email_missing') {
+        msg += ' Aucun e-mail parent sur le dossier — compte parent non créé.';
+      } else if (pa?.skippedReason === 'same_email_as_student') {
+        msg += ' E-mail parent identique à celui de l’élève — compte parent non créé.';
+      } else if (pa?.skippedReason === 'email_used_by_other_role') {
+        msg += ' E-mail parent déjà utilisé par un autre type de compte.';
+      }
+      toast.success(msg);
+      const enrolledStudentDbId = d?.user?.studentProfile?.id;
+      if (enrolledStudentDbId) {
+        void downloadStudentEnrollmentDossier(enrolledStudentDbId).catch(() => {
+          toast.error('Dossier PDF : échec du téléchargement automatique. Téléchargez-le depuis la fiche élève.');
+        });
+      }
       setEnrollTarget(null);
       setEnrollPassword('');
       setEnrollStudentId('');
@@ -313,6 +349,22 @@ const AdmissionsManagement = () => {
                           Inscrire
                         </button>
                       )}
+                      {a.enrolledStudentId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void downloadStudentEnrollmentDossier(a.enrolledStudentId).then(() =>
+                              toast.success('Dossier PDF téléchargé'),
+                            ).catch(() =>
+                              toast.error('Impossible de télécharger le dossier PDF'),
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 font-medium ml-2"
+                        >
+                          <FiDownload className="w-4 h-4" />
+                          Dossier PDF
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -453,6 +505,17 @@ const AdmissionsManagement = () => {
               Un compte sera créé avec l’email du dossier :{' '}
               <strong className="text-gray-900">{enrollTarget.email}</strong>
             </p>
+            {enrollTarget.parentEmail ? (
+              <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                E-mail parent / tuteur : <strong>{enrollTarget.parentEmail}</strong> — un compte parent sera
+                créé (ou rattaché) automatiquement, avec invitation mot de passe si besoin.
+              </p>
+            ) : (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Aucun e-mail parent sur ce dossier : seul le compte élève sera créé. Le nom et le téléphone du
+                tuteur restent en contacts d’urgence sur la fiche élève.
+              </p>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Mot de passe initial <span className="text-gray-500 font-normal">(optionnel)</span>
@@ -495,6 +558,17 @@ const AdmissionsManagement = () => {
                 ))}
               </select>
             </div>
+            {enrollClassId ? (
+              <EnrollmentTuitionSummary
+                classId={enrollClassId}
+                academicYear={enrollSelectedClass?.academicYear?.trim() || getCurrentAcademicYear()}
+                classLabel={
+                  enrollSelectedClass
+                    ? `${enrollSelectedClass.name}${enrollSelectedClass.level ? ` (${enrollSelectedClass.level})` : ''}`
+                    : undefined
+                }
+              />
+            ) : null}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Affectation État</label>
               <select

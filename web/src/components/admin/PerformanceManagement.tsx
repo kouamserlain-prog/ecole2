@@ -51,9 +51,32 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
 } from 'recharts';
-import { chartBlueRed, CHART_BLUE, CHART_RED, CHART_ANIMATION_MS } from '../charts';
+import {
+  chartBlueRed,
+  CHART_BLUE,
+  CHART_RED,
+  CHART_ANIMATION_MS,
+  PremiumTooltip,
+  PremiumChartCard,
+  RechartsViewport,
+  CHART_GRID_SOFT,
+  CHART_AXIS_TICK,
+  CHART_MARGIN_COMPACT,
+  LineAreaGradient,
+  BarGradientsMulti,
+  PieGradients,
+  PremiumPieActiveShape,
+  PremiumLegend,
+  PREMIUM_BAR_RADIUS_TOP,
+  PREMIUM_BAR_MAX_SIZE,
+  PREMIUM_CHART_ANIMATION,
+  PREMIUM_LINE_PROPS,
+  PREMIUM_LEGEND_STYLE,
+  premiumPieGeometry,
+  premiumLegendFormatter,
+  CHART_CURSOR,
+} from '../charts';
 
 type PerformanceTab = 'overview' | 'metrics' | 'usage' | 'optimization' | 'monitoring';
 
@@ -378,64 +401,58 @@ const PerformanceManagement = () => {
 
             {/* Graphiques de performance */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card className="p-3 sm:p-4">
-                <h3 className={`${ADM.h2} mb-2 text-gray-800`}>Temps de réponse (24h)</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={responseTimeData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
+              <PremiumChartCard
+                title="Temps de réponse (24h)"
+                subtitle="Latence moyenne par créneau horaire"
+                icon={FiClock}
+                accent="sky"
+                height={220}
+              >
+                <RechartsViewport height={200}>
+                  <AreaChart data={responseTimeData} margin={CHART_MARGIN_COMPACT}>
+                    <LineAreaGradient id="perf-response-area" colorFrom={CHART_BLUE} colorTo="#a5b4fc" />
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis dataKey="time" tick={CHART_AXIS_TICK} />
+                    <YAxis width={32} tick={CHART_AXIS_TICK} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} valueSuffix=" ms" />} cursor={CHART_CURSOR} />
                     <Area
                       type="monotone"
                       dataKey="responseTime"
                       stroke={CHART_BLUE}
-                      fill={CHART_BLUE}
-                      fillOpacity={0.55}
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      strokeWidth={2.5}
+                      fill="url(#perf-response-area)"
+                      {...PREMIUM_CHART_ANIMATION}
                     />
                   </AreaChart>
-                </ResponsiveContainer>
-              </Card>
+                </RechartsViewport>
+              </PremiumChartCard>
 
-              <Card className="p-3 sm:p-4">
-                <h3 className={`${ADM.h2} mb-2 text-gray-800`}>Charge serveur</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={serverLoadData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
+              <PremiumChartCard
+                title="Charge serveur"
+                subtitle="CPU, mémoire et charge globale"
+                icon={FiServer}
+                accent="rose"
+                height={220}
+              >
+                <RechartsViewport height={200}>
+                  <LineChart data={serverLoadData} margin={CHART_MARGIN_COMPACT}>
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis dataKey="month" tick={CHART_AXIS_TICK} />
+                    <YAxis width={32} tick={CHART_AXIS_TICK} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} valueSuffix="%" />} cursor={CHART_CURSOR} />
+                    <Legend {...PREMIUM_LEGEND_STYLE} formatter={premiumLegendFormatter} />
+                    <Line dataKey="load" stroke={CHART_RED} name="Charge" {...PREMIUM_LINE_PROPS} />
+                    <Line dataKey="memory" stroke={CHART_BLUE} name="Mémoire" {...PREMIUM_LINE_PROPS} />
                     <Line
-                      type="monotone"
-                      dataKey="load"
-                      stroke={CHART_RED}
-                      name="Charge"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="memory"
-                      stroke={CHART_BLUE}
-                      name="Mémoire"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
-                    />
-                    <Line
-                      type="monotone"
                       dataKey="cpu"
                       stroke={CHART_BLUE}
                       strokeDasharray="6 4"
                       name="CPU"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      {...PREMIUM_LINE_PROPS}
                     />
                   </LineChart>
-                </ResponsiveContainer>
-              </Card>
+                </RechartsViewport>
+              </PremiumChartCard>
             </div>
           </div>
         )}
@@ -563,48 +580,70 @@ const PerformanceManagement = () => {
         {activeTab === 'usage' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Card className="p-3 sm:p-4">
-                <h3 className={`${ADM.h2} mb-2 text-gray-800`}>Répartition des utilisateurs</h3>
-                <ResponsiveContainer width="100%" height={240}>
+              <PremiumChartCard
+                title="Répartition des utilisateurs"
+                subtitle="Par profil connecté"
+                icon={FiUsers}
+                accent="indigo"
+                height={256}
+                footer={
+                  <PremiumLegend
+                    items={usageData.map((d, i) => {
+                      const total = usageData.reduce((s, x) => s + x.value, 0);
+                      return {
+                        name: d.name,
+                        value: d.value,
+                        color: chartBlueRed(i),
+                        pct: total > 0 ? Math.round((d.value / total) * 1000) / 10 : 0,
+                      };
+                    })}
+                  />
+                }
+              >
+                <RechartsViewport height={220}>
                   <PieChart>
+                    <PieGradients count={usageData.length} idPrefix="perf-usage-pie" />
                     <Pie
                       data={usageData}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
                       dataKey="value"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      activeShape={PremiumPieActiveShape}
+                      {...premiumPieGeometry(usageData.length)}
                     >
                       {usageData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={chartBlueRed(index)} />
+                        <Cell key={`cell-${index}`} fill={`url(#perf-usage-pie-${index})`} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} />} />
                   </PieChart>
-                </ResponsiveContainer>
-              </Card>
+                </RechartsViewport>
+              </PremiumChartCard>
 
-              <Card className="p-3 sm:p-4">
-                <h3 className={`${ADM.h2} mb-2 text-gray-800`}>Activité par heure</h3>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={responseTimeData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <Tooltip />
+              <PremiumChartCard
+                title="Activité par heure"
+                subtitle="Volume de requêtes"
+                icon={FiActivity}
+                accent="violet"
+                height={256}
+              >
+                <RechartsViewport height={220}>
+                  <BarChart data={responseTimeData} margin={CHART_MARGIN_COMPACT}>
+                    <BarGradientsMulti count={1} idPrefix="perf-requests-bar" />
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis dataKey="time" tick={CHART_AXIS_TICK} />
+                    <YAxis width={32} tick={CHART_AXIS_TICK} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} />} cursor={CHART_CURSOR} />
                     <Bar
                       dataKey="requests"
-                      fill={CHART_BLUE}
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      fill="url(#perf-requests-bar-0)"
+                      radius={PREMIUM_BAR_RADIUS_TOP}
+                      maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                      {...PREMIUM_CHART_ANIMATION}
                     />
                   </BarChart>
-                </ResponsiveContainer>
-              </Card>
+                </RechartsViewport>
+              </PremiumChartCard>
             </div>
 
             <Card className="p-3 sm:p-4">
@@ -760,40 +799,46 @@ const PerformanceManagement = () => {
               </Card>
             </div>
 
-            <Card className="p-3 sm:p-4">
-              <h3 className={`${ADM.h2} mb-2 text-gray-800`}>Monitoring en temps réel</h3>
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={responseTimeData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
+            <PremiumChartCard
+              title="Monitoring en temps réel"
+              subtitle="Latence et volume de requêtes superposés"
+              icon={FiActivity}
+              accent="emerald"
+              height={300}
+              className="w-full"
+            >
+              <RechartsViewport height={268}>
+                <AreaChart data={responseTimeData} margin={CHART_MARGIN_COMPACT}>
+                  <LineAreaGradient id="perf-monitor-response" colorFrom={CHART_BLUE} colorTo="#93c5fd" />
+                  <LineAreaGradient id="perf-monitor-requests" colorFrom={CHART_RED} colorTo="#fca5a5" />
+                  <CartesianGrid {...CHART_GRID_SOFT} />
+                  <XAxis dataKey="time" tick={CHART_AXIS_TICK} />
+                  <YAxis width={32} tick={CHART_AXIS_TICK} />
+                  <Tooltip content={(p) => <PremiumTooltip {...p} />} cursor={CHART_CURSOR} />
+                  <Legend {...PREMIUM_LEGEND_STYLE} formatter={premiumLegendFormatter} />
                   <Area
                     type="monotone"
                     dataKey="responseTime"
                     stackId="1"
                     stroke={CHART_BLUE}
-                    fill={CHART_BLUE}
-                    fillOpacity={0.55}
+                    strokeWidth={2}
+                    fill="url(#perf-monitor-response)"
                     name="Temps de réponse"
-                    isAnimationActive
-                    animationDuration={CHART_ANIMATION_MS}
+                    {...PREMIUM_CHART_ANIMATION}
                   />
                   <Area
                     type="monotone"
                     dataKey="requests"
                     stackId="2"
                     stroke={CHART_RED}
-                    fill={CHART_RED}
-                    fillOpacity={0.45}
+                    strokeWidth={2}
+                    fill="url(#perf-monitor-requests)"
                     name="Requêtes"
-                    isAnimationActive
-                    animationDuration={CHART_ANIMATION_MS}
+                    {...PREMIUM_CHART_ANIMATION}
                   />
                 </AreaChart>
-              </ResponsiveContainer>
-            </Card>
+              </RechartsViewport>
+            </PremiumChartCard>
           </div>
         )}
       </div>

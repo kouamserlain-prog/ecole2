@@ -17,7 +17,7 @@
     "@vladmandic/face-api": "^1.7.15",
     "axios": "^1.6.2",
     "date-fns": "^2.30.0",
-    "jspdf": "^3.0.4",
+    "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.2",
     "next": "16.2.6",
     "react": "19.2.4",
@@ -29,7 +29,8 @@
     "recharts": "^2.15.4"
   },
   "overrides": {
-    "react-is": "19.2.4"
+    "react-is": "19.2.4",
+    "postcss": "^8.5.10"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -38,7 +39,7 @@
     "autoprefixer": "^10.4.16",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
-    "postcss": "^8.4.32",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.0",
     "typescript": "^5"
   }

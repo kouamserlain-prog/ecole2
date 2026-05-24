@@ -21,9 +21,6 @@
   "keywords": ["school", "management", "education"],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "next": "16.2.4"
-  },
   "devDependencies": {
     "concurrently": "^8.2.2"
   }

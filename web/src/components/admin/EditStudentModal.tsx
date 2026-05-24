@@ -20,6 +20,8 @@ import {
   FiLoader
 } from 'react-icons/fi';
 import AdminUserPasswordSection from './AdminUserPasswordSection';
+import { useSchool } from '@/contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '@/hooks/useSchoolReady';
 
 interface EditStudentModalProps {
   isOpen: boolean;
@@ -29,14 +31,17 @@ interface EditStudentModalProps {
 
 const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, studentId }) => {
   const queryClient = useQueryClient();
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
+  const studentQueryKey = schoolQueryKey(['student', studentId], activeSchoolId);
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   // Fetch student data
   const { data: student, isLoading: isLoadingStudent } = useQuery({
-    queryKey: ['student', studentId],
+    queryKey: studentQueryKey,
     queryFn: () => adminApi.getStudent(studentId),
-    enabled: isOpen && !!studentId,
+    enabled: isOpen && !!studentId && schoolReady,
   });
 
   // Form data
@@ -152,7 +157,7 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
     mutationFn: (data: any) => adminApi.updateStudent(studentId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
-      queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
       toast.success('Élève modifié avec succès !');
       handleClose();

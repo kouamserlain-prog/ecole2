@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FiTrendingUp, FiBarChart2 } from 'react-icons/fi';
 import Card from '../../ui/Card';
 import {
   BarChart,
@@ -9,11 +10,27 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   LineChart,
   Line,
 } from 'recharts';
-import { CHART_GRID, CHART_MARGIN_COMPACT, chartBlueRed, CHART_ANIMATION_MS } from '../../charts';
+import {
+  CHART_GRID_SOFT,
+  CHART_MARGIN_COMPACT,
+  CHART_MARGIN_TILTED,
+  CHART_AXIS_TICK,
+  chartBlueRed,
+  PremiumTooltip,
+  PremiumChartCard,
+  RechartsViewport,
+  BarGradientsMulti,
+  LineAreaGradient,
+  PREMIUM_BAR_RADIUS_TOP,
+  PREMIUM_BAR_RADIUS_H_RIGHT,
+  PREMIUM_BAR_MAX_SIZE,
+  PREMIUM_CHART_ANIMATION,
+  PREMIUM_LINE_PROPS,
+  CHART_CURSOR,
+} from '../../charts';
 import { adminApi } from '../../../services/api';
 
 type Props = {
@@ -153,32 +170,38 @@ const ReportsAcademicPanel: React.FC<Props> = ({ summary, isLoading }) => {
       </div>
 
       {chartData.length > 0 && (
-        <Card className="p-5 border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4">Moyenne par classe (top 12)</h3>
-          <div className="h-80 w-full min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 12 }}>
-                <CartesianGrid {...CHART_GRID} />
-                <XAxis type="number" domain={[0, 20]} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
-                <Tooltip
-                  formatter={(value: number) => [`${value} / 20`, 'Moyenne']}
-                  labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''}
-                />
-                <Bar
-                  dataKey="moyenne"
-                  radius={[0, 4, 4, 0]}
-                  isAnimationActive
-                  animationDuration={CHART_ANIMATION_MS}
-                >
-                  {chartData.map((_, i) => (
-                    <Cell key={i} fill={chartBlueRed(i)} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        <PremiumChartCard
+          title="Moyenne par classe"
+          subtitle="Top 12 — échelle /20"
+          icon={FiBarChart2}
+          accent="indigo"
+          height={320}
+        >
+          <RechartsViewport height={284}>
+            <BarChart data={chartData} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 12 }}>
+              <BarGradientsMulti count={chartData.length} idPrefix="acad-class-avg" />
+              <CartesianGrid {...CHART_GRID_SOFT} />
+              <XAxis type="number" domain={[0, 20]} tick={CHART_AXIS_TICK} />
+              <YAxis type="category" dataKey="name" width={100} tick={CHART_AXIS_TICK} />
+              <Tooltip
+                formatter={(value: number) => [`${value} / 20`, 'Moyenne']}
+                labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ''}
+                content={(p) => <PremiumTooltip {...p} />}
+                cursor={CHART_CURSOR}
+              />
+              <Bar
+                dataKey="moyenne"
+                radius={PREMIUM_BAR_RADIUS_H_RIGHT}
+                maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                {...PREMIUM_CHART_ANIMATION}
+              >
+                {chartData.map((_, i) => (
+                  <Cell key={i} fill={`url(#acad-class-avg-${i})`} />
+                ))}
+              </Bar>
+            </BarChart>
+          </RechartsViewport>
+        </PremiumChartCard>
       )}
 
       {chartData.length === 0 && (
@@ -309,62 +332,50 @@ const ReportsAcademicPanel: React.FC<Props> = ({ summary, isLoading }) => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {compChart.length > 0 && (
-              <Card className="p-5 border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">
-                  Comparaison inter-classes (moyenne /20)
-                </h3>
-                <div className="h-72 w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={compChart} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 8 }}>
-                      <CartesianGrid {...CHART_GRID} />
-                      <XAxis type="number" domain={[0, 20]} tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 9 }} />
-                      <Tooltip
-                        formatter={(value: number, name: string) =>
-                          name === 'moyenne' ? [`${value} / 20`, 'Moyenne'] : [`${value} %`, 'Réussite']
-                        }
-                        labelFormatter={(_, p) => {
-                          const row = p?.[0]?.payload;
-                          if (!row) return '';
-                          return `${row.fullName} · Rang ${row.rang}${row.taux != null ? ` · Réussite ${row.taux}%` : ''}`;
-                        }}
-                      />
-                      <Bar
-                        dataKey="moyenne"
-                        radius={[0, 4, 4, 0]}
-                        fill="#6366f1"
-                        isAnimationActive
-                        animationDuration={CHART_ANIMATION_MS}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
+              <PremiumChartCard
+                title="Comparaison inter-classes"
+                subtitle="Moyenne sur 20"
+                icon={FiBarChart2}
+                accent="violet"
+                height={300}
+              >
+                <RechartsViewport height={264}>
+                  <BarChart data={compChart} layout="vertical" margin={{ ...CHART_MARGIN_COMPACT, left: 8 }}>
+                    <BarGradientsMulti count={1} idPrefix="acad-comp" />
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis type="number" domain={[0, 20]} tick={CHART_AXIS_TICK} />
+                    <YAxis type="category" dataKey="name" width={88} tick={CHART_AXIS_TICK} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} valueSuffix="/20" />} cursor={CHART_CURSOR} />
+                    <Bar
+                      dataKey="moyenne"
+                      fill="url(#acad-comp-0)"
+                      radius={PREMIUM_BAR_RADIUS_H_RIGHT}
+                      maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                      {...PREMIUM_CHART_ANIMATION}
+                    />
+                  </BarChart>
+                </RechartsViewport>
+              </PremiumChartCard>
             )}
 
             {evoData.length > 0 && (
-              <Card className="p-5 border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Évolution mensuelle (moyenne /20)</h3>
-                <div className="h-72 w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={evoData} margin={{ ...CHART_MARGIN_COMPACT, bottom: 4 }}>
-                      <CartesianGrid {...CHART_GRID} />
-                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                      <YAxis domain={[0, 20]} tick={{ fontSize: 10 }} width={28} />
-                      <Tooltip formatter={(v: number) => [`${v} / 20`, 'Moyenne']} />
-                      <Line
-                        type="monotone"
-                        dataKey="moyenne"
-                        stroke="#0d9488"
-                        strokeWidth={2}
-                        dot={{ r: 3 }}
-                        isAnimationActive
-                        animationDuration={CHART_ANIMATION_MS}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
+              <PremiumChartCard
+                title="Évolution mensuelle"
+                subtitle="Moyenne générale /20"
+                icon={FiTrendingUp}
+                accent="emerald"
+                height={300}
+              >
+                <RechartsViewport height={264}>
+                  <LineChart data={evoData} margin={{ ...CHART_MARGIN_COMPACT, bottom: 4 }}>
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis dataKey="label" tick={CHART_AXIS_TICK} />
+                    <YAxis domain={[0, 20]} tick={CHART_AXIS_TICK} width={28} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} valueSuffix="/20" />} cursor={CHART_CURSOR} />
+                    <Line dataKey="moyenne" stroke="#0d9488" {...PREMIUM_LINE_PROPS} />
+                  </LineChart>
+                </RechartsViewport>
+              </PremiumChartCard>
             )}
           </div>
 

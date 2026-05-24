@@ -5,6 +5,8 @@ import {
   resolveAdminProvidedOrInvitePassword,
 } from './admin-user-initial-password.util';
 import { generateDigitalCardPublicId } from './digital-card.util';
+import { ensureParentAccountForEnrolledStudent } from './parent-account-from-enrollment.util';
+import type { ParentEnrollmentResult } from './parent-account-from-enrollment.util';
 
 export type EnrollFromAdmissionBody = {
   password?: string;
@@ -22,6 +24,7 @@ export type EnrollFromAdmissionResult = {
   user: Record<string, unknown>;
   reference: string;
   passwordSetupEmailSent: boolean;
+  parentAccount?: ParentEnrollmentResult;
 };
 
 async function generateUniqueStudentId(firstName: string, lastName: string): Promise<string> {
@@ -170,11 +173,21 @@ export async function enrollStudentFromAdmission(
     }
   }
 
+  const parentAccount = await ensureParentAccountForEnrolledStudent({
+    parentEmail: admission.parentEmail,
+    parentName: admission.parentName,
+    parentPhone: admission.parentPhone,
+    studentId: createdStudent.id,
+    studentUserEmail: email,
+    relation: 'guardian',
+  });
+
   const { password: _pw, ...userWithoutPassword } = user;
   return {
     message: 'Élève inscrit et compte créé',
     user: userWithoutPassword as unknown as Record<string, unknown>,
     reference: admission.reference,
     passwordSetupEmailSent: shouldSendSetupEmail,
+    parentAccount,
   };
 }

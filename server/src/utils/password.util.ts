@@ -45,6 +45,11 @@ export const hashPassword = async (password: string): Promise<string> => {
   return bcrypt.hash(password, 12);
 };
 
+/** Hash bcrypt sans validation — secrets internes / jetons aléatoires (invitation mot de passe). */
+export const hashSecret = async (secret: string): Promise<string> => {
+  return bcrypt.hash(secret, 12);
+};
+
 export const comparePassword = async (
   password: string,
   hashedPassword: string,

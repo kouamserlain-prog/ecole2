@@ -59,6 +59,7 @@ async function main() {
   await prisma.schoolTrack.deleteMany();
   await prisma.class.deleteMany();
   await prisma.teacher.deleteMany();
+  await prisma.educatorClassAssignment.deleteMany();
   await prisma.educator.deleteMany();
   await prisma.staffAttendance.deleteMany();
   await prisma.staffModuleRecord.deleteMany();
@@ -647,6 +648,30 @@ async function main() {
       },
     },
   });
+
+  const educatorProfiles = await prisma.educator.findMany({
+    where: { employeeId: { in: ['EDU001', 'EDU002'] } },
+    select: { id: true, employeeId: true },
+  });
+  const classesForEducators = await prisma.class.findMany({
+    select: { id: true },
+    orderBy: { name: 'asc' },
+  });
+  if (educatorProfiles.length > 0 && classesForEducators.length > 0) {
+    const allClassIds = classesForEducators.map((c) => c.id);
+    for (const edu of educatorProfiles) {
+      const slice =
+        edu.employeeId === 'EDU001'
+          ? allClassIds.slice(0, Math.min(3, allClassIds.length))
+          : allClassIds.slice(0, Math.min(2, allClassIds.length));
+      if (slice.length > 0) {
+        await prisma.educatorClassAssignment.createMany({
+          data: slice.map((classId) => ({ educatorId: edu.id, classId })),
+        });
+      }
+    }
+    console.log('   Classes assignées aux éducateurs (seed)');
+  }
 
   // Personnel de soutien (espace personnel /staff)
   console.log('🧑‍💼 Création du personnel de soutien (STAFF)...');

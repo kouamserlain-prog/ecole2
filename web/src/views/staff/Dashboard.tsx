@@ -27,7 +27,6 @@ import AcademicManagement from '../../components/admin/AcademicManagement';
 import GradingEvaluationManagement from '../../components/admin/GradingEvaluationManagement';
 import ClassesList from '../../components/admin/ClassesList';
 import TeachersList from '../../components/admin/TeachersList';
-import EducatorsList from '../../components/admin/EducatorsList';
 import StaffPersonnelModule from '../../components/admin/staff/StaffPersonnelModule';
 import ParentGuardiansModule from '../../components/admin/parents/ParentGuardiansModule';
 import PedagogicalTracking from '../../components/admin/PedagogicalTracking';
@@ -51,8 +50,10 @@ import AdministrativeManagement from '../../components/admin/AdministrativeManag
 import StaffFinanceShell from '../../components/staff/StaffFinanceShell';
 import AllNotifications from '../admin/AllNotifications';
 import StaffRoleWorkspaces from './StaffRoleWorkspaces';
+import StaffModulesHub from '../../components/staff/StaffModulesHub';
 import { resolveStaffSupportKind, staffNavBadgeLabel } from './staffSpaceConfig';
 import { inactiveModuleIconClass } from '../../lib/navModuleIconClass';
+import { PremiumPortalShell, PremiumModuleHeader } from '../../components/dashboard/premium';
 import {
   getStaffTabsFromModules,
   hasPedagogyStaffAccess,
@@ -60,6 +61,7 @@ import {
   normalizeStaffModuleId,
   PEDAGOGY_STAFF_MODULE_IDS,
   resolveVisibleStaffModules,
+  staffModuleGrantsWriteUi,
   type StaffModuleId,
 } from '@/lib/staffModules';
 import { FiBookOpen, FiBriefcase, FiUser } from 'react-icons/fi';
@@ -145,8 +147,8 @@ const StaffDashboard = () => {
   const activeMeta = tabs.find((t) => t.id === activeTab) ?? tabs[0];
   const ActiveTabIcon = activeMeta.icon;
   const hasOperationalModules = visibleModules.length > 1;
-  const isFinanceStaff = supportKind === 'BURSAR' || supportKind === 'ACCOUNTANT';
-  const staffAdminReadOnly = !isFinanceStaff;
+  const staffModuleReadOnly = (moduleId: StaffModuleId) =>
+    !staffModuleGrantsWriteUi(moduleId, visibleModules);
   const staffUsesInternalMessaging = ['LIBRARIAN', 'NURSE', 'IT', 'MAINTENANCE', 'OTHER'].includes(
     supportKind,
   );
@@ -193,6 +195,9 @@ const StaffDashboard = () => {
               visibleModules={visibleModules}
               onOpenModule={changeTab}
             />
+            {visibleModules.length > 1 ? (
+              <StaffModulesHub visibleModules={visibleModules} onNavigate={changeTab} />
+            ) : null}
           </>
         );
       case 'counter':
@@ -248,73 +253,76 @@ const StaffDashboard = () => {
         );
       case 'students_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('students_mgmt')}>
             <StudentsList />
           </StaffPedagogyShell>
         );
       case 'academic_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('academic_mgmt')}>
             <AcademicManagement />
           </StaffPedagogyShell>
         );
       case 'grading_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('grading_mgmt')}>
             <GradingEvaluationManagement />
           </StaffPedagogyShell>
         );
       case 'classes_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('classes_mgmt')}>
             <ClassesList />
           </StaffPedagogyShell>
         );
       case 'teachers_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('teachers_mgmt')}>
             <TeachersList />
           </StaffPedagogyShell>
         );
       case 'educators_mgmt':
         return (
-          <StaffPedagogyShell>
-            <EducatorsList />
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('educators_mgmt')}>
+            <StaffPersonnelModule
+              pedagogyReadOnly={staffModuleReadOnly('educators_mgmt')}
+              initialCategoryFilter="EDUCATOR"
+            />
           </StaffPedagogyShell>
         );
       case 'staff_mgmt':
         return (
-          <StaffPedagogyShell>
-            <StaffPersonnelModule pedagogyReadOnly />
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('staff_mgmt')}>
+            <StaffPersonnelModule pedagogyReadOnly={staffModuleReadOnly('staff_mgmt')} />
           </StaffPedagogyShell>
         );
       case 'parents_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('parents_mgmt')}>
             <ParentGuardiansModule />
           </StaffPedagogyShell>
         );
       case 'pedagogical_tracking':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('pedagogical_tracking')}>
             <PedagogicalTracking />
           </StaffPedagogyShell>
         );
       case 'discipline_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('discipline_mgmt')}>
             <DisciplineAdminModule />
           </StaffPedagogyShell>
         );
       case 'extracurricular_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('extracurricular_mgmt')}>
             <ExtracurricularAdminModule />
           </StaffPedagogyShell>
         );
       case 'orientation_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('orientation_mgmt')}>
             <OrientationAdminModule />
           </StaffPedagogyShell>
         );
@@ -323,55 +331,55 @@ const StaffDashboard = () => {
           return <NurseInternalMessaging />;
         }
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('communication_mgmt')}>
             <CommunicationHubModule />
           </StaffPedagogyShell>
         );
       case 'library_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('library_mgmt')}>
             <LibraryManagementModule />
           </StaffPedagogyShell>
         );
       case 'material_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('material_mgmt')}>
             <MaterialManagementModule />
           </StaffPedagogyShell>
         );
       case 'reports_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('reports_mgmt')}>
             <ReportsStatisticsModule />
           </StaffPedagogyShell>
         );
       case 'analytics_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('analytics_mgmt')}>
             <AdvancedAnalytics />
           </StaffPedagogyShell>
         );
       case 'schedule_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('schedule_mgmt')}>
             <ScheduleManagement />
           </StaffPedagogyShell>
         );
       case 'pointage_mgmt':
         return (
-          <StaffPedagogyShell>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('pointage_mgmt')}>
             <PointageEleves />
           </StaffPedagogyShell>
         );
       case 'attendance_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('attendance_mgmt')}>
             <AttendanceManagementModule />
           </StaffPedagogyShell>
         );
       case 'hr_mgmt':
         return (
-          <StaffPedagogyShell readOnly={staffAdminReadOnly}>
+          <StaffPedagogyShell readOnly={staffModuleReadOnly('hr_mgmt')}>
             <HRManagementModule />
           </StaffPedagogyShell>
         );
@@ -418,7 +426,8 @@ const StaffDashboard = () => {
 
   return (
     <Layout user={user} onLogout={logout} role="STAFF" staffRoleBadgeLabel={badgeLabel}>
-      <div className="min-h-screen flex premium-body">
+      <PremiumPortalShell variant="staff">
+      <div className="min-h-screen flex">
         <aside className="hidden lg:flex w-64 flex-col shrink-0 sticky top-16 h-[calc(100vh-4rem)] bg-white/92 backdrop-blur-xl border-r border-stone-200/90 shadow-[0_12px_40px_-20px_rgba(12,10,9,0.12)]">
           <div className="p-2.5 flex flex-col flex-1 min-h-0">
             <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-2 py-1.5 shrink-0">
@@ -527,6 +536,7 @@ const StaffDashboard = () => {
           </main>
         </div>
       </div>
+      </PremiumPortalShell>
     </Layout>
   );
 };

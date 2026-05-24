@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { adminApi } from '../../services/api';
+import { adminApi, educatorApi } from '../../services/api';
+import { useSchool } from '@/contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '@/hooks/useSchoolReady';
 import Modal from '../ui/Modal';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
@@ -37,6 +39,7 @@ interface StudentDetailsModalProps {
   onClose: () => void;
   studentId: string;
   onEdit?: () => void;
+  mode?: 'admin' | 'educator';
 }
 
 const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
@@ -44,12 +47,25 @@ const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
   onClose,
   studentId,
   onEdit,
+  mode = 'admin',
 }) => {
-  const { data: student, isLoading } = useQuery({
-    queryKey: ['student', studentId],
-    queryFn: () => adminApi.getStudent(studentId),
-    enabled: isOpen && !!studentId,
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
+
+  const { data: student, isLoading, isError, error } = useQuery({
+    queryKey:
+      mode === 'educator'
+        ? ['educator-student-details', studentId]
+        : schoolQueryKey(['student', studentId], activeSchoolId),
+    queryFn: () => (mode === 'educator' ? educatorApi.getStudent(studentId) : adminApi.getStudent(studentId)),
+    enabled: isOpen && !!studentId && (mode === 'educator' || schoolReady),
+    retry: mode === 'educator' ? 1 : 2,
   });
+
+  const loadErrorMessage =
+    isError && error && typeof error === 'object' && 'response' in error
+      ? String((error as { response?: { data?: { error?: string } } }).response?.data?.error ?? '')
+      : '';
 
   if (!isOpen) return null;
 
@@ -86,11 +102,16 @@ const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
             <p className="mt-4 text-gray-600">Chargement des détails...</p>
           </div>
-        ) : !student ? (
+        ) : isError || !student ? (
           <div className="text-center py-12">
             <FiAlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-800 mb-2">Élève non trouvé</h3>
-            <p className="text-gray-600">L'élève demandé n'existe pas ou a été supprimé.</p>
+            <p className="text-gray-600">
+              {loadErrorMessage ||
+                (mode === 'educator'
+                  ? "Cet élève n'est pas dans vos classes assignées, ou votre périmètre n'est pas encore configuré."
+                  : "L'élève demandé n'existe pas ou a été supprimé.")}
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -343,12 +364,16 @@ const StudentDetailsModal: React.FC<StudentDetailsModalProps> = ({
               </Card>
             )}
 
-            <div className="border-t border-gray-200 pt-4">
-              <h3 className="text-sm font-bold text-gray-800 mb-2">Pièces &amp; identité</h3>
-              <IdentityDocumentsPanel mode="admin" studentId={studentId} />
-            </div>
+            {mode === 'admin' && (
+              <>
+                <div className="border-t border-gray-200 pt-4">
+                  <h3 className="text-sm font-bold text-gray-800 mb-2">Pièces &amp; identité</h3>
+                  <IdentityDocumentsPanel mode="admin" studentId={studentId} />
+                </div>
 
-            <StudentDossierPanel studentId={studentId} />
+                <StudentDossierPanel studentId={studentId} />
+              </>
+            )}
 
             {/* Statistiques */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -1,8 +1,28 @@
 import express from 'express';
 import type { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import type { SchoolContextRequest } from '../utils/school-context.util';
+import {
+  admissionScopeWhere,
+  classScopeWhere,
+  accountingScopeWhere,
+  studentScopeWhere,
+} from '../utils/school-context.util';
 
 const router = express.Router();
+
+function reportSchoolCtx(req: SchoolContextRequest) {
+  const schoolId = req.schoolId!;
+  const isDefault = req.school?.isDefault ?? false;
+  return {
+    schoolId,
+    isDefault,
+    studentWhere: studentScopeWhere(schoolId, isDefault),
+    classWhere: classScopeWhere(schoolId, isDefault),
+    admissionWhere: admissionScopeWhere(schoolId, isDefault),
+    accountingWhere: accountingScopeWhere(schoolId, isDefault),
+  };
+}
 
 function norm20(score: number, maxScore: number): number {
   const max = maxScore > 0 ? maxScore : 20;
@@ -60,15 +80,20 @@ function getPeriodDateRange(
  * Rapports académiques 11.1 : résultats par classe/matière, taux de réussite, moyennes,
  * comparaisons inter-classes, évolution des performances, synthèse de fin de période.
  */
-router.get('/reports/academic', async (req, res) => {
+router.get('/reports/academic', async (req: SchoolContextRequest, res) => {
   try {
+    const { classWhere } = reportSchoolCtx(req);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear.trim() : '';
     const classId = typeof req.query.classId === 'string' ? req.query.classId.trim() : '';
     const period = typeof req.query.period === 'string' ? req.query.period.trim() : 'full';
 
-    const courseWhere: Prisma.CourseWhereInput = {};
-    if (classId) courseWhere.classId = classId;
-    if (academicYear) courseWhere.class = { academicYear };
+    const courseWhere: Prisma.CourseWhereInput = {
+      class: {
+        ...classWhere,
+        ...(classId ? { id: classId } : {}),
+        ...(academicYear ? { academicYear } : {}),
+      },
+    };
 
     const gradeWhere: Prisma.GradeWhereInput = {
       course: courseWhere,
@@ -363,8 +388,9 @@ function gbCount(row: { _count: number | { _all?: number } }): number {
 /**
  * Rapports administratifs : effectifs, présences, inscriptions, mouvements élèves, ratios.
  */
-router.get('/reports/administrative', async (req, res) => {
+router.get('/reports/administrative', async (req: SchoolContextRequest, res) => {
   try {
+    const { studentWhere, classWhere, admissionWhere } = reportSchoolCtx(req);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear.trim() : '';
     const fromQ = typeof req.query.from === 'string' ? req.query.from.trim() : '';
     const toQ = typeof req.query.to === 'string' ? req.query.to.trim() : '';
@@ -396,16 +422,17 @@ router.get('/reports/administrative', async (req, res) => {
     const dateKeyFrom = toYMD(rangeStart);
     const dateKeyTo = toYMD(rangeEnd);
 
-    const classYearFilter = academicYear ? { academicYear } : undefined;
-    const studentClassYearWhere = classYearFilter ? { class: classYearFilter } : {};
+    const classYearFilter = academicYear ? { academicYear, ...classWhere } : classWhere;
+    const studentClassYearWhere = academicYear ? { class: classYearFilter } : { ...studentWhere };
 
     const absenceDateWhere = { gte: rangeStart, lte: rangeEnd };
     const absenceWhere: Prisma.AbsenceWhereInput = {
       date: absenceDateWhere,
+      student: studentWhere,
       ...(academicYear
         ? {
             course: {
-              class: { academicYear },
+              class: classYearFilter,
             },
           }
         : {}),
@@ -434,8 +461,8 @@ router.get('/reports/administrative', async (req, res) => {
       newEnrollments,
       archivedStudents,
     ] = await Promise.all([
-      prisma.student.count(),
-      prisma.student.count({ where: { isActive: true, enrollmentStatus: 'ACTIVE' } }),
+      prisma.student.count({ where: studentWhere }),
+      prisma.student.count({ where: { ...studentWhere, isActive: true, enrollmentStatus: 'ACTIVE' } }),
       prisma.student.count({ where: studentClassYearWhere }),
       prisma.student.count({
         where: {
@@ -444,24 +471,32 @@ router.get('/reports/administrative', async (req, res) => {
           enrollmentStatus: 'ACTIVE',
         },
       }),
-      prisma.student.count({ where: { classId: null } }),
+      prisma.student.count({ where: { ...studentWhere, classId: null } }),
       prisma.student.groupBy({
         by: ['enrollmentStatus'],
         _count: true,
-        ...(academicYear ? { where: studentClassYearWhere } : {}),
+        where: academicYear ? studentClassYearWhere : studentWhere,
       }),
-      prisma.teacher.count(),
+      prisma.teacher.count({
+        where: {
+          OR: [
+            { classes: { some: classWhere } },
+            { courses: { some: { class: classWhere } } },
+          ],
+        },
+      }),
       prisma.educator.count(),
-      prisma.staffMember.count(),
+      prisma.staffMember.count({ where: { schoolId: req.schoolId! } }),
       prisma.staffMember.groupBy({
         by: ['staffCategory'],
+        where: { schoolId: req.schoolId! },
         _count: true,
       }),
-      prisma.class.count(),
-      academicYear ? prisma.class.count({ where: { academicYear } }) : prisma.class.count(),
+      prisma.class.count({ where: classWhere }),
+      academicYear ? prisma.class.count({ where: classYearFilter }) : prisma.class.count({ where: classWhere }),
       academicYear
         ? prisma.course.findMany({
-            where: { class: { academicYear } },
+            where: { class: classYearFilter },
             select: { teacherId: true },
             distinct: ['teacherId'],
           })
@@ -487,17 +522,21 @@ router.get('/reports/administrative', async (req, res) => {
       }),
       prisma.admission.groupBy({
         by: ['status'],
-        ...(academicYear ? { where: { academicYear } } : {}),
+        where: academicYear ? { ...admissionWhere, academicYear } : admissionWhere,
         _count: true,
       }),
       prisma.admission.groupBy({
         by: ['academicYear'],
+        where: admissionWhere,
         _count: true,
         orderBy: { academicYear: 'desc' },
         take: 12,
       }),
       prisma.studentTransfer.findMany({
-        where: { effectiveDate: { gte: rangeStart, lte: rangeEnd } },
+        where: {
+          effectiveDate: { gte: rangeStart, lte: rangeEnd },
+          student: studentWhere,
+        },
         select: {
           id: true,
           transferType: true,
@@ -508,12 +547,14 @@ router.get('/reports/administrative', async (req, res) => {
       prisma.student.count({
         where: {
           enrollmentDate: { gte: rangeStart, lte: rangeEnd },
+          ...studentWhere,
           ...(academicYear ? studentClassYearWhere : {}),
         },
       }),
       prisma.student.count({
         where: {
           archivedAt: { gte: rangeStart, lte: rangeEnd, not: null },
+          ...studentWhere,
           ...(academicYear ? studentClassYearWhere : {}),
         },
       }),
@@ -552,7 +593,8 @@ router.get('/reports/administrative', async (req, res) => {
     const teachersInYear = coursesInYearTeachers.length;
     const studentsForRatio = academicYear ? studentsActiveScoped : studentsActiveAll;
     const classesForRatio = academicYear ? classesScoped : classesTotalAll;
-    const teachersForRatio = academicYear && teachersInYear > 0 ? teachersInYear : teachersTotalAll;
+    const teachersForRatio =
+      academicYear && teachersInYear > 0 ? teachersInYear : teachersTotalAll;
 
     const studentsPerTeacher =
       teachersForRatio > 0 ? Math.round((studentsForRatio / teachersForRatio) * 100) / 100 : null;
@@ -676,8 +718,9 @@ router.get('/reports/administrative', async (req, res) => {
 /**
  * Rapports financiers (3) : paiements, impayés, revenus par source, dépenses, budget vs réalisé, prévisions.
  */
-router.get('/reports/financial', async (req, res) => {
+router.get('/reports/financial', async (req: SchoolContextRequest, res) => {
   try {
+    const { studentWhere, accountingWhere } = reportSchoolCtx(req);
     const academicYear = typeof req.query.academicYear === 'string' ? req.query.academicYear.trim() : '';
     const fromQ = typeof req.query.from === 'string' ? req.query.from.trim() : '';
     const toQ = typeof req.query.to === 'string' ? req.query.to.trim() : '';
@@ -706,7 +749,9 @@ router.get('/reports/financial', async (req, res) => {
       rangeStart.setHours(0, 0, 0, 0);
     }
 
-    const tuitionYearFilter = academicYear ? { academicYear } : {};
+    const tuitionYearFilter = academicYear
+      ? { academicYear, student: studentWhere }
+      : { student: studentWhere };
 
     const [
       paymentByStatus,
@@ -720,6 +765,7 @@ router.get('/reports/financial', async (req, res) => {
     ] = await Promise.all([
       prisma.payment.groupBy({
         by: ['status'],
+        where: { student: studentWhere },
         _sum: { amount: true },
         _count: true,
       }),
@@ -747,7 +793,8 @@ router.get('/reports/financial', async (req, res) => {
         where: {
           status: 'COMPLETED',
           paidAt: { gte: rangeStart, lte: rangeEnd },
-          ...(academicYear ? { tuitionFee: { academicYear } } : {}),
+          student: studentWhere,
+          ...(academicYear ? { tuitionFee: { academicYear, student: studentWhere } } : {}),
         },
         select: {
           amount: true,
@@ -759,6 +806,7 @@ router.get('/reports/financial', async (req, res) => {
       prisma.schoolExpense.groupBy({
         by: ['category'],
         where: {
+          ...accountingWhere,
           expenseDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { amount: true },
@@ -767,6 +815,7 @@ router.get('/reports/financial', async (req, res) => {
       prisma.pettyCashMovement.groupBy({
         by: ['type'],
         where: {
+          ...accountingWhere,
           movementDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { amount: true },
@@ -774,6 +823,7 @@ router.get('/reports/financial', async (req, res) => {
       }),
       prisma.budgetLine.groupBy({
         by: ['academicYear'],
+        where: accountingWhere,
         orderBy: { academicYear: 'desc' },
         take: 1,
         _count: true,
@@ -786,7 +836,7 @@ router.get('/reports/financial', async (req, res) => {
 
     const budgetLines = budgetYearResolved
       ? await prisma.budgetLine.findMany({
-          where: { academicYear: budgetYearResolved },
+          where: { academicYear: budgetYearResolved, ...accountingWhere },
           orderBy: [{ category: 'asc' }, { label: 'asc' }],
         })
       : [];
@@ -797,6 +847,7 @@ router.get('/reports/financial', async (req, res) => {
         ? await prisma.schoolExpense.groupBy({
             by: ['category'],
             where: {
+              ...accountingWhere,
               expenseDate: { gte: budgetRange.start, lte: budgetRange.end },
             },
             _sum: { amount: true },
@@ -877,12 +928,16 @@ router.get('/reports/financial', async (req, res) => {
         where: {
           status: 'COMPLETED',
           paidAt: { gte: threeMStart, lte: now },
-          ...(academicYear ? { tuitionFee: { academicYear } } : {}),
+          student: studentWhere,
+          ...(academicYear ? { tuitionFee: { academicYear, student: studentWhere } } : {}),
         },
         _sum: { amount: true },
       }),
       prisma.schoolExpense.aggregate({
-        where: { expenseDate: { gte: ninetyStart, lte: now } },
+        where: {
+          ...accountingWhere,
+          expenseDate: { gte: ninetyStart, lte: now },
+        },
         _sum: { amount: true },
       }),
     ]);
@@ -992,7 +1047,7 @@ router.get('/reports/financial', async (req, res) => {
         notes: [
           'Les prévisions sont indicatives : tendance sur 3 mois pour les encaissements complétés et sur 90 jours pour les dépenses.',
           'Scénario « prudent » sur impayés : 35 % du reliquat dû, sans calage sur historique de recouvrement.',
-          'Croisez ces chiffres avec le rapport comptable et les échéances réelles (trimestres, bourses, impayés anciens).',
+          'Croisez ces chiffres avec le rapport comptable et les échéances réelles (trimestres, impayés anciens).',
         ],
       },
     });

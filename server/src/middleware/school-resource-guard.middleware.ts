@@ -26,7 +26,7 @@ export async function guardAdminStudentRoute(
     return;
   }
   try {
-    await assertStudentInSchool(studentId, req.schoolId);
+    await assertStudentInSchool(studentId, req.schoolId, req.school?.isDefault ?? false);
     next();
   } catch (error) {
     respondSchoolAccessDenied(res, error, next);

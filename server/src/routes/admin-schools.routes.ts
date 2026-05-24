@@ -12,6 +12,7 @@ import {
 } from '../utils/school-context.util';
 import type { Role } from '@prisma/client';
 import { getAppBrandingDelegate } from '../utils/app-branding-prisma.util';
+import { seedSchoolStaffMetiers } from '../utils/school-staff-metiers.util';
 
 const router = Router();
 
@@ -182,6 +183,8 @@ router.post('/schools', async (req: AuthRequest, res) => {
         ),
       );
     }
+
+    await seedSchoolStaffMetiers(school.id);
 
     res.status(201).json(school);
   } catch (error: unknown) {

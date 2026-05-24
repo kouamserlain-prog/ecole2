@@ -26,6 +26,15 @@ const API_URL = (() => {
   return n || 'http://localhost:5000/api';
 })();
 
+const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password'];
+
+function isPublicAuthRequest(url: string | undefined): boolean {
+  if (!url) return false;
+  const path = url.split('?')[0];
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return PUBLIC_AUTH_PATHS.some((p) => normalized === p || normalized.endsWith(p));
+}
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -45,7 +54,7 @@ api.interceptors.request.use((config) => {
     }
   }
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  if (token) {
+  if (token && !isPublicAuthRequest(config.url)) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (typeof window !== 'undefined') {
@@ -92,17 +101,26 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem('token');
-      } catch {
-        /* ignore */
-      }
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      const requestUrl = error.config?.url as string | undefined;
+      if (!isPublicAuthRequest(requestUrl)) {
+        try {
+          localStorage.removeItem('token');
+        } catch {
+          /* ignore */
+        }
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
   }
 );
 
+/** Santé backend : `GET {base}/health` (base URL inclut déjà `/api`). */
+export function getApiHealthUrl(): string {
+  return `${API_URL.replace(/\/+$/, '')}/health`;
+}
+
+export { API_URL };
 export default api;

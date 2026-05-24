@@ -9,6 +9,7 @@ import Footer from '../components/Footer';
 import HomeReveal from '../components/public/HomeReveal';
 import HomeDirectorSection from '../components/public/HomeDirectorSection';
 import HomePageImage from '../components/public/HomePageImage';
+import PreInscriptionSchoolEntry from '../components/public/PreInscriptionSchoolEntry';
 import { getCurrentAcademicYear } from '../utils/academicYear';
 import { getRoleDashboardPath } from '../lib/rolePaths';
 import {
@@ -238,12 +239,7 @@ export default function Home() {
                 <Link href="/login">
                   <Button variant="secondary">Connexion</Button>
                 </Link>
-                <Link href="/inscription">
-                  <Button className="shadow-lg shadow-tran-mustard-900/15 ring-1 ring-tran-mustard-500/20">
-                    Pré-inscription en ligne
-                    <FiArrowRight className="ml-1.5 inline h-4 w-4" />
-                  </Button>
-                </Link>
+                <PreInscriptionSchoolEntry />
               </>
             )}
           </div>
@@ -284,9 +280,10 @@ export default function Home() {
                       Connexion
                     </Button>
                   </Link>
-                  <Link href="/inscription" onClick={() => setMenuOpen(false)}>
-                    <Button className="w-full">Pré-inscription en ligne</Button>
-                  </Link>
+                  <PreInscriptionSchoolEntry
+                    className="w-full"
+                    onNavigate={() => setMenuOpen(false)}
+                  />
                 </>
               )}
             </div>
@@ -358,7 +355,8 @@ export default function Home() {
 
                 {!user && (
                   <>
-                  <div className="mt-11 flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <PreInscriptionSchoolEntry variant="panel" className="mt-11" />
+                  <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center">
                     <Link href="/login">
                       <Button
                         size="lg"
@@ -384,13 +382,10 @@ export default function Home() {
                       <FiFileText className="h-4 w-4 shrink-0 text-tran-mustard-400/80" aria-hidden />
                       Guides & parcours
                     </Link>
-                    <Link
-                      href="/inscription"
-                      className="inline-flex items-center gap-2 text-stone-500 transition-colors hover:text-tran-mustard-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tran-mustard-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-tran-mauve-950 rounded-lg"
-                    >
-                      <FiCalendar className="h-4 w-4 shrink-0 text-tran-mustard-400/80" aria-hidden />
-                      Pré-inscription en ligne
-                    </Link>
+                    <PreInscriptionSchoolEntry
+                      variant="link"
+                      linkClassName="inline-flex items-center gap-2 text-stone-500 transition-colors hover:text-tran-mustard-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tran-mustard-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-tran-mauve-950 rounded-lg"
+                    />
                     <Link
                       href="/contact"
                       className="inline-flex items-center gap-2 text-stone-500 transition-colors hover:text-tran-mustard-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tran-mustard-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-tran-mauve-950 rounded-lg"
@@ -630,12 +625,11 @@ export default function Home() {
                   <FiPhone className="h-4 w-4" aria-hidden />
                   {TRANLEFET_SCHOOL.phoneDisplay}
                 </a>
-                <Link href="/inscription">
-                  <span className="inline-flex items-center gap-2 rounded-2xl border border-stone-300 bg-white px-7 py-4 text-sm font-bold text-stone-900 shadow-sm transition-all hover:border-tran-mustard-400 hover:bg-tran-mustard-50">
-                    Pré-inscription en ligne
-                    <FiArrowRight className="h-4 w-4" aria-hidden />
-                  </span>
-                </Link>
+                <PreInscriptionSchoolEntry
+                  variant="button"
+                  buttonVariant="secondary"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-300 bg-white px-7 py-4 text-sm font-bold text-stone-900 shadow-sm transition-all hover:border-tran-mustard-400 hover:bg-tran-mustard-50 sm:w-auto"
+                />
               </div>
             </div>
           </div>

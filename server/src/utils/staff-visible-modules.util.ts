@@ -109,8 +109,8 @@ export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
   grading_mgmt: 'Notation & évaluation',
   classes_mgmt: 'Classes',
   teachers_mgmt: 'Enseignants',
-  educators_mgmt: 'Éducateurs',
-  staff_mgmt: 'Personnel administratif',
+  educators_mgmt: 'Personnel — éducateurs',
+  staff_mgmt: 'Personnel',
   parents_mgmt: 'Parents & tuteurs',
   pedagogical_tracking: 'Suivi pédagogique',
   discipline_mgmt: 'Discipline & règlement',
@@ -280,8 +280,8 @@ export function resolveVisibleStaffModules(
     picked.unshift('overview');
   }
 
-  // Liste personnalisée en base : ne pas réinjecter tous les modules « recommandés » du métier.
-  return [...new Set(picked)];
+  // Modules recommandés du métier toujours présents + modules ajoutés par l’admin.
+  return [...new Set<StaffModuleId>([...eligible, ...picked])];
 }
 
 /**
@@ -293,11 +293,19 @@ export async function syncStaffVisibleModulesIfStale(staff: {
   staffCategory: StaffCategory;
   supportKind: SupportStaffKind | null;
   visibleStaffModules: string[];
+  schoolId?: string | null;
 }): Promise<StaffModuleId[] | null> {
   const stored = staff.visibleStaffModules ?? [];
   if (stored.length > 0) return null;
 
-  const defaults = getEligibleModulesForStaffMember(staff.staffCategory, staff.supportKind);
+  const { getEligibleModulesForStaffMemberAtSchool } = await import('./school-staff-metiers.util');
+  const defaults = staff.schoolId
+    ? await getEligibleModulesForStaffMemberAtSchool(
+        staff.staffCategory,
+        staff.supportKind,
+        staff.schoolId,
+      )
+    : getEligibleModulesForStaffMember(staff.staffCategory, staff.supportKind);
   await prisma.staffMember.update({
     where: { id: staff.id },
     data: { visibleStaffModules: defaults },
@@ -313,15 +321,40 @@ export async function getStaffMemberModuleContext(userId: string) {
       staffCategory: true,
       supportKind: true,
       visibleStaffModules: true,
+      schoolId: true,
     },
   });
   if (!staff) return null;
-  const visibleModules = resolveVisibleStaffModules(
-    staff.staffCategory,
-    staff.supportKind,
-    staff.visibleStaffModules,
+
+  const { resolveVisibleStaffModulesAtSchool, labelForSupportKind } = await import(
+    './school-staff-metiers.util'
   );
-  return { staff, visibleModules };
+
+  const visibleModules = staff.schoolId
+    ? await resolveVisibleStaffModulesAtSchool(
+        staff.staffCategory,
+        staff.supportKind,
+        staff.visibleStaffModules,
+        staff.schoolId,
+      )
+    : resolveVisibleStaffModules(
+        staff.staffCategory,
+        staff.supportKind,
+        staff.visibleStaffModules,
+      );
+
+  let metierLabel: string | null = null;
+  if (staff.schoolId && staff.supportKind) {
+    const row = await prisma.schoolStaffMetier.findUnique({
+      where: {
+        schoolId_supportKind: { schoolId: staff.schoolId, supportKind: staff.supportKind },
+      },
+      select: { label: true },
+    });
+    metierLabel = labelForSupportKind(staff.supportKind, row?.label);
+  }
+
+  return { staff, visibleModules, metierLabel };
 }
 
 export async function assertStaffHasModule(userId: string, moduleId: StaffModuleId): Promise<void> {
@@ -332,6 +365,7 @@ export async function assertStaffHasModule(userId: string, moduleId: StaffModule
       staffCategory: true,
       supportKind: true,
       visibleStaffModules: true,
+      schoolId: true,
     },
   });
   if (!staff) {

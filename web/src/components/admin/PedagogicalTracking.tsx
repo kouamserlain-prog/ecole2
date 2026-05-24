@@ -20,7 +20,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   AreaChart,
   Area,
 } from 'recharts';
@@ -50,7 +49,30 @@ import { ADM } from './adminModuleLayout';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
-import { chartBlueRed, CHART_BLUE, CHART_RED, CHART_ANIMATION_MS } from '../charts';
+import {
+  chartBlueRed,
+  CHART_BLUE,
+  CHART_RED,
+  PremiumTooltip,
+  PremiumChartCard,
+  RechartsViewport,
+  CHART_GRID_SOFT,
+  CHART_AXIS_TICK,
+  CHART_MARGIN_COMPACT,
+  CHART_MARGIN_TILTED,
+  LineAreaGradient,
+  BarGradientsMulti,
+  PieGradients,
+  PremiumPieActiveShape,
+  PremiumLegend,
+  PREMIUM_BAR_RADIUS_TOP,
+  PREMIUM_BAR_MAX_SIZE,
+  PREMIUM_CHART_ANIMATION,
+  PREMIUM_LEGEND_STYLE,
+  premiumPieGeometry,
+  premiumLegendFormatter,
+  CHART_CURSOR,
+} from '../charts';
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -405,53 +427,71 @@ const PedagogicalTracking = () => {
       <div className="animate-slide-up">
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Distribution des notes */}
-            <Card>
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Distribution des Notes</h3>
-              <ResponsiveContainer width="100%" height={300}>
+            <PremiumChartCard
+              title="Distribution des notes"
+              subtitle="Répartition par tranche"
+              icon={FiAward}
+              accent="indigo"
+              height={300}
+              footer={
+                <PremiumLegend
+                  items={gradeDistribution.map((d: { name: string; count: number }, i: number) => {
+                    const total = gradeDistribution.reduce((s: number, x: { count: number }) => s + x.count, 0);
+                    return {
+                      name: d.name,
+                      value: d.count,
+                      color: chartBlueRed(i),
+                      pct: total > 0 ? Math.round((d.count / total) * 1000) / 10 : 0,
+                    };
+                  })}
+                />
+              }
+            >
+              <RechartsViewport height={260}>
                 <PieChart>
+                  <PieGradients count={gradeDistribution.length} idPrefix="ped-grade-pie" />
                   <Pie
                     data={gradeDistribution}
                     cx="50%"
                     cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
                     dataKey="count"
-                    isAnimationActive
-                    animationDuration={CHART_ANIMATION_MS}
+                    activeShape={PremiumPieActiveShape}
+                    {...premiumPieGeometry(gradeDistribution.length)}
                   >
-                    {gradeDistribution.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={chartBlueRed(index)} />
+                    {gradeDistribution.map((_: unknown, index: number) => (
+                      <Cell key={`cell-${index}`} fill={`url(#ped-grade-pie-${index})`} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip content={(p) => <PremiumTooltip {...p} />} />
                 </PieChart>
-              </ResponsiveContainer>
-            </Card>
+              </RechartsViewport>
+            </PremiumChartCard>
 
-            {/* Évolution des moyennes */}
-            <Card>
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Évolution des Performances</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={gradeDistribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
+            <PremiumChartCard
+              title="Évolution des performances"
+              subtitle="Volume par tranche de notes"
+              icon={FiTrendingUp}
+              accent="emerald"
+              height={300}
+            >
+              <RechartsViewport height={260}>
+                <AreaChart data={gradeDistribution} margin={CHART_MARGIN_COMPACT}>
+                  <LineAreaGradient id="ped-grade-area" colorFrom={CHART_BLUE} colorTo="#93c5fd" />
+                  <CartesianGrid {...CHART_GRID_SOFT} />
+                  <XAxis dataKey="name" tick={CHART_AXIS_TICK} />
+                  <YAxis width={32} tick={CHART_AXIS_TICK} />
+                  <Tooltip content={(p) => <PremiumTooltip {...p} />} cursor={CHART_CURSOR} />
                   <Area
                     type="monotone"
                     dataKey="count"
                     stroke={CHART_BLUE}
-                    fill={CHART_BLUE}
-                    fillOpacity={0.45}
-                    isAnimationActive
-                    animationDuration={CHART_ANIMATION_MS}
+                    strokeWidth={2.5}
+                    fill="url(#ped-grade-area)"
+                    {...PREMIUM_CHART_ANIMATION}
                   />
                 </AreaChart>
-              </ResponsiveContainer>
-            </Card>
+              </RechartsViewport>
+            </PremiumChartCard>
 
             {/* Statistiques globales */}
             <Card className="lg:col-span-2">
@@ -494,29 +534,32 @@ const PedagogicalTracking = () => {
             </h3>
             {classStats && classStats.length > 0 ? (
               <div className="space-y-4">
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={classPerformanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
+                <RechartsViewport height={380}>
+                  <BarChart data={classPerformanceData} margin={CHART_MARGIN_TILTED}>
+                    <BarGradientsMulti count={2} idPrefix="ped-class-bar" />
+                    <CartesianGrid {...CHART_GRID_SOFT} />
+                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={CHART_AXIS_TICK} />
+                    <YAxis width={32} tick={CHART_AXIS_TICK} />
+                    <Tooltip content={(p) => <PremiumTooltip {...p} />} cursor={CHART_CURSOR} />
+                    <Legend {...PREMIUM_LEGEND_STYLE} formatter={premiumLegendFormatter} />
                     <Bar
                       dataKey="moyenne"
-                      fill={CHART_BLUE}
+                      fill="url(#ped-class-bar-0)"
                       name="Moyenne"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      radius={PREMIUM_BAR_RADIUS_TOP}
+                      maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                      {...PREMIUM_CHART_ANIMATION}
                     />
                     <Bar
                       dataKey="absences"
-                      fill={CHART_RED}
+                      fill="url(#ped-class-bar-1)"
                       name="Absences"
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                      radius={PREMIUM_BAR_RADIUS_TOP}
+                      maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                      {...PREMIUM_CHART_ANIMATION}
                     />
                   </BarChart>
-                </ResponsiveContainer>
+                </RechartsViewport>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
@@ -606,31 +649,41 @@ const PedagogicalTracking = () => {
                     <div className="text-sm text-gray-600">Faible</div>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart
-                    data={[
-                      { name: 'Excellent', value: courseStats.distribution.excellent },
-                      { name: 'Bien', value: courseStats.distribution.good },
-                      { name: 'Moyen', value: courseStats.distribution.average },
-                      { name: 'Faible', value: courseStats.distribution.weak },
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar
-                      dataKey="value"
-                      radius={[4, 4, 0, 0]}
-                      isAnimationActive
-                      animationDuration={CHART_ANIMATION_MS}
+                <PremiumChartCard
+                  title="Distribution par niveau"
+                  subtitle="Répartition des performances sur la matière"
+                  icon={FiTarget}
+                  accent="violet"
+                  height={300}
+                >
+                  <RechartsViewport height={260}>
+                    <BarChart
+                      data={[
+                        { name: 'Excellent', value: courseStats.distribution.excellent },
+                        { name: 'Bien', value: courseStats.distribution.good },
+                        { name: 'Moyen', value: courseStats.distribution.average },
+                        { name: 'Faible', value: courseStats.distribution.weak },
+                      ]}
+                      margin={CHART_MARGIN_COMPACT}
                     >
-                      {[0, 1, 2, 3].map((i) => (
-                        <Cell key={i} fill={chartBlueRed(i)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                      <BarGradientsMulti count={4} idPrefix="ped-course-bar" />
+                      <CartesianGrid {...CHART_GRID_SOFT} />
+                      <XAxis dataKey="name" tick={CHART_AXIS_TICK} />
+                      <YAxis width={32} tick={CHART_AXIS_TICK} />
+                      <Tooltip content={(p) => <PremiumTooltip {...p} />} cursor={CHART_CURSOR} />
+                      <Bar
+                        dataKey="value"
+                        radius={PREMIUM_BAR_RADIUS_TOP}
+                        maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                        {...PREMIUM_CHART_ANIMATION}
+                      >
+                        {[0, 1, 2, 3].map((i) => (
+                          <Cell key={i} fill={`url(#ped-course-bar-${i})`} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </RechartsViewport>
+                </PremiumChartCard>
               </div>
             ) : (
               <div className="text-center py-12">

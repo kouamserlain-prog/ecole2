@@ -143,23 +143,196 @@ export type ResolvedTuitionForStudent = {
   catalogId: string;
 };
 
+export type ResolvedTuitionForClass = {
+  amount: number;
+  classId: string;
+  className: string;
+  classLevel: string;
+  catalogId: string;
+  source: 'BY_CLASS' | 'BY_LEVEL';
+};
+
+/** Barème scolarité actif pour une classe et une année (priorité à l’année exacte). */
+export async function findClassTuitionCatalog(
+  academicYear: string,
+  classId: string,
+): Promise<TuitionFeeCatalog | null> {
+  if (!classId.trim()) return null;
+
+  const rows = await prisma.tuitionFeeCatalog.findMany({
+    where: {
+      feeType: 'TUITION',
+      scope: 'BY_CLASS',
+      classId: classId.trim(),
+      isActive: true,
+      OR: [{ academicYear: String(academicYear) }, { academicYear: null }],
+    },
+    orderBy: [{ sortOrder: 'asc' }, { updatedAt: 'desc' }],
+  });
+
+  const yearRow = rows.find((r) => r.academicYear === String(academicYear));
+  if (yearRow) return yearRow;
+  return rows.find((r) => !r.academicYear) ?? null;
+}
+
+export type ClassTuitionRateRow = {
+  classId: string;
+  className: string;
+  classLevel: string;
+  academicYear: string | null;
+  amount: number | null;
+  catalogId: string | null;
+};
+
+export async function getClassTuitionRates(academicYear: string): Promise<ClassTuitionRateRow[]> {
+  const year = String(academicYear);
+  const allClasses = await prisma.class.findMany({
+    select: { id: true, name: true, level: true, academicYear: true },
+    orderBy: [{ level: 'asc' }, { name: 'asc' }],
+  });
+
+  const rows: ClassTuitionRateRow[] = [];
+  for (const cls of allClasses) {
+    const catalog = await findClassTuitionCatalog(year, cls.id);
+    rows.push({
+      classId: cls.id,
+      className: cls.name,
+      classLevel: normalizeClassLevel(cls.level),
+      academicYear: cls.academicYear,
+      amount: catalog ? Number(catalog.defaultAmount) : null,
+      catalogId: catalog?.id ?? null,
+    });
+  }
+  return rows;
+}
+
+export async function upsertClassTuitionRates(
+  academicYear: string,
+  rates: { classId: string; amount: number }[],
+): Promise<TuitionFeeCatalog[]> {
+  const year = String(academicYear);
+  const saved: TuitionFeeCatalog[] = [];
+
+  for (const { classId, amount } of rates) {
+    if (!classId?.trim()) continue;
+    const value = Math.round(Number(amount));
+    if (Number.isNaN(value) || value < 0) {
+      throw new Error('Montant invalide pour une classe.');
+    }
+
+    const cls = await prisma.class.findUnique({
+      where: { id: classId.trim() },
+      select: { id: true, name: true, level: true },
+    });
+    if (!cls) continue;
+
+    const existing = await prisma.tuitionFeeCatalog.findFirst({
+      where: {
+        feeType: 'TUITION',
+        scope: 'BY_CLASS',
+        classId: cls.id,
+        academicYear: year,
+      },
+    });
+
+    const label = `Scolarité ${cls.name}`;
+
+    if (existing) {
+      saved.push(
+        await prisma.tuitionFeeCatalog.update({
+          where: { id: existing.id },
+          data: {
+            defaultAmount: value,
+            label,
+            classLevel: normalizeClassLevel(cls.level),
+            isActive: true,
+          },
+        }),
+      );
+      continue;
+    }
+
+    saved.push(
+      await prisma.tuitionFeeCatalog.create({
+        data: {
+          label,
+          academicYear: year,
+          scope: 'BY_CLASS',
+          classId: cls.id,
+          classLevel: normalizeClassLevel(cls.level),
+          feeType: 'TUITION',
+          billingPeriod: 'ANNUAL',
+          defaultAmount: value,
+          periodLabelHint: 'Scolarité',
+          sortOrder: 100,
+          isActive: true,
+        },
+      }),
+    );
+  }
+
+  return saved;
+}
+
+/** Montant de scolarité pour une classe : barème classe, sinon barème du niveau. */
+export async function resolveTuitionForClass(
+  classId: string,
+  academicYear: string,
+): Promise<ResolvedTuitionForClass | null> {
+  const cls = await prisma.class.findUnique({
+    where: { id: classId },
+    select: { id: true, name: true, level: true, academicYear: true },
+  });
+  if (!cls) return null;
+
+  const year = String(academicYear || cls.academicYear || '').trim();
+  if (!year) return null;
+
+  const classCatalog = await findClassTuitionCatalog(year, cls.id);
+  if (classCatalog) {
+    return {
+      amount: Math.round(Number(classCatalog.defaultAmount)),
+      classId: cls.id,
+      className: cls.name,
+      classLevel: normalizeClassLevel(cls.level),
+      catalogId: classCatalog.id,
+      source: 'BY_CLASS',
+    };
+  }
+
+  const levelCatalog = await findLevelTuitionCatalog(year, cls.level);
+  if (!levelCatalog) return null;
+
+  return {
+    amount: Math.round(Number(levelCatalog.defaultAmount)),
+    classId: cls.id,
+    className: cls.name,
+    classLevel: normalizeClassLevel(cls.level),
+    catalogId: levelCatalog.id,
+    source: 'BY_LEVEL',
+  };
+}
+
 export async function resolveTuitionAmountForStudent(
   studentId: string,
   academicYear: string,
 ): Promise<ResolvedTuitionForStudent | null> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    include: { class: { select: { level: true } } },
+    include: { class: { select: { id: true, level: true, academicYear: true } } },
   });
-  if (!student?.class?.level) return null;
+  if (!student?.classId || !student.class) return null;
 
-  const catalog = await findLevelTuitionCatalog(academicYear, student.class.level);
-  if (!catalog) return null;
+  const year = String(academicYear || student.class.academicYear || '').trim();
+  if (!year) return null;
+
+  const resolved = await resolveTuitionForClass(student.classId, year);
+  if (!resolved) return null;
 
   return {
-    amount: Math.round(Number(catalog.defaultAmount)),
-    classLevel: normalizeClassLevel(student.class.level),
-    catalogId: catalog.id,
+    amount: resolved.amount,
+    classLevel: resolved.classLevel,
+    catalogId: resolved.catalogId,
   };
 }
 
@@ -211,10 +384,34 @@ export async function enforceTuitionFeeAmounts(params: {
     };
   }
 
+  const manualBaseRaw = params.baseAmount;
+  const manualBase =
+    manualBaseRaw != null && manualBaseRaw !== ''
+      ? Math.round(Number(manualBaseRaw))
+      : NaN;
+  if (!Number.isNaN(manualBase) && manualBase > 0) {
+    return {
+      amount: Math.max(0, manualBase - disc),
+      baseAmount: manualBase,
+      discountAmount: disc,
+      catalogId: params.catalogId ?? null,
+    };
+  }
+
   const resolved = await resolveTuitionAmountForStudent(params.studentId, params.academicYear);
   if (!resolved) {
+    const manualAmount =
+      params.amount != null && params.amount !== '' ? Math.round(Number(params.amount)) : NaN;
+    if (!Number.isNaN(manualAmount) && manualAmount > 0) {
+      return {
+        amount: Math.max(0, manualAmount - disc),
+        baseAmount: manualAmount,
+        discountAmount: disc,
+        catalogId: params.catalogId ?? null,
+      };
+    }
     throw new TuitionLevelAmountError(
-      'Aucun montant de scolarité défini pour le niveau de cet élève. Configurez les montants par niveau (onglet Frais → barèmes).',
+      'Aucun montant de scolarité défini pour la classe ou le niveau de cet élève. Saisissez un montant ou configurez le barème.',
     );
   }
 
@@ -223,10 +420,13 @@ export async function enforceTuitionFeeAmounts(params: {
 
   if (params.amount != null && params.amount !== '') {
     const requested = Math.round(Number(params.amount));
-    if (!Number.isNaN(requested) && requested !== net && requested !== base) {
-      throw new TuitionLevelAmountError(
-        `Le montant de scolarité est fixé à ${base} FCFA pour le niveau ${resolved.classLevel} (net après remise : ${net} FCFA).`,
-      );
+    if (!Number.isNaN(requested) && requested > 0 && requested !== net) {
+      return {
+        amount: Math.max(0, requested),
+        baseAmount: !Number.isNaN(manualBase) && manualBase > 0 ? manualBase : requested,
+        discountAmount: disc,
+        catalogId: params.catalogId ?? resolved.catalogId,
+      };
     }
   }
 

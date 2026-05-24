@@ -103,7 +103,7 @@ router.post(
 
       const { studentId, relation } = req.body as { studentId: string; relation?: string };
       try {
-        await assertStudentInSchool(studentId, req.schoolId);
+        await assertStudentInSchool(studentId, req.schoolId, req.school?.isDefault ?? false);
       } catch (e) {
         if (e instanceof SchoolAccessDeniedError) {
           return res.status(e.status).json({ error: e.message });
@@ -156,7 +156,7 @@ router.post(
 router.delete('/parents/:id/students/:studentId', async (req: SchoolContextRequest, res) => {
   try {
     try {
-      await assertStudentInSchool(req.params.studentId, req.schoolId);
+      await assertStudentInSchool(req.params.studentId, req.schoolId, req.school?.isDefault ?? false);
     } catch (e) {
       if (e instanceof SchoolAccessDeniedError) {
         return res.status(e.status).json({ error: e.message });
@@ -379,7 +379,7 @@ router.post('/parents/:id/consents/upsert', async (req: SchoolContextRequest, re
     }
     if (studentId) {
       try {
-        await assertStudentInSchool(String(studentId), req.schoolId);
+        await assertStudentInSchool(String(studentId), req.schoolId, req.school?.isDefault ?? false);
       } catch (e) {
         if (e instanceof SchoolAccessDeniedError) {
           return res.status(e.status).json({ error: e.message });
@@ -451,7 +451,7 @@ router.post('/parents/:id/pickup-authorizations', async (req: SchoolContextReque
       return res.status(400).json({ error: 'studentId et authorizedName sont requis' });
     }
     try {
-      await assertStudentInSchool(String(studentId), req.schoolId);
+      await assertStudentInSchool(String(studentId), req.schoolId, req.school?.isDefault ?? false);
     } catch (e) {
       if (e instanceof SchoolAccessDeniedError) {
         return res.status(e.status).json({ error: e.message });
@@ -490,7 +490,7 @@ router.put('/parents/:parentId/pickup-authorizations/:pickupId', async (req: Sch
       return res.status(404).json({ error: 'Autorisation introuvable' });
     }
     try {
-      await assertStudentInSchool(row.studentId, req.schoolId);
+      await assertStudentInSchool(row.studentId, req.schoolId, req.school?.isDefault ?? false);
     } catch (e) {
       if (e instanceof SchoolAccessDeniedError) {
         return res.status(e.status).json({ error: e.message });
@@ -535,7 +535,7 @@ router.delete('/parents/:parentId/pickup-authorizations/:pickupId', async (req: 
       return res.status(404).json({ error: 'Autorisation introuvable' });
     }
     try {
-      await assertStudentInSchool(row.studentId, req.schoolId);
+      await assertStudentInSchool(row.studentId, req.schoolId, req.school?.isDefault ?? false);
     } catch (e) {
       if (e instanceof SchoolAccessDeniedError) {
         return res.status(e.status).json({ error: e.message });

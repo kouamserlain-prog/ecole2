@@ -4,6 +4,7 @@ import { adminApi } from '../../services/api';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import toast from 'react-hot-toast';
+import EducatorClassAssignmentField from './EducatorClassAssignmentField';
 import { 
   FiUser, 
   FiMail, 
@@ -28,6 +29,7 @@ const AddEducatorModal: React.FC<AddEducatorModalProps> = ({ isOpen, onClose }) 
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -84,6 +86,7 @@ const AddEducatorModal: React.FC<AddEducatorModalProps> = ({ isOpen, onClose }) 
     mutationFn: adminApi.createEducator,
     onSuccess: (data: unknown) => {
       queryClient.invalidateQueries({ queryKey: ['admin-educators'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-personnel-registry'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
       const sent = (data as { passwordSetupEmailSent?: boolean })?.passwordSetupEmailSent;
       toast.success(
@@ -187,6 +190,7 @@ const AddEducatorModal: React.FC<AddEducatorModalProps> = ({ isOpen, onClose }) 
       hireDate: formData.hireDate,
       contractType: formData.contractType,
       salary: formData.salary ? parseFloat(formData.salary.toString()) : undefined,
+      classIds: selectedClassIds,
     };
 
     createEducatorMutation.mutate(submitData);
@@ -208,6 +212,7 @@ const AddEducatorModal: React.FC<AddEducatorModalProps> = ({ isOpen, onClose }) 
       salary: '',
     });
     setErrors({});
+    setSelectedClassIds([]);
     onClose();
   };
 
@@ -570,6 +575,11 @@ const AddEducatorModal: React.FC<AddEducatorModalProps> = ({ isOpen, onClose }) 
                   <p className="mt-0.5 text-[10px] text-stone-500">Montant en FCFA</p>
                 </div>
               </div>
+
+              <EducatorClassAssignmentField
+                selectedClassIds={selectedClassIds}
+                onChange={setSelectedClassIds}
+              />
             </div>
           )}
 

@@ -15,6 +15,8 @@ import staffHealthMessagingRoutes from './staff-health-messaging.routes';
 import staffLibraryRoutes from './staff-library.routes';
 import staffNotificationsRoutes from './staff-notifications.routes';
 import { listSchoolsForUser } from '../utils/school-context.util';
+import { attachSchoolContext } from '../middleware/school-context.middleware';
+import { studentScopeWhere, type SchoolContextRequest } from '../utils/school-context.util';
 
 const router = express.Router();
 
@@ -50,6 +52,41 @@ router.get('/schools', async (req: AuthRequest, res) => {
   }
 });
 
+/** Mémorise l’établissement actif pour le personnel (en-tête X-School-Id côté client). */
+router.put('/schools/active', async (req: AuthRequest, res) => {
+  try {
+    const { schoolId } = req.body ?? {};
+    if (!schoolId || typeof schoolId !== 'string') {
+      return res.status(400).json({ error: 'schoolId requis' });
+    }
+    const userId = req.user!.id;
+    const schools = await listSchoolsForUser(userId, 'STAFF');
+    if (!schools.some((s) => s.id === schoolId)) {
+      return res.status(403).json({ error: 'Accès refusé à cet établissement' });
+    }
+
+    await prisma.schoolMember.updateMany({
+      where: { userId },
+      data: { isDefault: false },
+    });
+
+    await prisma.schoolMember.upsert({
+      where: { schoolId_userId: { schoolId, userId } },
+      create: { schoolId, userId, isDefault: true },
+      update: { isDefault: true },
+    });
+
+    const school = await prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, name: true, slug: true, isDefault: true },
+    });
+
+    res.json({ schoolId, school });
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
+
 router.get('/workspace', async (req: AuthRequest, res) => {
   try {
     const ctx = await getStaffMemberModuleContext(req.user!.id);
@@ -60,6 +97,8 @@ router.get('/workspace', async (req: AuthRequest, res) => {
       visibleModules: ctx.visibleModules,
       supportKind: ctx.staff.supportKind,
       staffCategory: ctx.staff.staffCategory,
+      schoolId: ctx.staff.schoolId,
+      metierLabel: ctx.metierLabel ?? null,
     });
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
@@ -67,8 +106,19 @@ router.get('/workspace', async (req: AuthRequest, res) => {
 });
 
 router.use('/counter-tuition', requireStaffModule('counter'));
+router.use('/counter-tuition', (req, res, next) =>
+  attachSchoolContext(req as SchoolContextRequest, res, next)
+);
+
+function counterStudentScope(req: SchoolContextRequest) {
+  return {
+    isActive: true,
+    ...studentScopeWhere(req.schoolId!, req.school?.isDefault ?? false),
+  };
+}
+
 /** Recherche d'élèves (nom, prénom ou numéro élève). */
-router.get('/counter-tuition/students', async (req: AuthRequest, res) => {
+router.get('/counter-tuition/students', async (req: SchoolContextRequest, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) {
@@ -77,7 +127,7 @@ router.get('/counter-tuition/students', async (req: AuthRequest, res) => {
 
     const students = await prisma.student.findMany({
       where: {
-        isActive: true,
+        ...counterStudentScope(req),
         OR: [
           { studentId: { contains: q } },
           { user: { firstName: { contains: q } } },
@@ -100,12 +150,12 @@ router.get('/counter-tuition/students', async (req: AuthRequest, res) => {
 });
 
 /** Frais de scolarité d'un élève (toutes lignes) avec soldes — pour encaissement guichet. */
-router.get('/counter-tuition/students/:studentId/tuition-fees', async (req: AuthRequest, res) => {
+router.get('/counter-tuition/students/:studentId/tuition-fees', async (req: SchoolContextRequest, res) => {
   try {
     const { studentId } = req.params;
 
     const student = await prisma.student.findFirst({
-      where: { id: studentId, isActive: true },
+      where: { id: studentId, ...counterStudentScope(req) },
       select: { id: true },
     });
     if (!student) {
@@ -142,7 +192,7 @@ router.get('/counter-tuition/students/:studentId/tuition-fees', async (req: Auth
 /**
  * Enregistre un paiement présentiel (espèces ou virement encaissé au guichet), marqué COMPLETED immédiatement.
  */
-router.post('/counter-tuition/students/:studentId/payments', async (req: AuthRequest, res) => {
+router.post('/counter-tuition/students/:studentId/payments', async (req: SchoolContextRequest, res) => {
   try {
     const { studentId } = req.params;
     const { tuitionFeeId, amount, paymentMethod, notes } = req.body ?? {};
@@ -157,7 +207,7 @@ router.post('/counter-tuition/students/:studentId/payments', async (req: AuthReq
     }
 
     const student = await prisma.student.findFirst({
-      where: { id: studentId, isActive: true },
+      where: { id: studentId, ...counterStudentScope(req) },
       select: { id: true },
     });
     if (!student) {

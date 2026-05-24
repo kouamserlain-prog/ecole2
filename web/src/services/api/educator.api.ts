@@ -14,8 +14,25 @@ export const educatorApi = {
     return response.data;
   },
   getStudent: async (studentId: string) => {
-    const response = await api.get(`/educator/students/${studentId}`);
-    return response.data;
+    try {
+      const response = await api.get(`/educator/students/${studentId}`);
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 403) throw error;
+      if (status !== 404) throw error;
+
+      // Fallback: certains écrans peuvent envoyer le matricule (studentId métier)
+      // au lieu de l'identifiant technique; on résout alors l'ID puis on recharge.
+      const listResponse = await api.get('/educator/students');
+      const matched = (listResponse.data as any[])?.find(
+        (s) => s?.studentId === studentId || s?.id === studentId
+      );
+      if (!matched?.id) throw error;
+
+      const resolvedResponse = await api.get(`/educator/students/${matched.id}`);
+      return resolvedResponse.data;
+    }
   },
   getConducts: async (params?: { studentId?: string; period?: string; academicYear?: string }) => {
     const response = await api.get('/educator/conducts', { params });
@@ -31,7 +48,6 @@ export const educatorApi = {
     academicYear: string;
     punctuality: number;
     respect: number;
-    participation: number;
     behavior: number;
     comments?: string;
   }) => {
@@ -41,7 +57,6 @@ export const educatorApi = {
   updateConduct: async (conductId: string, data: {
     punctuality?: number;
     respect?: number;
-    participation?: number;
     behavior?: number;
     comments?: string;
   }) => {

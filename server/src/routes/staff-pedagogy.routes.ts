@@ -13,6 +13,11 @@ import {
   type StaffModuleId,
 } from '../utils/staff-visible-modules.util';
 import {
+  classScopeWhere,
+  readSchoolIdFromRequest,
+  studentScopeWhere,
+} from '../utils/school-context.util';
+import {
   absenceWhereRelationsExist,
   gradeWhereRelationsExist,
 } from '../utils/prisma-relation-exists.util';
@@ -128,8 +133,10 @@ router.use(requireStaffPedagogy);
 router.get('/students', async (req, res) => {
   try {
     const { classId, isActive, enrollmentStatus } = req.query;
+    const schoolId = readSchoolIdFromRequest(req);
     const students = await prisma.student.findMany({
       where: {
+        ...(schoolId ? studentScopeWhere(schoolId) : {}),
         ...(classId && { classId: classId as string }),
         ...(isActive !== undefined && { isActive: isActive === 'true' }),
         ...(enrollmentStatus &&
@@ -190,9 +197,11 @@ router.get('/students/:id', async (req, res) => {
   }
 });
 
-router.get('/classes', async (_req, res) => {
+router.get('/classes', async (req, res) => {
   try {
+    const schoolId = readSchoolIdFromRequest(req);
     const classes = await prisma.class.findMany({
+      where: schoolId ? classScopeWhere(schoolId) : undefined,
       include: {
         track: { select: { id: true, name: true, code: true, academicYear: true } },
         teacher: { include: { user: { select: { firstName: true, lastName: true } } } },
@@ -452,8 +461,12 @@ router.get('/grades/history/:studentId', async (req, res) => {
 router.get('/courses', async (req, res) => {
   try {
     const { classId } = req.query;
+    const schoolId = readSchoolIdFromRequest(req);
     const courses = await prisma.course.findMany({
-      where: classId && typeof classId === 'string' ? { classId } : undefined,
+      where: {
+        ...(classId && typeof classId === 'string' ? { classId } : {}),
+        ...(schoolId ? { class: classScopeWhere(schoolId) } : {}),
+      },
       include: {
         class: { select: { id: true, name: true, level: true } },
         teacher: { include: { user: { select: { firstName: true, lastName: true } } } },
@@ -469,9 +482,11 @@ router.get('/courses', async (req, res) => {
 router.get('/schedules', async (req, res) => {
   try {
     const { classId, courseId, teacherId } = req.query;
+    const schoolId = readSchoolIdFromRequest(req);
     const schedules = await fetchSchedulesWithValidCourses({
       ...(classId && typeof classId === 'string' ? { classId } : {}),
       ...(courseId && typeof courseId === 'string' ? { courseId } : {}),
+      ...(schoolId ? { class: classScopeWhere(schoolId) } : {}),
       ...(teacherId && typeof teacherId === 'string'
         ? {
             OR: [{ course: { teacherId } }, { substituteTeacherId: teacherId }],

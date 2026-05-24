@@ -156,42 +156,54 @@ export async function resolveActiveSchoolForRequest(
   const accessible = await listSchoolsForUser(user.id, user.role as Role);
   if (accessible.length === 0) return null;
 
-  if (!schoolId) {
-    const preferred = (await members.findFirst({
-      where: { userId: user.id, isDefault: true, school: { isActive: true } },
-      include: {
-        school: { select: { id: true, name: true, slug: true, isDefault: true } },
-      },
-    })) as { school: SchoolSummary } | null;
-    if (preferred) {
-      return { schoolId: preferred.school.id, school: preferred.school };
+  if (schoolId) {
+    const allowed = accessible.some((s) => s.id === schoolId);
+    const canAccess =
+      allowed || (await userCanAccessSchool(user.id, user.role as Role, schoolId));
+    if (canAccess) {
+      const school = (await schools.findFirst({
+        where: { id: schoolId, isActive: true },
+        select: { id: true, name: true, slug: true, shortName: true, isDefault: true },
+      })) as SchoolSummary | null;
+      if (school) return { schoolId: school.id, school };
     }
-    const def = accessible.find((s) => s.isDefault) ?? accessible[0];
-    return { schoolId: def.id, school: def };
+    // En-tête X-School-Id obsolète (ex. localStorage) — reprendre l'établissement par défaut
   }
 
-  const allowed = accessible.some((s) => s.id === schoolId);
-  if (!allowed && !(await userCanAccessSchool(user.id, user.role as Role, schoolId))) {
-    return null;
+  const preferred = (await members.findFirst({
+    where: { userId: user.id, isDefault: true, school: { isActive: true } },
+    include: {
+      school: { select: { id: true, name: true, slug: true, shortName: true, isDefault: true } },
+    },
+  })) as { school: SchoolSummary } | null;
+  if (preferred) {
+    return { schoolId: preferred.school.id, school: preferred.school };
   }
-
-  const school = (await schools.findFirst({
-    where: { id: schoolId, isActive: true },
-    select: { id: true, name: true, slug: true, isDefault: true },
-  })) as SchoolSummary | null;
-  if (!school) return null;
-  return { schoolId: school.id, school };
+  const def = accessible.find((s) => s.isDefault) ?? accessible[0];
+  return { schoolId: def.id, school: def };
 }
 
-/** Filtre élèves pour l’établissement actif */
-export function studentScopeWhere(schoolId: string) {
+/** MongoDB : champ absent ≠ null — inclure les deux pour les données legacy. */
+function schoolIdMatchesActive(schoolId: string, includeLegacyOrphans: boolean) {
+  if (!includeLegacyOrphans) {
+    return { schoolId };
+  }
   return {
-    OR: [{ schoolId }, { class: { schoolId } }],
+    OR: [{ schoolId }, { schoolId: null }],
   };
 }
 
-export function classScopeWhere(schoolId: string) {
-  return { schoolId };
+/** Filtre élèves pour l’établissement actif */
+export function studentScopeWhere(schoolId: string, isDefaultSchool = false) {
+  const schoolMatch = schoolIdMatchesActive(schoolId, isDefaultSchool);
+  const classMatch = schoolIdMatchesActive(schoolId, isDefaultSchool);
+  return {
+    OR: [schoolMatch, { class: classMatch }],
+  };
+}
+
+export function classScopeWhere(schoolId: string, isDefaultSchool = false) {
+  return schoolIdMatchesActive(schoolId, isDefaultSchool);
 }
 
 /**
@@ -199,10 +211,12 @@ export function classScopeWhere(schoolId: string) {
  * Les dossiers sans schoolId (anciennes données) sont rattachés à l’établissement par défaut uniquement.
  */
 export function admissionScopeWhere(schoolId: string, isDefaultSchool = false) {
-  if (isDefaultSchool) {
-    return { OR: [{ schoolId }, { schoolId: null }] };
-  }
-  return { schoolId };
+  return schoolIdMatchesActive(schoolId, isDefaultSchool);
+}
+
+/** Filtre compta (fournisseurs, dépenses, caisse, budget) par établissement. */
+export function accountingScopeWhere(schoolId: string, isDefaultSchool = false) {
+  return schoolIdMatchesActive(schoolId, isDefaultSchool);
 }
 
 export async function brandingIdForSchool(schoolId: string): Promise<string> {

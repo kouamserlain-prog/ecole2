@@ -7,6 +7,8 @@ import { FiBook, FiCalendar, FiClipboard, FiAward, FiAlertCircle, FiSearch } fro
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import PortalSchoolFeed from '../portal/PortalSchoolFeed';
+import { PremiumOverviewHero, PremiumStatGrid, PremiumGlassCard } from '../dashboard/premium';
+import type { PremiumStatItem } from '../dashboard/premium/PremiumStatGrid';
 
 const StudentOverview = ({ searchQuery = '', searchCategory = 'all' }: { searchQuery?: string; searchCategory?: string }) => {
   const { data: grades, isLoading: gradesLoading } = useQuery({
@@ -84,45 +86,37 @@ const StudentOverview = ({ searchQuery = '', searchCategory = 'all' }: { searchQ
     return new Date(a.assignment.dueDate) < new Date();
   }).length;
 
-  const stats = [
+  const stats: PremiumStatItem[] = [
     {
-      title: 'Moyenne Générale',
+      label: 'Moyenne générale',
       value: overallAverage.toFixed(2),
       subtitle: '/ 20',
       icon: FiAward,
-      color: overallAverage >= 16 ? 'from-green-500 to-green-600' : overallAverage >= 12 ? 'from-blue-500 to-blue-600' : overallAverage >= 10 ? 'from-yellow-500 to-yellow-600' : 'from-red-500 to-red-600',
-      badge: overallAverage >= 10 ? 'Admis' : 'Non admis',
-      badgeVariant: overallAverage >= 10 ? ('success' as const) : ('danger' as const),
+      accent: overallAverage >= 16 ? 'emerald' : overallAverage >= 12 ? 'blue' : overallAverage >= 10 ? 'amber' : 'rose',
+      trend: overallAverage >= 10 ? 'Admis' : 'Non admis',
     },
     {
-      title: 'Notes',
+      label: 'Notes',
       value: allGrades.length,
       subtitle: 'Total',
       icon: FiClipboard,
-      color: 'from-blue-500 to-blue-600',
+      accent: 'blue',
     },
     {
-      title: 'Absences',
+      label: 'Absences',
       value: totalAbsences,
       subtitle: `${unexcusedAbsences} non justifiées`,
       icon: FiCalendar,
-      color: unexcusedAbsences > 0 ? 'from-orange-500 to-orange-600' : 'from-green-500 to-green-600',
-      badge: unexcusedAbsences > 0 ? 'Attention' : 'OK',
-      badgeVariant: unexcusedAbsences > 0 ? ('warning' as const) : ('success' as const),
+      accent: unexcusedAbsences > 0 ? 'amber' : 'emerald',
+      trend: unexcusedAbsences > 0 ? 'Attention' : 'OK',
     },
     {
-      title: 'Devoirs',
+      label: 'Devoirs',
       value: pendingAssignments,
       subtitle: `${totalAssignments} au total`,
       icon: FiBook,
-      color: overdueAssignments > 0 ? 'from-red-500 to-red-600' : pendingAssignments > 0 ? 'from-yellow-500 to-yellow-600' : 'from-green-500 to-green-600',
-      badge: overdueAssignments > 0 ? 'En retard' : pendingAssignments > 0 ? 'À faire' : 'À jour',
-      badgeVariant:
-        overdueAssignments > 0
-          ? ('danger' as const)
-          : pendingAssignments > 0
-            ? ('warning' as const)
-            : ('success' as const),
+      accent: overdueAssignments > 0 ? 'rose' : pendingAssignments > 0 ? 'amber' : 'emerald',
+      trend: overdueAssignments > 0 ? 'En retard' : pendingAssignments > 0 ? 'À faire' : 'À jour',
     },
   ];
 
@@ -209,36 +203,7 @@ const StudentOverview = ({ searchQuery = '', searchCategory = 'all' }: { searchQ
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={index} variant="premium" hover className="overflow-hidden ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-600 mb-1">{stat.title}</p>
-                  <div className="flex items-baseline space-x-1">
-                    <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-                    {stat.subtitle && (
-                      <p className="text-sm text-gray-500">{stat.subtitle}</p>
-                    )}
-                  </div>
-                  {stat.badge && (
-                    <div className="mt-2">
-                      <Badge variant={stat.badgeVariant} size="sm">
-                        {stat.badge}
-                      </Badge>
-                    </div>
-                  )}
-                </div>
-                <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white transform rotate-3 hover:rotate-6 transition-transform`}>
-                  <Icon className="w-8 h-8" />
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+          <PremiumStatGrid items={stats} columns={4} />
 
       {/* Alertes importantes */}
       {(overdueAssignments > 0 || unexcusedAbsences > 0) && (

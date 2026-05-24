@@ -227,6 +227,28 @@ export function hasPedagogyStaffAccess(modules: StaffModuleId[]): boolean {
   return modules.some((m) => PEDAGOGY_STAFF_MODULE_IDS.includes(m));
 }
 
+/** Modules affichés en consultation seule dans l’espace staff. */
+export const STAFF_MODULES_READ_ONLY: ReadonlySet<StaffModuleId> = new Set([
+  'overview',
+  'student_registry',
+  'reports_mgmt',
+  'analytics_mgmt',
+  'pedagogical_tracking',
+  'academic_overview',
+]);
+
+export function staffModuleIsReadOnlyByDesign(moduleId: StaffModuleId): boolean {
+  return STAFF_MODULES_READ_ONLY.has(moduleId);
+}
+
+/** Module visible → accès complet (UI) sauf modules consultation par nature. */
+export function staffModuleGrantsWriteUi(
+  moduleId: StaffModuleId,
+  visibleModules: StaffModuleId[],
+): boolean {
+  return visibleModules.includes(moduleId) && !staffModuleIsReadOnlyByDesign(moduleId);
+}
+
 
 
 export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
@@ -269,7 +291,7 @@ export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
 
   teachers_mgmt: 'Enseignants',
 
-  educators_mgmt: 'Éducateurs',
+  educators_mgmt: 'Personnel — éducateurs',
 
   staff_mgmt: 'Personnel administratif',
 
@@ -357,7 +379,7 @@ export const STAFF_MODULE_DESCRIPTIONS: Record<StaffModuleId, string> = {
 
   teachers_mgmt: 'Corps enseignant, matières et affectations',
 
-  educators_mgmt: 'Éducateurs, classes suivies et vie scolaire',
+  educators_mgmt: 'Liste des éducateurs (intégrée au module Personnel)',
 
   staff_mgmt: 'Annuaire du personnel administratif et de soutien',
 
@@ -1060,7 +1082,9 @@ export function resolveVisibleStaffModules(
     return getEligibleModulesForSupportKind(kind);
   }
 
-  return sanitizeStaffModulesForSave(stored);
+  const eligible = getEligibleModulesForSupportKind(kind);
+  const picked = sanitizeStaffModulesForSave(stored);
+  return [...new Set<StaffModuleId>([...eligible, ...picked])];
 }
 
 
@@ -1082,5 +1106,78 @@ export function isStaffModuleTab(value: string | null, visible: StaffModuleId[])
   return !!value && visible.includes(value as StaffModuleId);
 
 }
+
+export const STAFF_MODULE_CATEGORIES: {
+  title: string;
+  hint?: string;
+  moduleIds: StaffModuleId[];
+}[] = [
+  {
+    title: 'Accueil & guichet',
+    hint: 'Familles, admissions et registre',
+    moduleIds: [
+      'counter',
+      'admissions',
+      'appointments',
+      'student_registry',
+      'treasury',
+      'notifications_mgmt',
+    ],
+  },
+  {
+    title: 'Pédagogie & vie scolaire',
+    moduleIds: [
+      'validations',
+      'academic_overview',
+      'class_councils',
+      'students_mgmt',
+      'academic_mgmt',
+      'grading_mgmt',
+      'classes_mgmt',
+      'pedagogical_tracking',
+      'discipline_mgmt',
+      'extracurricular_mgmt',
+      'orientation_mgmt',
+      'schedule_mgmt',
+      'pointage_mgmt',
+      'attendance_mgmt',
+    ],
+  },
+  {
+    title: 'Personnel & communication',
+    moduleIds: [
+      'teachers_mgmt',
+      'educators_mgmt',
+      'staff_mgmt',
+      'parents_mgmt',
+      'hr_mgmt',
+      'communication_mgmt',
+    ],
+  },
+  {
+    title: 'Finances & administration',
+    moduleIds: [
+      'fees_mgmt',
+      'tuition_fees_mgmt',
+      'payments_mgmt',
+      'accounting_mgmt',
+      'administrative_mgmt',
+      'reports_mgmt',
+      'analytics_mgmt',
+    ],
+  },
+  {
+    title: 'Services & ressources',
+    moduleIds: [
+      'health_log',
+      'library',
+      'digital_library',
+      'library_mgmt',
+      'material_mgmt',
+      'it_requests',
+      'maintenance_requests',
+    ],
+  },
+];
 
 

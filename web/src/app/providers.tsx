@@ -11,7 +11,12 @@ import PushNotificationsBootstrap from "@/components/PushNotificationsBootstrap"
 import ServiceWorkerDevCleanup from "@/components/ServiceWorkerDevCleanup";
 import OfflineBanner from "@/components/OfflineBanner";
 import OfflinePrefetch from "@/components/OfflinePrefetch";
+import { ensureStaffPedagogyApiInterceptor } from "@/lib/staffPedagogyApi";
 import "@/utils/debug";
+
+if (typeof window !== 'undefined') {
+  ensureStaffPedagogyApiInterceptor();
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());

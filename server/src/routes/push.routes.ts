@@ -1,7 +1,6 @@
 import express from 'express';
 import prisma from '../utils/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
-import { isWebPushConfigured } from '../utils/push-send.util';
 
 const router = express.Router();
 
@@ -9,12 +8,13 @@ const router = express.Router();
 router.get('/vapid-public', (_req, res) => {
   const key = process.env.VAPID_PUBLIC_KEY?.trim();
   if (!key) {
-    return res.status(503).json({
-      error: 'Notifications push désactivées',
-      hint: 'Définissez VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY sur le serveur.',
+    return res.json({
+      configured: false,
+      publicKey: null,
+      hint: 'Notifications push désactivées (VAPID non configuré sur le serveur).',
     });
   }
-  res.json({ publicKey: key, configured: isWebPushConfigured() });
+  res.json({ configured: true, publicKey: key });
 });
 
 router.post('/subscribe', authenticate, async (req: AuthRequest, res) => {

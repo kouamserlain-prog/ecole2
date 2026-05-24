@@ -35,6 +35,8 @@ export async function ensureDefaultSchool(): Promise<string> {
   });
   if (existingDefault) {
     await backfillOrphanRecords(existingDefault.id);
+    const { seedSchoolStaffMetiers } = await import('./school-staff-metiers.util');
+    await seedSchoolStaffMetiers(existingDefault.id);
     return existingDefault.id;
   }
 
@@ -49,6 +51,8 @@ export async function ensureDefaultSchool(): Promise<string> {
       data: { isDefault: true },
     });
     await backfillOrphanRecords(any.id);
+    const { seedSchoolStaffMetiers } = await import('./school-staff-metiers.util');
+    await seedSchoolStaffMetiers(any.id);
     return any.id;
   }
 
@@ -107,25 +111,52 @@ export async function ensureDefaultSchool(): Promise<string> {
   }
 
   await backfillOrphanRecords(school.id);
+  const { seedSchoolStaffMetiers } = await import('./school-staff-metiers.util');
+  await seedSchoolStaffMetiers(school.id);
   return school.id;
 }
 
+async function idsMissingSchoolId(
+  model: 'student' | 'class' | 'admission' | 'staffMember',
+): Promise<string[]> {
+  type Row = { id: string; schoolId: string | null };
+  let rows: Row[];
+  switch (model) {
+    case 'student':
+      rows = await prisma.student.findMany({ select: { id: true, schoolId: true } });
+      break;
+    case 'class':
+      rows = await prisma.class.findMany({ select: { id: true, schoolId: true } });
+      break;
+    case 'admission':
+      rows = await prisma.admission.findMany({ select: { id: true, schoolId: true } });
+      break;
+    case 'staffMember':
+      rows = await prisma.staffMember.findMany({ select: { id: true, schoolId: true } });
+      break;
+  }
+  return rows.filter((r) => r.schoolId == null || r.schoolId === '').map((r) => r.id);
+}
+
 async function backfillOrphanRecords(schoolId: string): Promise<void> {
-  await prisma.class.updateMany({
-    where: { schoolId: null },
-    data: { schoolId },
-  });
+  // MongoDB : updateMany({ schoolId: null }) ignore les champs absents — mise à jour par lots d’ids.
+  const orphanClassIds = await idsMissingSchoolId('class');
+  if (orphanClassIds.length > 0) {
+    await prisma.class.updateMany({
+      where: { id: { in: orphanClassIds } },
+      data: { schoolId },
+    });
+  }
 
-  await prisma.student.updateMany({
-    where: { schoolId: null },
-    data: { schoolId },
-  });
+  const orphanStudentIds = await idsMissingSchoolId('student');
+  if (orphanStudentIds.length > 0) {
+    await prisma.student.updateMany({
+      where: { id: { in: orphanStudentIds } },
+      data: { schoolId },
+    });
+  }
 
-  // MongoDB : le champ peut être absent (pas seulement null) — updateMany({ schoolId: null }) ne les voit pas.
-  const orphanAdmissions = await prisma.admission.findMany({
-    select: { id: true, schoolId: true },
-  });
-  const orphanAdmissionIds = orphanAdmissions.filter((a) => !a.schoolId).map((a) => a.id);
+  const orphanAdmissionIds = await idsMissingSchoolId('admission');
   if (orphanAdmissionIds.length > 0) {
     await prisma.admission.updateMany({
       where: { id: { in: orphanAdmissionIds } },
@@ -133,13 +164,19 @@ async function backfillOrphanRecords(schoolId: string): Promise<void> {
     });
   }
 
-  await prisma.staffMember.updateMany({
-    where: { schoolId: null },
-    data: { schoolId },
-  });
+  const orphanStaffIds = await idsMissingSchoolId('staffMember');
+  if (orphanStaffIds.length > 0) {
+    await prisma.staffMember.updateMany({
+      where: { id: { in: orphanStaffIds } },
+      data: { schoolId },
+    });
+  }
 
   const studentsWithoutSchool = await prisma.student.findMany({
-    where: { schoolId: null, classId: { not: null } },
+    where: {
+      OR: [{ schoolId: null }, { schoolId: { isSet: false } }],
+      classId: { not: null },
+    },
     select: { id: true, classId: true },
     take: 500,
   });
@@ -155,5 +192,13 @@ async function backfillOrphanRecords(schoolId: string): Promise<void> {
         data: { schoolId: cls.schoolId },
       });
     }
+  }
+
+  const stillOrphanStudentIds = await idsMissingSchoolId('student');
+  if (stillOrphanStudentIds.length > 0) {
+    await prisma.student.updateMany({
+      where: { id: { in: stillOrphanStudentIds } },
+      data: { schoolId },
+    });
   }
 }

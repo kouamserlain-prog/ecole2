@@ -17,6 +17,7 @@ import {
   FiShield
 } from 'react-icons/fi';
 import AdminUserPasswordSection from './AdminUserPasswordSection';
+import EducatorClassAssignmentField from './EducatorClassAssignmentField';
 
 interface EditEducatorModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ const EditEducatorModal: React.FC<EditEducatorModalProps> = ({ isOpen, onClose, 
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   
   // Fetch educator data
   const { data: educator, isLoading: isLoadingEducator } = useQuery({
@@ -64,6 +66,8 @@ const EditEducatorModal: React.FC<EditEducatorModalProps> = ({ isOpen, onClose, 
         salary: educator.salary ? educator.salary.toString() : '',
         isActive: educator.user?.isActive !== undefined ? educator.user.isActive : true,
       });
+      const assigned = (educator as { assignedClasses?: { id: string }[] }).assignedClasses;
+      setSelectedClassIds(assigned?.map((c) => c.id) ?? []);
     }
   }, [educator]);
 
@@ -92,6 +96,7 @@ const EditEducatorModal: React.FC<EditEducatorModalProps> = ({ isOpen, onClose, 
     mutationFn: (data: any) => adminApi.updateEducator(educatorId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-educators'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-personnel-registry'] });
       queryClient.invalidateQueries({ queryKey: ['educator', educatorId] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
       toast.success('Éducateur modifié avec succès !');
@@ -172,13 +177,24 @@ const EditEducatorModal: React.FC<EditEducatorModalProps> = ({ isOpen, onClose, 
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData: {
+      firstName: string;
+      lastName: string;
+      phone?: string;
+      specialization: string;
+      contractType: string;
+      salary?: number;
+      isActive: boolean;
+      classIds: string[];
+    } = {
       firstName: formData.firstName,
       lastName: formData.lastName,
       phone: formData.phone || undefined,
       specialization: formData.specialization,
       contractType: formData.contractType,
       salary: formData.salary ? parseFloat(formData.salary.toString()) : undefined,
+      isActive: formData.isActive,
+      classIds: selectedClassIds,
     };
 
     updateEducatorMutation.mutate(updateData);
@@ -470,6 +486,11 @@ const EditEducatorModal: React.FC<EditEducatorModalProps> = ({ isOpen, onClose, 
                   <p className="mt-0.5 text-[10px] text-stone-500">Montant en FCFA</p>
                 </div>
               </div>
+
+              <EducatorClassAssignmentField
+                selectedClassIds={selectedClassIds}
+                onChange={setSelectedClassIds}
+              />
             </div>
           )}
 

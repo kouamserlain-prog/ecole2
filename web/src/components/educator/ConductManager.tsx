@@ -103,9 +103,8 @@ const ConductManager = ({ searchQuery = '' }: ConductManagerProps) => {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Élève</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Période</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Ponctualité</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Respect</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Participation</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Assiduité</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Tenue vestimentaire</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Comportement</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Moyenne</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
@@ -130,7 +129,6 @@ const ConductManager = ({ searchQuery = '' }: ConductManagerProps) => {
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-700">{conduct.punctuality.toFixed(1)}/20</td>
                     <td className="py-3 px-4 text-sm text-gray-700">{conduct.respect.toFixed(1)}/20</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{conduct.participation.toFixed(1)}/20</td>
                     <td className="py-3 px-4 text-sm text-gray-700">{conduct.behavior.toFixed(1)}/20</td>
                     <td className="py-3 px-4">
                       <Badge

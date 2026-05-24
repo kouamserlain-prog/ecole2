@@ -10,10 +10,12 @@ export function PremiumChartMeshBackground() {
       aria-hidden
     >
       <div
-        className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-indigo-400/15 blur-3xl"
+        className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-indigo-400/15 blur-3xl animate-pulse"
+        style={{ animationDuration: '4s' }}
       />
       <div
-        className="absolute -bottom-20 -left-8 h-56 w-56 rounded-full bg-violet-400/12 blur-3xl"
+        className="absolute -bottom-20 -left-8 h-56 w-56 rounded-full bg-violet-400/12 blur-3xl animate-pulse"
+        style={{ animationDuration: '6s' }}
       />
       <div
         className="absolute inset-0 opacity-[0.35]"

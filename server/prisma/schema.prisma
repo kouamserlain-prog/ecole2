@@ -1114,10 +1114,27 @@ model Educator {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user          User     @relation(fields: [userId], references: [id])
+  user              User                      @relation(fields: [userId], references: [id])
+  classAssignments  EducatorClassAssignment[]
 
   @@index([nfcId])
   @@map("educators")
+}
+
+/// Classes suivies par un éducateur (périmètre de consultation et d'action).
+model EducatorClassAssignment {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  educatorId String   @db.ObjectId
+  classId    String   @db.ObjectId
+  createdAt  DateTime @default(now())
+
+  educator Educator @relation(fields: [educatorId], references: [id], onDelete: Cascade)
+  class    Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([educatorId, classId])
+  @@index([educatorId])
+  @@index([classId])
+  @@map("educator_class_assignments")
 }
 
 /// Fiche de poste réutilisable (référentiel RH)
@@ -1466,6 +1483,7 @@ model Class {
   virtualClassSessions VirtualClassSession[]
   trackId     String?      @db.ObjectId
   track       SchoolTrack? @relation(fields: [trackId], references: [id], onDelete: SetNull)
+  educatorAssignments EducatorClassAssignment[]
 
   @@index([schoolId])
   @@index([schoolId, academicYear])
@@ -2237,7 +2255,6 @@ model TuitionFee {
   /// Montant brut avant remise (optionnel ; sinon = amount + discount)
   baseAmount       Float?
   discountAmount   Float                 @default(0)
-  scholarshipLabel String?
   catalogId        String?               @db.ObjectId
   catalog          TuitionFeeCatalog?    @relation(fields: [catalogId], references: [id], onDelete: SetNull)
   scheduleTemplateId String?             @db.ObjectId
@@ -2305,6 +2322,7 @@ enum PettyCashMovementType {
 
 model Supplier {
   id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId     String?   @db.ObjectId
   name         String
   contactName  String?
   email        String?
@@ -2318,12 +2336,14 @@ model Supplier {
 
   expenses SchoolExpense[]
 
+  @@index([schoolId])
   @@index([name])
   @@map("suppliers")
 }
 
 model SchoolExpense {
   id               String                @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId         String?               @db.ObjectId
   supplierId       String?               @db.ObjectId
   supplier         Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   academicYear     String?
@@ -2340,6 +2360,7 @@ model SchoolExpense {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
+  @@index([schoolId])
   @@index([expenseDate])
   @@index([academicYear])
   @@index([category])
@@ -2348,6 +2369,7 @@ model SchoolExpense {
 
 model PettyCashMovement {
   id               String                @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId         String?               @db.ObjectId
   movementDate     DateTime
   type             PettyCashMovementType
   /// Montant toujours positif ; sens selon `type` (IN entrée, OUT sortie)
@@ -2359,6 +2381,7 @@ model PettyCashMovement {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
+  @@index([schoolId])
   @@index([movementDate])
   @@map("petty_cash_movements")
 }
@@ -2366,6 +2389,7 @@ model PettyCashMovement {
 /// Lignes de budget prévisionnel par année scolaire
 model BudgetLine {
   id             String                @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId       String?               @db.ObjectId
   academicYear   String
   label          String
   category       SchoolExpenseCategory @default(OTHER)
@@ -2374,6 +2398,7 @@ model BudgetLine {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
+  @@index([schoolId])
   @@index([academicYear])
   @@map("budget_lines")
 }
@@ -2473,12 +2498,35 @@ model School {
   students        Student[]
   admissions      Admission[]
   staffMembers    StaffMember[]
+  staffMetiers    SchoolStaffMetier[]
   workspaces      AdminWorkspace[]
   branding        AppBranding?
 
   @@index([isActive])
   @@index([isDefault])
   @@map("schools")
+}
+
+/// Métier du personnel de soutien (STAFF) configuré par établissement — les admins restent globaux (AdminWorkspace).
+model SchoolStaffMetier {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId       String           @db.ObjectId
+  supportKind    SupportStaffKind
+  /// Libellé affiché (sinon libellé plateforme par défaut)
+  label          String?
+  description    String?
+  /// Modules par défaut pour ce métier dans cet établissement
+  defaultModules String[]         @default([])
+  isActive       Boolean          @default(true)
+  sortOrder      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, supportKind])
+  @@index([schoolId, isActive])
+  @@map("school_staff_metiers")
 }
 
 /// Accès d’un utilisateur à un ou plusieurs établissements

@@ -39,10 +39,14 @@ import {
   FiCloud,
   FiMonitor,
 } from 'react-icons/fi';
+import type { IconType } from 'react-icons';
 import Card from '../../components/ui/Card';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { inactiveModuleIconClass } from '../../lib/navModuleIconClass';
+import { PremiumPortalShell, PremiumModuleHeader } from '../../components/dashboard/premium';
+import PortalRoleModulesHub from '../../components/dashboard/PortalRoleModulesHub';
+import { STUDENT_MODULE_CATEGORIES } from '@/lib/portalModuleCategories';
 
 const VALID_TAB_IDS = [
   'overview',
@@ -67,7 +71,7 @@ type TabId = (typeof VALID_TAB_IDS)[number];
 type TabDef = {
   id: TabId;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: IconType;
   color: string;
   description: string;
 };
@@ -175,7 +179,8 @@ const StudentDashboard = () => {
 
   return (
     <Layout user={user} onLogout={logout} role="STUDENT">
-      <div className="min-h-screen flex flex-col premium-body">
+      <PremiumPortalShell variant="student">
+      <div className="min-h-screen flex flex-col">
         {enrollmentStatus === 'GRADUATED' && (
           <div className="bg-sky-50/95 border-b border-sky-200/80 backdrop-blur-md shrink-0">
             <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
@@ -388,31 +393,24 @@ const StudentDashboard = () => {
 
             <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4 sm:py-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] scroll-smooth">
               <div className="max-w-[1200px] mx-auto space-y-4 sm:space-y-5">
-                <div
-                  className={`rounded-2xl bg-gradient-to-r ${activeMeta.color} p-[1px] shadow-[0_20px_40px_-18px_rgba(12,10,9,0.18)] ring-1 ring-amber-900/10`}
-                >
-                  <div className="rounded-[15px] bg-white/95 backdrop-blur-xl px-3 py-3 sm:px-5 sm:py-4 border border-white/60">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${activeMeta.color} text-white flex items-center justify-center shadow-md ring-1 ring-white/25 shrink-0`}
-                      >
-                        <ActiveTabIcon className="w-5 h-5" aria-hidden />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight">{activeMeta.label}</h2>
-                        <p className="text-xs sm:text-sm text-stone-600 mt-1 line-clamp-2 leading-relaxed">{activeMeta.description}</p>
-                      </div>
-                      <span className="hidden sm:inline-flex items-center gap-1.5 ml-auto px-2.5 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-700 shrink-0 ring-1 ring-stone-200/80">
-                        <FiCommand className="w-3.5 h-3.5 text-amber-700/90" aria-hidden />
-                        Élève
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                              <PremiumModuleHeader
+                title={activeMeta.label}
+                description={activeMeta.description}
+                icon={ActiveTabIcon}
+                gradient={activeMeta.color}
+                badge="Élève"
+              />
 
-                <div className="animate-slide-up">
+              <div className="animate-slide-up">
                   {activeTab === 'overview' && (
-                    <StudentOverview searchQuery={searchQuery} searchCategory={searchCategory} />
+                    <>
+                      <StudentOverview searchQuery={searchQuery} searchCategory={searchCategory} />
+                      <PortalRoleModulesHub
+                        tabs={tabs}
+                        categories={STUDENT_MODULE_CATEGORIES}
+                        onNavigate={(id) => changeTab(id as TabId)}
+                      />
+                    </>
                   )}
                   {activeTab === 'profile' && <StudentProfile searchQuery={searchQuery} />}
                   {activeTab === 'academic-history' && <StudentAcademicHistory searchQuery={searchQuery} />}
@@ -448,6 +446,7 @@ const StudentDashboard = () => {
           </div>
         </div>
       </div>
+      </PremiumPortalShell>
     </Layout>
   );
 };

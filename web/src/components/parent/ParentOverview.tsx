@@ -15,7 +15,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { CHART_GRID, CHART_MARGIN_COMPACT, chartBlueRed, CHART_ANIMATION_MS } from '../charts';
+import { CHART_GRID, CHART_MARGIN_COMPACT, CHART_AXIS_TICK, chartBlueRed, CHART_ANIMATION_MS, RechartsViewport, PremiumChartCard, PremiumTooltip, BarGradientsMulti, PREMIUM_BAR_RADIUS_TOP, PREMIUM_BAR_MAX_SIZE, PREMIUM_CHART_ANIMATION, CHART_CURSOR, CHART_GRID_SOFT } from '../charts';
+import { PremiumOverviewHero, PremiumStatGrid, PremiumKpiCard } from '../dashboard/premium';
 import GdprUserRightsPanel from '../gdpr/GdprUserRightsPanel';
 import PortalSchoolFeed from '../portal/PortalSchoolFeed';
 import { format } from 'date-fns';
@@ -127,22 +128,14 @@ const ParentOverview = () => {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 p-[1px] shadow-lg shadow-orange-500/15">
-        <div className="rounded-[15px] bg-white/97 backdrop-blur-xl px-5 py-4 sm:px-6 sm:py-5">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.14em]">
-            Espace familles
-          </p>
-          <p className="font-display text-lg sm:text-xl font-bold text-slate-900 mt-1">
-            {format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}
-          </p>
-          <p className="text-sm text-slate-600 mt-2 max-w-3xl leading-relaxed">
-            Vue consolidée par enfant : résultats, assiduité et messages. Sélectionnez un profil ci-dessous lorsque vous
-            avez plusieurs enfants inscrits.
-          </p>
-        </div>
-      </div>
+      <PremiumOverviewHero
+        eyebrow="Espace familles"
+        title={format(new Date(), 'EEEE d MMMM yyyy', { locale: fr })}
+        gradient="from-orange-600 via-amber-600 to-yellow-600"
+        description="Vue consolidée par enfant : résultats, assiduité et messages."
+      />
 
-      <PortalSchoolFeed role="parent" compact />
+            <PortalSchoolFeed role="parent" compact />
 
       {selectedChildData && tuitionBlock?.active && (tuitionBlock.hiddenAcademicYears?.length ?? 0) > 0 && (
         <Card className="border-l-4 border-amber-500 bg-amber-50/90 ring-1 ring-amber-200/80">
@@ -269,35 +262,50 @@ const ParentOverview = () => {
           )}
 
           {parentKpi?.charts?.averageByChild && parentKpi.charts.averageByChild.some((x: { average20: number | null }) => x.average20 != null) && (
-            <Card variant="premium" className="p-5 ring-1 ring-slate-900/5">
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Moyennes par enfant (KPI)</h3>
-              <p className="text-xs text-slate-600 mb-4">Basé sur les notes des 120 derniers jours.</p>
-              <div className="h-56 w-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={parentKpi.charts.averageByChild
-                      .filter((x: { average20: number | null }) => x.average20 != null)
-                      .map((x: { name: string; average20: number }) => ({
-                        name: x.name.length > 14 ? `${x.name.slice(0, 12)}…` : x.name,
-                        moyenne: x.average20,
-                      }))}
-                    margin={CHART_MARGIN_COMPACT}
+            <PremiumChartCard
+              title="Moyennes par enfant"
+              subtitle="Notes des 120 derniers jours"
+              icon={FiAward}
+              accent="indigo"
+              height={240}
+            >
+              <RechartsViewport height={208}>
+                <BarChart
+                  data={parentKpi.charts.averageByChild
+                    .filter((x: { average20: number | null }) => x.average20 != null)
+                    .map((x: { name: string; average20: number }) => ({
+                      name: x.name.length > 14 ? `${x.name.slice(0, 12)}…` : x.name,
+                      moyenne: x.average20,
+                    }))}
+                  margin={CHART_MARGIN_COMPACT}
+                >
+                  <BarGradientsMulti
+                    count={
+                      parentKpi.charts.averageByChild.filter(
+                        (x: { average20: number | null }) => x.average20 != null
+                      ).length
+                    }
+                    idPrefix="parent-child-avg"
+                  />
+                  <CartesianGrid {...CHART_GRID_SOFT} />
+                  <XAxis dataKey="name" tick={CHART_AXIS_TICK} />
+                  <YAxis domain={[0, 20]} width={28} tick={CHART_AXIS_TICK} />
+                  <Tooltip content={(p) => <PremiumTooltip {...p} valueSuffix="/20" />} cursor={CHART_CURSOR} />
+                  <Bar
+                    dataKey="moyenne"
+                    radius={PREMIUM_BAR_RADIUS_TOP}
+                    maxBarSize={PREMIUM_BAR_MAX_SIZE}
+                    {...PREMIUM_CHART_ANIMATION}
                   >
-                    <CartesianGrid {...CHART_GRID} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis domain={[0, 20]} width={28} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(v: number) => [`${v} / 20`, 'Moyenne']} />
-                    <Bar dataKey="moyenne" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={CHART_ANIMATION_MS}>
-                      {parentKpi.charts.averageByChild
-                        .filter((x: { average20: number | null }) => x.average20 != null)
-                        .map((_: unknown, i: number) => (
-                          <Cell key={i} fill={chartBlueRed(i)} />
-                        ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
+                    {parentKpi.charts.averageByChild
+                      .filter((x: { average20: number | null }) => x.average20 != null)
+                      .map((_: unknown, i: number) => (
+                        <Cell key={i} fill={`url(#parent-child-avg-${i})`} />
+                      ))}
+                  </Bar>
+                </BarChart>
+              </RechartsViewport>
+            </PremiumChartCard>
           )}
 
           {/* Informations de l'enfant sélectionné */}

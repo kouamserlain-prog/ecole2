@@ -19,7 +19,11 @@ export default function SchoolSwitcher({ className = '' }: { className?: string 
         value={activeSchoolId ?? ''}
         onChange={(e) => void setActiveSchoolId(e.target.value)}
         className="max-w-[220px] truncate rounded-lg border border-stone-200 bg-white/90 px-2.5 py-1.5 text-sm font-medium text-stone-800 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-        title={isMultiSchool ? 'Changer d’établissement' : 'Établissement actif'}
+        title={
+          isMultiSchool
+            ? 'Les listes affichent les données de l’établissement sélectionné'
+            : 'Établissement actif'
+        }
       >
         {schools.map((s) => (
           <option key={s.id} value={s.id}>

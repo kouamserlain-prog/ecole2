@@ -81,9 +81,13 @@ type Props = {
 
 const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes }) => {
   const qc = useQueryClient();
-  const [sub, setSub] = useState<'levelRates' | 'catalog' | 'schedules' | 'apply'>('levelRates');
+  const [sub, setSub] = useState<'levelRates' | 'classRates' | 'catalog' | 'schedules' | 'apply'>(
+    'levelRates'
+  );
   const [levelRatesYear, setLevelRatesYear] = useState(getCurrentAcademicYear());
   const [levelAmounts, setLevelAmounts] = useState<Record<string, string>>({});
+  const [classRatesYear, setClassRatesYear] = useState(getCurrentAcademicYear());
+  const [classAmounts, setClassAmounts] = useState<Record<string, string>>({});
   const [guideOpen, setGuideOpen] = useState(true);
 
   const { data: catalog, isLoading: loadCat } = useQuery({
@@ -102,6 +106,12 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
     enabled: sub === 'levelRates',
   });
 
+  const { data: classRatesData, isLoading: loadClassRates } = useQuery({
+    queryKey: ['admin-tuition-class-rates', classRatesYear],
+    queryFn: () => adminTuitionCatalogApi.getClassTuitionRates(classRatesYear),
+    enabled: sub === 'classRates',
+  });
+
   useEffect(() => {
     if (!levelRatesData?.rates) return;
     const next: Record<string, string> = {};
@@ -110,6 +120,15 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
     }
     setLevelAmounts(next);
   }, [levelRatesData]);
+
+  useEffect(() => {
+    if (!classRatesData?.rates) return;
+    const next: Record<string, string> = {};
+    for (const r of classRatesData.rates) {
+      next[r.classId] = r.amount != null ? String(r.amount) : '';
+    }
+    setClassAmounts(next);
+  }, [classRatesData]);
 
   const saveLevelRatesMut = useMutation({
     mutationFn: () =>
@@ -123,6 +142,23 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
       qc.invalidateQueries({ queryKey: ['admin-tuition-level-rates'] });
       qc.invalidateQueries({ queryKey: ['admin-tuition-fee-catalog'] });
       toast.success('Montants de scolarité par niveau enregistrés');
+    },
+    onError: (e: { response?: { data?: { error?: string } } }) =>
+      toast.error(e.response?.data?.error || 'Erreur'),
+  });
+
+  const saveClassRatesMut = useMutation({
+    mutationFn: () =>
+      adminTuitionCatalogApi.saveClassTuitionRates({
+        academicYear: classRatesYear,
+        rates: Object.entries(classAmounts)
+          .filter(([, v]) => v.trim() !== '' && !Number.isNaN(parseFloat(v)) && parseFloat(v) >= 0)
+          .map(([classId, v]) => ({ classId, amount: Math.round(parseFloat(v)) })),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-tuition-class-rates'] });
+      qc.invalidateQueries({ queryKey: ['admin-tuition-fee-catalog'] });
+      toast.success('Montants de scolarité par classe enregistrés');
     },
     onError: (e: { response?: { data?: { error?: string } } }) =>
       toast.error(e.response?.data?.error || 'Erreur'),
@@ -161,13 +197,12 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
     catalogId: '',
     academicYear: getCurrentAcademicYear(),
     anchorDueDate: '',
+    applyScope: 'BY_CLASS' as 'BY_CLASS' | 'BY_LEVEL',
     classId: '',
+    classLevel: '',
     discountAmount: '',
-    scholarshipLabel: '',
     descriptionExtra: '',
   });
-  const [applyStudentFilter, setApplyStudentFilter] = useState('');
-  const [applySelectedStudentIds, setApplySelectedStudentIds] = useState<string[]>([]);
 
   const [applySched, setApplySched] = useState({
     scheduleTemplateId: '',
@@ -177,16 +212,8 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
     totalAmount: '',
     discountAmount: '',
     feeType: 'TUITION',
-    scholarshipLabel: '',
     catalogId: '',
   });
-
-  useEffect(() => {
-    if (!applyCat.classId) return;
-    setApplySelectedStudentIds((ids) =>
-      ids.filter((id) => (students ?? []).some((s) => s.id === id && s.classId === applyCat.classId)),
-    );
-  }, [applyCat.classId, students]);
 
   const saveCat = useMutation({
     mutationFn: () =>
@@ -284,10 +311,10 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
         catalogId: applyCat.catalogId,
         academicYear: applyCat.academicYear,
         anchorDueDate: applyCat.anchorDueDate,
-        classId: applyCat.classId || undefined,
-        studentIds: applySelectedStudentIds.length > 0 ? applySelectedStudentIds : undefined,
+        ...(applyCat.applyScope === 'BY_CLASS'
+          ? { classId: applyCat.classId }
+          : { classLevel: applyCat.classLevel }),
         discountAmount: applyCat.discountAmount ? parseFloat(applyCat.discountAmount) : undefined,
-        scholarshipLabel: applyCat.scholarshipLabel || undefined,
         descriptionExtra: applyCat.descriptionExtra || undefined,
       }),
     onSuccess: (d: { created?: number; skipped?: number; details?: { skipped?: { reason: string }[] } }) => {
@@ -312,7 +339,6 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
         totalAmount: parseFloat(applySched.totalAmount),
         discountAmount: applySched.discountAmount ? parseFloat(applySched.discountAmount) : undefined,
         feeType: applySched.feeType,
-        scholarshipLabel: applySched.scholarshipLabel || undefined,
         catalogId: applySched.catalogId || undefined,
       }),
     onSuccess: (d: { created?: number; skipped?: number }) => {
@@ -334,29 +360,6 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
     });
     return Array.from(s).sort();
   }, [classes]);
-
-  const studentsForApplyList = useMemo(() => {
-    let list = [...(students ?? [])];
-    if (applyCat.classId) list = list.filter((s) => s.classId === applyCat.classId);
-    const q = applyStudentFilter.trim().toLowerCase();
-    if (q) {
-      list = list.filter((s) => {
-        const name = `${s.user?.firstName ?? ''} ${s.user?.lastName ?? ''}`.trim().toLowerCase();
-        return name.includes(q);
-      });
-    }
-    return list;
-  }, [students, applyCat.classId, applyStudentFilter]);
-
-  const toggleApplyStudent = (id: string) => {
-    setApplySelectedStudentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const selectAllVisibleApplyStudents = () => {
-    setApplySelectedStudentIds(studentsForApplyList.map((s) => s.id));
-  };
-
-  const clearApplyStudentSelection = () => setApplySelectedStudentIds([]);
 
   const openNewCat = () => {
     setEditingCat(null);
@@ -456,6 +459,8 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
 
   const pctSum = sumPercents(tplScheduleLines);
   const catalogRows = (catalog ?? []) as Array<Record<string, unknown> & { id: string }>;
+  /** Barèmes applicables en lot (hors scolarité — attribuée via « Attribuer des frais »). */
+  const applyCatalogRows = catalogRows.filter((c) => String(c.feeType ?? '') !== 'TUITION');
 
   return (
     <div className="space-y-4">
@@ -471,15 +476,18 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
         {guideOpen && (
           <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-stone-700">
             <li>
-              <strong>Montants par niveau</strong> : fixez la scolarité (FCFA) pour chaque niveau (6ème → Terminale) ;
-              ces montants sont appliqués automatiquement à la création des frais « Scolarité ».
+              <strong>Montants par niveau</strong> : scolarité (FCFA) pour chaque niveau (6ème → Terminale).
+            </li>
+            <li>
+              <strong>Montants par classe</strong> : montant spécifique à une classe (prioritaire sur le niveau
+              à l’inscription).
             </li>
             <li>
               <strong>Barèmes</strong> : autres postes (inscription, cantine, transport…) par classe ou programme.
             </li>
             <li>
-              <strong>Application</strong> : générez une ligne par élève depuis un barème (avec remise ou libellé de
-              bourse), ou ciblez une sous-liste d’élèves.
+              <strong>Application</strong> : générez les lignes pour inscription, cantine, etc. (pas la scolarité — utilisez
+              « Attribuer des frais » pour la scolarité).
             </li>
             <li>
               <strong>Échéanciers</strong> : gabarits en % (somme = 100) et délais en jours ; appliquez-les à un élève
@@ -493,9 +501,10 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
         {(
           [
             ['levelRates', 'Scolarité par niveau'],
+            ['classRates', 'Scolarité par classe'],
             ['catalog', 'Autres barèmes'],
             ['schedules', 'Gabarits d’échéancier'],
-            ['apply', 'Application aux élèves'],
+            ['apply', 'Application classe / niveau'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -512,8 +521,9 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
       {sub === 'levelRates' && (
         <Card className="space-y-4 p-4">
           <p className="text-sm text-stone-600">
-            Définissez le <strong>montant fixe de scolarité</strong> pour chaque niveau. Lors de la création d’un frais
-            de type « Scolarité », ce montant est imposé selon la classe de l’élève (seule la remise reste modifiable).
+            Définissez le <strong>montant fixe de scolarité</strong> pour chaque niveau. Ce barème est utilisé
+            uniquement lorsque vous cliquez sur <strong>« Attribuer des frais »</strong> (par classe ou par niveau) —
+            aucune ligne n’est créée automatiquement pour les élèves.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[10rem]">
@@ -558,6 +568,69 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
                             setLevelAmounts((prev) => ({ ...prev, [row.level]: e.target.value }))
                           }
                           placeholder="Ex. 150000"
+                          className="w-full max-w-xs rounded-lg border border-stone-300 px-3 py-2 tabular-nums focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {sub === 'classRates' && (
+        <Card className="space-y-4 p-4">
+          <p className="text-sm text-stone-600">
+            Définissez un <strong>montant fixe par classe</strong>. À l&apos;inscription, ce montant
+            s&apos;affiche en priorité ; sinon le barème du <strong>niveau</strong> de la classe est utilisé.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[10rem]">
+              <label className="mb-1 block text-xs font-medium text-stone-600">Année scolaire</label>
+              <Input
+                value={classRatesYear}
+                onChange={(e) => setClassRatesYear(e.target.value)}
+                placeholder="2025-2026"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => saveClassRatesMut.mutate()}
+              disabled={saveClassRatesMut.isPending || loadClassRates}
+            >
+              Enregistrer les montants
+            </Button>
+          </div>
+          {loadClassRates ? (
+            <p className="text-sm text-stone-500">Chargement…</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-stone-200 max-h-[28rem] overflow-y-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-stone-50 text-left text-[10px] uppercase text-stone-600 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2">Classe</th>
+                    <th className="px-3 py-2">Niveau</th>
+                    <th className="px-3 py-2">Montant scolarité (FCFA)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(classRatesData?.rates ?? []).map((row) => (
+                    <tr key={row.classId} className="border-t border-stone-100">
+                      <td className="px-3 py-2 font-medium text-stone-900">{row.className}</td>
+                      <td className="px-3 py-2 text-stone-600">{row.classLevel}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          value={classAmounts[row.classId] ?? ''}
+                          onChange={(e) =>
+                            setClassAmounts((prev) => ({ ...prev, [row.classId]: e.target.value }))
+                          }
+                          placeholder="Ex. 175000"
                           className="w-full max-w-xs rounded-lg border border-stone-300 px-3 py-2 tabular-nums focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
                         />
                       </td>
@@ -719,9 +792,8 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
           <Card className="space-y-3 p-3">
             <h3 className="text-sm font-bold text-stone-900">Depuis un barème</h3>
             <p className="text-xs text-stone-600">
-              Une ligne de frais par élève (montant du barème moins la remise). Choisissez une classe et laissez la
-              liste d’élèves vide pour tout le monde, ou cochez des élèves précis. Vous pouvez aussi ne choisir
-              qu’une liste d’élèves (recherche) sans classe si vous filtrez manuellement.
+              Une ligne de frais par élève actif : sélectionnez une classe ou un niveau. Le montant provient du barème
+              (moins la remise éventuelle).
             </p>
             <div>
               <label className="text-xs font-medium text-stone-700">Barème</label>
@@ -732,7 +804,7 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
                 onChange={(e) => setApplyCat((a) => ({ ...a, catalogId: e.target.value }))}
               >
                 <option value="">—</option>
-                {catalogRows.map((c) => (
+                {applyCatalogRows.map((c) => (
                   <option key={c.id} value={c.id}>
                     {String(c.label)} ({formatFCFA(Number(c.defaultAmount))})
                   </option>
@@ -750,67 +822,73 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
               value={applyCat.anchorDueDate}
               onChange={(e) => setApplyCat((a) => ({ ...a, anchorDueDate: e.target.value }))}
             />
-            <div>
-              <label className="text-xs font-medium text-stone-700">Classe (optionnel)</label>
-              <select
-                aria-label="Classe cible"
-                className="mt-1 w-full rounded-xl border-2 border-stone-200 px-3 py-2 text-sm"
-                value={applyCat.classId}
-                onChange={(e) => setApplyCat((a) => ({ ...a, classId: e.target.value }))}
+            <div className="flex gap-2 rounded-lg border border-stone-200 p-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setApplyCat((a) => ({ ...a, applyScope: 'BY_CLASS', classLevel: '' }))
+                }
+                className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${
+                  applyCat.applyScope === 'BY_CLASS'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-stone-700 hover:bg-stone-50'
+                }`}
               >
-                <option value="">— Toutes (selon recherche élèves)</option>
-                {(classes ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.level})
-                  </option>
-                ))}
-              </select>
+                Par classe
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setApplyCat((a) => ({ ...a, applyScope: 'BY_LEVEL', classId: '' }))
+                }
+                className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${
+                  applyCat.applyScope === 'BY_LEVEL'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-stone-700 hover:bg-stone-50'
+                }`}
+              >
+                Par niveau
+              </button>
             </div>
-            <Input
-              label="Filtrer les élèves (nom)"
-              value={applyStudentFilter}
-              onChange={(e) => setApplyStudentFilter(e.target.value)}
-            />
-            <div className="rounded-xl border-2 border-stone-200 p-2">
-              <div className="mb-2 flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="secondary" onClick={selectAllVisibleApplyStudents}>
-                  Tout sélectionner (liste)
-                </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={clearApplyStudentSelection}>
-                  Effacer la sélection
-                </Button>
-                <span className="self-center text-[11px] text-stone-500">
-                  {applySelectedStudentIds.length} sélectionné(s)
-                </span>
+            {applyCat.applyScope === 'BY_CLASS' ? (
+              <div>
+                <label className="text-xs font-medium text-stone-700">Classe</label>
+                <select
+                  aria-label="Classe cible"
+                  className="mt-1 w-full rounded-xl border-2 border-stone-200 px-3 py-2 text-sm"
+                  value={applyCat.classId}
+                  onChange={(e) => setApplyCat((a) => ({ ...a, classId: e.target.value }))}
+                >
+                  <option value="">— Sélectionner une classe</option>
+                  {(classes ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.level})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="max-h-40 space-y-1 overflow-y-auto text-xs">
-                {studentsForApplyList.length === 0 ? (
-                  <p className="text-stone-500">Aucun élève dans ce filtre.</p>
-                ) : (
-                  studentsForApplyList.map((s) => (
-                    <label key={s.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-stone-50">
-                      <input
-                        type="checkbox"
-                        checked={applySelectedStudentIds.includes(s.id)}
-                        onChange={() => toggleApplyStudent(s.id)}
-                      />
-                      <span>
-                        {s.user?.firstName} {s.user?.lastName}
-                      </span>
-                    </label>
-                  ))
-                )}
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-stone-700">Niveau</label>
+                <select
+                  aria-label="Niveau cible"
+                  className="mt-1 w-full rounded-xl border-2 border-stone-200 px-3 py-2 text-sm"
+                  value={applyCat.classLevel}
+                  onChange={(e) => setApplyCat((a) => ({ ...a, classLevel: e.target.value }))}
+                >
+                  <option value="">— Sélectionner un niveau</option>
+                  {levels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
+            )}
             <Input
-              label="Remise / bourse (FCFA, optionnel)"
+              label="Remise (FCFA, optionnel)"
               value={applyCat.discountAmount}
               onChange={(e) => setApplyCat((a) => ({ ...a, discountAmount: e.target.value }))}
-            />
-            <Input
-              label="Libellé bourse (optionnel)"
-              value={applyCat.scholarshipLabel}
-              onChange={(e) => setApplyCat((a) => ({ ...a, scholarshipLabel: e.target.value }))}
             />
             <Input
               label="Note complémentaire (optionnel)"
@@ -825,8 +903,12 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
                   toast.error('Barème, année et date sont requis');
                   return;
                 }
-                if (!applyCat.classId && applySelectedStudentIds.length === 0) {
-                  toast.error('Indiquez une classe ou sélectionnez au moins un élève');
+                if (applyCat.applyScope === 'BY_CLASS' && !applyCat.classId) {
+                  toast.error('Sélectionnez une classe');
+                  return;
+                }
+                if (applyCat.applyScope === 'BY_LEVEL' && !applyCat.classLevel) {
+                  toast.error('Sélectionnez un niveau');
                   return;
                 }
                 applyCatMut.mutate();
@@ -913,11 +995,6 @@ const TuitionFeeCatalogAndSchedulesPanel: React.FC<Props> = ({ students, classes
                 ))}
               </select>
             </div>
-            <Input
-              label="Réf. bourse (optionnel)"
-              value={applySched.scholarshipLabel}
-              onChange={(e) => setApplySched((a) => ({ ...a, scholarshipLabel: e.target.value }))}
-            />
             <div>
               <label className="text-xs font-medium text-stone-700">Lier au barème (optionnel)</label>
               <select

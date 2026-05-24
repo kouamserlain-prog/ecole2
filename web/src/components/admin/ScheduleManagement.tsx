@@ -23,7 +23,9 @@ import {
   FiEye,
   FiDownload,
   FiFileText,
+  FiUpload,
 } from 'react-icons/fi';
+import { downloadScheduleImportTemplate, readCsvFile } from '@/lib/scheduleImport';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import jsPDF from 'jspdf';
@@ -61,6 +63,14 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importClearExisting, setImportClearExisting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    created: number;
+    skipped: number;
+    errors: Array<{ line: number; message: string }>;
+  } | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
@@ -160,6 +170,34 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Erreur lors de la suppression');
+    },
+  });
+
+  const importSchedulesMutation = useMutation({
+    mutationFn: async () => {
+      if (!importFile) throw new Error('Aucun fichier sélectionné');
+      const csv = await readCsvFile(importFile);
+      return adminApi.importSchedules({
+        csv,
+        clearExisting: importClearExisting,
+        ...(selectedClass !== 'all' ? { classId: selectedClass } : {}),
+        skipConstraintErrors: true,
+      });
+    },
+    onSuccess: (result) => {
+      setImportResult(result);
+      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      if (result.created > 0) {
+        toast.success(`${result.created} créneau(x) importé(s)`);
+      } else {
+        toast.error('Aucun créneau importé — vérifiez le fichier et les matières');
+      }
+      if (result.errors.length > 0 && result.created > 0) {
+        toast(`${result.skipped} ligne(s) ignorée(s)`, { icon: '⚠️' });
+      }
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Erreur lors de l’import');
     },
   });
 
@@ -529,6 +567,20 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
             </p>
           </div>
           <div className={`flex items-center shrink-0 ${compact ? 'gap-2' : 'space-x-3'}`}>
+            <Button
+              variant="outline"
+              size={compact ? 'sm' : 'md'}
+              className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+              onClick={() => {
+                setImportFile(null);
+                setImportResult(null);
+                setImportClearExisting(false);
+                setIsImportModalOpen(true);
+              }}
+            >
+              <FiUpload className="w-4 h-4 mr-2" />
+              Importer
+            </Button>
             <div className="relative">
               <Button
                 variant="outline"
@@ -1277,6 +1329,105 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       </Modal>
 
       {/* Schedule Details Modal */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportFile(null);
+          setImportResult(null);
+        }}
+        title="Importer un emploi du temps"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-stone-600">
+            Importez un fichier CSV (séparateur <strong>;</strong>). Les matières doivent déjà exister
+            pour chaque classe. L’emploi du temps sera visible pour les élèves, enseignants et
+            éducateurs dès l’import.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={downloadScheduleImportTemplate}>
+              <FiDownload className="w-4 h-4 mr-1" />
+              Télécharger le modèle
+            </Button>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Fichier CSV</label>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="block w-full text-sm text-stone-600 file:mr-3 file:rounded-lg file:border-0 file:bg-orange-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-orange-800 hover:file:bg-orange-100"
+              onChange={(e) => {
+                setImportFile(e.target.files?.[0] ?? null);
+                setImportResult(null);
+              }}
+            />
+            <p className="text-xs text-stone-500 mt-1">
+              Colonnes : Classe, Jour, Heure début, Heure fin, Matière (ou Code matière), Salle. Vous
+              pouvez aussi réimporter un CSV exporté depuis ce module (colonnes Jour, Heure, Matière,
+              Classe…).
+            </p>
+          </div>
+          {selectedClass !== 'all' ? (
+            <label className="flex items-start gap-2 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={importClearExisting}
+                onChange={(e) => setImportClearExisting(e.target.checked)}
+                className="mt-1 rounded border-stone-300"
+              />
+              <span>
+                Remplacer l’emploi du temps existant de la classe filtrée (
+                {classes?.find((c: { id: string }) => c.id === selectedClass)?.name ?? 'classe'})
+              </span>
+            </label>
+          ) : (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Pour remplacer les créneaux d’une classe avant import, sélectionnez d’abord cette classe
+              dans le filtre ci-dessous, puis cochez l’option de remplacement.
+            </p>
+          )}
+          {importResult ? (
+            <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
+              <p className="font-medium text-stone-800">
+                {importResult.created} créneau(x) créé(s), {importResult.skipped} ignoré(s)
+              </p>
+              {importResult.errors.length > 0 ? (
+                <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-red-800 space-y-1">
+                  {importResult.errors.slice(0, 20).map((err, i) => (
+                    <li key={`${err.line}-${i}`}>
+                      Ligne {err.line} : {err.message}
+                    </li>
+                  ))}
+                  {importResult.errors.length > 20 ? (
+                    <li>… et {importResult.errors.length - 20} autre(s) erreur(s)</li>
+                  ) : null}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex justify-end gap-2 pt-2 border-t border-stone-200">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportFile(null);
+                setImportResult(null);
+              }}
+            >
+              Fermer
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!importFile || importSchedulesMutation.isPending}
+              onClick={() => importSchedulesMutation.mutate()}
+            >
+              {importSchedulesMutation.isPending ? 'Import…' : 'Lancer l’import'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <ScheduleDetailsModal
         isOpen={isDetailsModalOpen}
         onClose={() => {

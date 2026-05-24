@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../../services/api';
 import Card from '../../ui/Card';
@@ -20,6 +21,7 @@ import {
   FiEye,
   FiCheckSquare,
   FiDownload,
+  FiBriefcase,
 } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
@@ -37,14 +39,48 @@ import {
 import { useAppBranding } from '@/contexts/AppBrandingContext';
 import { downloadJobDescriptionPdf, type JobDescriptionPdfPayload } from '@/lib/jobDescriptionPdf';
 import AdminUserPasswordSection from '../AdminUserPasswordSection';
+import SchoolStaffMetiersPanel from './SchoolStaffMetiersPanel';
+import { useSchool } from '@/contexts/SchoolContext';
+import { schoolQueryKey } from '@/hooks/useSchoolReady';
+import AddEducatorModal from '../AddEducatorModal';
+import EditEducatorModal from '../EditEducatorModal';
+import EducatorDetailsModal from '../EducatorDetailsModal';
 
-type StaffTab = 'members' | 'modules' | 'org' | 'jobs';
+type StaffTab = 'members' | 'metiers' | 'modules' | 'org' | 'jobs';
+export type PersonnelCategoryFilter = 'all' | 'STAFF' | 'EDUCATOR';
+
+export const PERSONNEL_REGISTRY_QUERY_KEY = 'admin-personnel-registry';
+
+type PersonnelRegistryRow = {
+  id: string;
+  kind: 'STAFF' | 'EDUCATOR';
+  employeeId: string;
+  user: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    isActive?: boolean;
+  };
+  displayCategory: string;
+  displaySubCategory?: string | null;
+  displayRole?: string | null;
+  manager?: { id: string; name: string } | null;
+  staffCategory?: string;
+  supportKind?: string | null;
+};
 
 const CAT_LABEL: Record<string, string> = {
   ADMINISTRATION: 'Administration',
   SUPPORT: 'Soutien',
   SECURITY: 'Sécurité / gardiennage',
 };
+
+type JobSuggestedCategory = 'ADMINISTRATION' | 'SUPPORT' | 'SECURITY';
+
+function resolveJobSuggestedCategory(cat: string): JobSuggestedCategory | null {
+  if (cat === 'ADMINISTRATION' || cat === 'SUPPORT' || cat === 'SECURITY') return cat;
+  return null;
+}
 
 const KIND_LABEL: Record<string, string> = {
   LIBRARIAN: 'Bibliothécaire',
@@ -128,21 +164,44 @@ function OrgBranch({ node }: { node: any }) {
   );
 }
 
-const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedagogyReadOnly = false }) => {
+const StaffPersonnelModule: React.FC<{
+  pedagogyReadOnly?: boolean;
+  initialCategoryFilter?: PersonnelCategoryFilter;
+}> = ({ pedagogyReadOnly = false, initialCategoryFilter = 'all' }) => {
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
   const { branding } = useAppBranding();
   const schoolName = branding.schoolDisplayName?.trim() || branding.appTitle?.trim() || null;
   const [tab, setTab] = useState<StaffTab>('members');
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<PersonnelCategoryFilter>(initialCategoryFilter);
   const [jobModal, setJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<any | null>(null);
   const [staffModal, setStaffModal] = useState(false);
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [addEducatorOpen, setAddEducatorOpen] = useState(false);
+  const [educatorDetailId, setEducatorDetailId] = useState<string | null>(null);
+  const [educatorEditId, setEducatorEditId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCategoryFilter(initialCategoryFilter);
+  }, [initialCategoryFilter]);
+
+  useEffect(() => {
+    if (pedagogyReadOnly || searchParams?.get('action') !== 'add-educator') return;
+    setAddEducatorOpen(true);
+  }, [searchParams, pedagogyReadOnly]);
 
   const { data: staffList, isLoading: loadStaff } = useQuery({
     queryKey: ['admin-staff-members'],
     queryFn: adminApi.getStaffMembers,
+  });
+
+  const { data: personnelRegistry, isLoading: loadRegistry } = useQuery({
+    queryKey: [PERSONNEL_REGISTRY_QUERY_KEY],
+    queryFn: adminApi.getPersonnelRegistry,
+    enabled: tab === 'members',
   });
 
   const { data: orgData, isLoading: loadOrg } = useQuery({
@@ -182,6 +241,7 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
     mutationFn: adminApi.deleteStaffMember,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-staff-members'] });
+      qc.invalidateQueries({ queryKey: [PERSONNEL_REGISTRY_QUERY_KEY] });
       qc.invalidateQueries({ queryKey: ['admin-staff-org-chart'] });
       toast.success('Personnel supprimé');
       setDetailId(null);
@@ -189,22 +249,53 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
   });
 
+  const deleteEducatorMut = useMutation({
+    mutationFn: adminApi.deleteEducator,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-educators'] });
+      qc.invalidateQueries({ queryKey: [PERSONNEL_REGISTRY_QUERY_KEY] });
+      qc.invalidateQueries({ queryKey: ['admin-dashboard'] });
+      toast.success('Éducateur supprimé');
+      setEducatorDetailId(null);
+      setEducatorEditId(null);
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
+  });
+
   const filtered = useMemo(() => {
-    const list = (staffList as any[]) ?? [];
+    let list = (personnelRegistry as PersonnelRegistryRow[] | undefined) ?? [];
+    if (categoryFilter !== 'all') {
+      list = list.filter((row) => row.kind === categoryFilter);
+    }
     const t = search.trim().toLowerCase();
     if (!t) return list;
     return list.filter(
-      (s) =>
-        `${s.user?.firstName} ${s.user?.lastName}`.toLowerCase().includes(t) ||
-        (s.user?.email || '').toLowerCase().includes(t) ||
-        (s.employeeId || '').toLowerCase().includes(t) ||
-        (s.jobTitle || '').toLowerCase().includes(t)
+      (row) =>
+        `${row.user?.firstName} ${row.user?.lastName}`.toLowerCase().includes(t) ||
+        (row.user?.email || '').toLowerCase().includes(t) ||
+        (row.employeeId || '').toLowerCase().includes(t) ||
+        (row.displayRole || '').toLowerCase().includes(t) ||
+        (row.displayCategory || '').toLowerCase().includes(t)
     );
-  }, [staffList, search]);
+  }, [personnelRegistry, search, categoryFilter]);
+
+  const membersTitle =
+    initialCategoryFilter === 'EDUCATOR'
+      ? 'Éducateurs'
+      : 'Personnel (administration, soutien et éducateurs)';
+  const membersIntro =
+    initialCategoryFilter === 'EDUCATOR'
+      ? pedagogyReadOnly
+        ? 'Consultation de la liste des éducateurs.'
+        : 'Gestion des éducateurs : fiches, spécialisation et comptes.'
+      : pedagogyReadOnly
+        ? 'Consultation de l’annuaire du personnel (sans données salariales ni modification).'
+        : 'Administration, personnel de soutien, éducateurs, organigramme, fiches de poste et pointages.';
 
   const subTabs = (
     [
       { id: 'members' as const, label: 'Personnel', icon: FiUsers },
+      { id: 'metiers' as const, label: 'Métiers (établissement)', icon: FiBriefcase },
       { id: 'modules' as const, label: 'Espace personnel', icon: FiCheckSquare },
       { id: 'org' as const, label: 'Organigramme', icon: FiGitBranch },
       { id: 'jobs' as const, label: 'Fiches de poste', icon: FiFileText },
@@ -214,12 +305,8 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
   return (
     <div className={ADM.root}>
       <div>
-        <h2 className={ADM.h2}>Personnel administratif &amp; soutien</h2>
-        <p className={ADM.intro}>
-          {pedagogyReadOnly
-            ? 'Consultation de l’annuaire du personnel (sans données salariales ni modification).'
-            : 'Administration, personnel de soutien (bibliothèque, infirmerie, etc.), sécurité, organigramme, fiches de poste et pointages. L’onglet Espace personnel récapitule les modules visibles sur le tableau de bord STAFF de chaque agent de soutien.'}
-        </p>
+        <h2 className={ADM.h2}>{membersTitle}</h2>
+        <p className={ADM.intro}>{membersIntro}</p>
       </div>
 
       <div className={ADM.tabRow}>
@@ -240,6 +327,8 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
         })}
       </div>
 
+      {tab === 'metiers' && !pedagogyReadOnly && <SchoolStaffMetiersPanel />}
+
       {tab === 'modules' && (
         <StaffModulesRecapPanel
           staffList={staffList as any[]}
@@ -254,22 +343,51 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
       {tab === 'members' && (
         <Card className="p-3 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
-            <SearchBar value={search} onChange={setSearch} placeholder="Rechercher…" className="max-w-md" />
+            <div className="flex flex-col sm:flex-row gap-2 flex-1">
+              <SearchBar value={search} onChange={setSearch} placeholder="Rechercher…" className="max-w-md" />
+              {initialCategoryFilter === 'all' && (
+                <select
+                  aria-label="Filtrer par type de personnel"
+                  className="border border-stone-200 rounded-lg px-2 py-1.5 text-sm bg-white max-w-[200px]"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value as PersonnelCategoryFilter)}
+                >
+                  <option value="all">Tous</option>
+                  <option value="STAFF">Personnel admin. &amp; soutien</option>
+                  <option value="EDUCATOR">Éducateurs</option>
+                </select>
+              )}
+            </div>
             {!pedagogyReadOnly ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setEditingStaffId(null);
-                setStaffModal(true);
-              }}
-            >
-              <FiPlus className="w-4 h-4 mr-1 inline" />
-              Ajouter
-            </Button>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                {(initialCategoryFilter === 'all' || initialCategoryFilter === 'STAFF') && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setEditingStaffId(null);
+                      setStaffModal(true);
+                    }}
+                  >
+                    <FiPlus className="w-4 h-4 mr-1 inline" />
+                    Personnel admin.
+                  </Button>
+                )}
+                {(initialCategoryFilter === 'all' || initialCategoryFilter === 'EDUCATOR') && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setAddEducatorOpen(true)}
+                  >
+                    <FiPlus className="w-4 h-4 mr-1 inline" />
+                    Éducateur
+                  </Button>
+                )}
+              </div>
             ) : null}
           </div>
-          {loadStaff ? (
+          {loadRegistry ? (
             <p className="text-sm text-stone-500">Chargement…</p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-stone-200">
@@ -285,52 +403,89 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((s: any) => (
-                    <tr key={s.id} className="border-t border-stone-100 hover:bg-stone-50/80">
+                  {filtered.map((row) => (
+                    <tr
+                      key={`${row.kind}-${row.id}`}
+                      className="border-t border-stone-100 hover:bg-stone-50/80"
+                    >
                       <td className="px-2 py-2">
                         <p className="font-medium text-stone-900">
-                          {s.user?.firstName} {s.user?.lastName}
+                          {row.user?.firstName} {row.user?.lastName}
+                          {row.user?.isActive === false && (
+                            <Badge className="ml-2 text-[10px] bg-stone-200 text-stone-700">Inactif</Badge>
+                          )}
                         </p>
-                        <p className="text-[11px] text-stone-500">{s.user?.email}</p>
+                        <p className="text-[11px] text-stone-500">{row.user?.email}</p>
                       </td>
-                      <td className="px-2 py-2 font-mono text-xs">{s.employeeId}</td>
+                      <td className="px-2 py-2 font-mono text-xs">{row.employeeId}</td>
                       <td className="px-2 py-2">
-                        <Badge className="text-[10px] bg-teal-100 text-teal-900">
-                          {CAT_LABEL[s.staffCategory] ?? s.staffCategory}
+                        <Badge
+                          className={
+                            row.kind === 'EDUCATOR'
+                              ? 'text-[10px] bg-purple-100 text-purple-900'
+                              : 'text-[10px] bg-teal-100 text-teal-900'
+                          }
+                        >
+                          {row.displayCategory}
                         </Badge>
-                        {s.supportKind && (
+                        {row.displaySubCategory && (
                           <span className="block text-[10px] text-stone-600 mt-0.5">
-                            {KIND_LABEL[s.supportKind] ?? s.supportKind}
+                            {row.displaySubCategory}
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-2 text-xs">{s.jobTitle || '—'}</td>
-                      <td className="px-2 py-2 text-xs">
-                        {s.manager
-                          ? `${s.manager.user?.firstName ?? ''} ${s.manager.user?.lastName ?? ''}`.trim()
-                          : '—'}
-                      </td>
+                      <td className="px-2 py-2 text-xs">{row.displayRole || '—'}</td>
+                      <td className="px-2 py-2 text-xs">{row.manager?.name ?? '—'}</td>
                       <td className="px-2 py-2 text-right whitespace-nowrap">
                         <button
                           type="button"
                           className="p-1.5 text-stone-600 hover:text-teal-700"
                           title="Détails"
-                          onClick={() => setDetailId(s.id)}
+                          onClick={() => {
+                            if (row.kind === 'EDUCATOR') setEducatorDetailId(row.id);
+                            else setDetailId(row.id);
+                          }}
                         >
                           <FiEye className="w-4 h-4" />
                         </button>
                         {!pedagogyReadOnly ? (
-                        <button
-                          type="button"
-                          className="p-1.5 text-stone-600 hover:text-amber-700"
-                          title="Modifier"
-                          onClick={() => {
-                            setEditingStaffId(s.id);
-                            setStaffModal(true);
-                          }}
-                        >
-                          <FiEdit2 className="w-4 h-4" />
-                        </button>
+                          <>
+                            <button
+                              type="button"
+                              className="p-1.5 text-stone-600 hover:text-amber-700"
+                              title="Modifier"
+                              onClick={() => {
+                                if (row.kind === 'EDUCATOR') setEducatorEditId(row.id);
+                                else {
+                                  setEditingStaffId(row.id);
+                                  setStaffModal(true);
+                                }
+                              }}
+                            >
+                              <FiEdit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="p-1.5 text-stone-600 hover:text-red-700"
+                              title="Supprimer"
+                              onClick={() => {
+                                const label = `${row.user?.firstName} ${row.user?.lastName}`.trim();
+                                if (
+                                  !window.confirm(
+                                    row.kind === 'EDUCATOR'
+                                      ? `Supprimer l'éducateur ${label} ?`
+                                      : `Supprimer ${label} du personnel ?`
+                                  )
+                                ) {
+                                  return;
+                                }
+                                if (row.kind === 'EDUCATOR') deleteEducatorMut.mutate(row.id);
+                                else deleteStaffMut.mutate(row.id);
+                              }}
+                            >
+                              <FiTrash2 className="w-4 h-4" />
+                            </button>
+                          </>
                         ) : null}
                       </td>
                     </tr>
@@ -462,11 +617,33 @@ const StaffPersonnelModule: React.FC<{ pedagogyReadOnly?: boolean }> = ({ pedago
         staffOptions={(staffList as any[]) ?? []}
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ['admin-staff-members'] });
+          qc.invalidateQueries({ queryKey: [PERSONNEL_REGISTRY_QUERY_KEY] });
           qc.invalidateQueries({ queryKey: ['admin-staff-org-chart'] });
           qc.invalidateQueries({ queryKey: ['admin-staff-job-descriptions'] });
           setStaffModal(false);
           setEditingStaffId(null);
         }}
+      />
+
+      <AddEducatorModal
+        isOpen={addEducatorOpen}
+        onClose={() => setAddEducatorOpen(false)}
+      />
+
+      <EducatorDetailsModal
+        isOpen={!!educatorDetailId}
+        educatorId={educatorDetailId ?? ''}
+        onClose={() => setEducatorDetailId(null)}
+        onEdit={() => {
+          if (educatorDetailId) setEducatorEditId(educatorDetailId);
+          setEducatorDetailId(null);
+        }}
+      />
+
+      <EditEducatorModal
+        isOpen={!!educatorEditId}
+        educatorId={educatorEditId ?? ''}
+        onClose={() => setEducatorEditId(null)}
       />
 
       <Modal
@@ -734,13 +911,13 @@ function StaffJobModal({
         summary: summary.trim() || null,
         responsibilities: responsibilities.trim(),
         requirements: requirements.trim() || null,
-        suggestedCategory: cat && cat !== 'OTHER' ? cat : null,
+        suggestedCategory: resolveJobSuggestedCategory(cat),
         suggestedCategoryOther: cat === 'OTHER' ? catOther.trim() || null : null,
       };
       if (initial?.id) {
         return adminApi.updateStaffJobDescription(initial.id, payload);
       }
-      return adminApi.createStaffJobDescription(payload as any);
+      return adminApi.createStaffJobDescription(payload);
     },
     onSuccess: () => {
       toast.success('Fiche enregistrée');
@@ -817,7 +994,7 @@ function StaffJobModal({
                     summary: summary.trim() || initial.summary,
                     responsibilities: responsibilities.trim() || initial.responsibilities,
                     requirements: requirements.trim() || initial.requirements,
-                    suggestedCategory: cat && cat !== 'OTHER' ? cat : null,
+                    suggestedCategory: resolveJobSuggestedCategory(cat),
                     suggestedCategoryOther: cat === 'OTHER' ? catOther.trim() || null : null,
                     isActive: initial.isActive,
                   },
@@ -860,6 +1037,7 @@ function StaffFormModal({
   onSaved: () => void;
 }) {
   const qc = useQueryClient();
+  const { activeSchoolId } = useSchool();
   const { data: existing } = useQuery({
     queryKey: ['admin-staff-member-edit', staffId],
     queryFn: () => adminApi.getStaffMember(staffId!),
@@ -870,6 +1048,15 @@ function StaffFormModal({
     queryFn: adminApi.getStaffJobDescriptions,
     enabled: isOpen,
   });
+  const { data: schoolMetiersData } = useQuery({
+    queryKey: schoolQueryKey(['school-staff-metiers'], activeSchoolId),
+    queryFn: () => adminApi.getSchoolStaffMetiers(),
+    enabled: isOpen && !!activeSchoolId,
+  });
+  const schoolMetiers = useMemo(
+    () => (schoolMetiersData?.metiers ?? []).filter((m: { isActive: boolean }) => m.isActive),
+    [schoolMetiersData],
+  );
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -919,10 +1106,11 @@ function StaffFormModal({
       setIsActive(s.user?.isActive !== false);
       const kind = resolveStaffSupportKind(s.supportKind);
       const stored = s.visibleStaffModules;
+      const metier = schoolMetiers.find((m: { supportKind: string }) => m.supportKind === kind);
       setVisibleStaffModules(
         Array.isArray(stored) && stored.length > 0
           ? resolveVisibleStaffModules(kind, stored, s.staffCategory)
-          : getEligibleModulesForSupportKind(kind),
+          : (metier?.defaultModules as StaffModuleId[]) ?? getEligibleModulesForSupportKind(kind),
       );
     }
     if (!staffId && isOpen) {
@@ -945,9 +1133,25 @@ function StaffFormModal({
       setJobDesc('');
       setManager('');
       setIsActive(true);
-      setVisibleStaffModules(getAllStaffVisibleModules());
+      const firstKind = schoolMetiers[0]?.supportKind ?? 'SECRETARY';
+      setSupportKind(firstKind);
+      setVisibleStaffModules(
+        (schoolMetiers[0]?.defaultModules as StaffModuleId[]) ??
+          getEligibleModulesForSupportKind(resolveStaffSupportKind(firstKind)),
+      );
     }
-  }, [isOpen, staffId, existing]);
+  }, [isOpen, staffId, existing, schoolMetiers]);
+
+  const metierForKind = useMemo(
+    () => schoolMetiers.find((m: { supportKind: string }) => m.supportKind === supportKind),
+    [schoolMetiers, supportKind],
+  );
+  const recommendedModules = useMemo(
+    () =>
+      (metierForKind?.defaultModules as StaffModuleId[] | undefined) ??
+      getEligibleModulesForSupportKind(resolveStaffSupportKind(supportKind)),
+    [metierForKind, supportKind],
+  );
 
   const saveMut = useMutation({
     mutationFn: async () => {
@@ -1082,20 +1286,34 @@ function StaffFormModal({
               className="w-full border rounded-lg px-2 py-1.5 mt-0.5"
               value={supportKind}
               onChange={(e) => {
-                setSupportKind(e.target.value);
+                const k = e.target.value;
+                setSupportKind(k);
+                const metier = schoolMetiers.find((m: { supportKind: string }) => m.supportKind === k);
+                if (metier?.defaultModules?.length) {
+                  setVisibleStaffModules(metier.defaultModules as StaffModuleId[]);
+                }
               }}
             >
-              {Object.entries(KIND_LABEL).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
+              {(schoolMetiers.length > 0
+                ? schoolMetiers
+                : Object.entries(KIND_LABEL).map(([supportKind, label]) => ({ supportKind, label }))
+              ).map((m: { supportKind: string; label: string }) => (
+                <option key={m.supportKind} value={m.supportKind}>
+                  {m.label}
                 </option>
               ))}
             </select>
+            {schoolMetiers.length === 0 ? (
+              <p className="text-[10px] text-amber-800 mt-1">
+                Configurez les métiers dans l’onglet « Métiers (établissement) ».
+              </p>
+            ) : null}
           </div>
         )}
         {staffCategory === 'SUPPORT' && (
           <StaffModuleAccessField
             supportKind={resolveStaffSupportKind(supportKind)}
+            recommendedModules={recommendedModules}
             value={visibleStaffModules}
             onChange={setVisibleStaffModules}
           />

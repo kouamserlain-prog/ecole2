@@ -14,6 +14,10 @@ export const adminApi = {
     const response = await api.get(`/admin/students/${id}`);
     return response.data;
   },
+  getStudentEnrollmentDossier: async (id: string) => {
+    const response = await api.get(`/admin/students/${id}/enrollment-dossier`);
+    return response.data;
+  },
   getStudentByNFC: async (nfcId: string) => {
     const response = await api.get(`/admin/students/nfc/${nfcId}`);
     return response.data;
@@ -1017,6 +1021,19 @@ export const adminApi = {
     const response = await api.post('/admin/schedules/auto-generate', data);
     return response.data;
   },
+  importSchedules: async (data: {
+    csv: string;
+    classId?: string;
+    clearExisting?: boolean;
+    skipConstraintErrors?: boolean;
+  }) => {
+    const response = await api.post('/admin/schedules/import', data);
+    return response.data as {
+      created: number;
+      skipped: number;
+      errors: Array<{ line: number; message: string }>;
+    };
+  },
   updateSchedule: async (id: string, data: any) => {
     const response = await api.put(`/admin/schedules/${id}`, data);
     return response.data;
@@ -1305,6 +1322,7 @@ export const adminApi = {
     hireDate: string;
     contractType?: string;
     salary?: number;
+    classIds?: string[];
   }) => {
     const response = await api.post('/admin/educators', data);
     return response.data;
@@ -1316,6 +1334,8 @@ export const adminApi = {
     specialization?: string;
     contractType?: string;
     salary?: number;
+    isActive?: boolean;
+    classIds?: string[];
   }) => {
     const response = await api.put(`/admin/educators/${id}`, data);
     return response.data;
@@ -1364,6 +1384,10 @@ export const adminApi = {
   },
   getStaffOrgChart: async () => {
     const response = await api.get('/admin/staff/org-chart');
+    return response.data;
+  },
+  getPersonnelRegistry: async () => {
+    const response = await api.get('/admin/staff/personnel-registry');
     return response.data;
   },
   getStaffMembers: async () => {
@@ -1787,6 +1811,40 @@ export const adminApi = {
   },
   updateSchool: async (id: string, data: Record<string, unknown>) => {
     const response = await api.put(`/admin/schools/${id}`, data);
+    return response.data;
+  },
+
+  getSchoolStaffMetiers: async () => {
+    const response = await api.get('/admin/school-staff-metiers');
+    return response.data as {
+      metiers: Array<{
+        id: string;
+        schoolId: string;
+        supportKind: string;
+        label: string;
+        description: string | null;
+        defaultModules: string[];
+        isActive: boolean;
+        sortOrder: number;
+      }>;
+      moduleLabels: Record<string, string>;
+    };
+  },
+  updateSchoolStaffMetier: async (
+    supportKind: string,
+    data: {
+      label?: string | null;
+      description?: string | null;
+      defaultModules?: string[];
+      isActive?: boolean;
+      sortOrder?: number;
+    },
+  ) => {
+    const response = await api.put(`/admin/school-staff-metiers/${supportKind}`, data);
+    return response.data;
+  },
+  seedSchoolStaffMetiersDefaults: async () => {
+    const response = await api.post('/admin/school-staff-metiers/seed-defaults');
     return response.data;
   },
 };

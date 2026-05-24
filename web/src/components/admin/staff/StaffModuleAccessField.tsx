@@ -14,11 +14,19 @@ type Props = {
   supportKind: SupportStaffKindKey;
   value: StaffModuleId[];
   onChange: (modules: StaffModuleId[]) => void;
+  /** Modules recommandés pour cet établissement (sinon défaut plateforme). */
+  recommendedModules?: StaffModuleId[];
 };
 
-export default function StaffModuleAccessField({ supportKind, value, onChange }: Props) {
+export default function StaffModuleAccessField({
+  supportKind,
+  value,
+  onChange,
+  recommendedModules,
+}: Props) {
   const allModules = getAllConfigurableStaffModules();
-  const recommended = new Set(getEligibleModulesForSupportKind(supportKind));
+  const recommendedList = recommendedModules ?? getEligibleModulesForSupportKind(supportKind);
+  const recommended = new Set(recommendedList);
 
   const toggle = (id: StaffModuleId) => {
     const set = new Set(value);
@@ -34,16 +42,16 @@ export default function StaffModuleAccessField({ supportKind, value, onChange }:
         <div>
           <p className="text-xs font-semibold text-stone-800">Modules visibles dans l&apos;espace personnel</p>
           <p className="text-[11px] text-stone-500 mt-0.5">
-            Modules du menu <strong>/staff</strong> (pas « Espaces &amp; modules » admin). Cochez les
-            modules voulus pour ce métier, <strong>Enregistrer</strong>, puis l&apos;agent actualise{' '}
-            <strong>/staff</strong> (F5). Le bouton <strong>Recommandés</strong> applique la liste type du
-            métier sélectionné.
+            Chaque module coché apparaît dans <strong>/staff</strong> avec ses fonctionnalités (création,
+            modification, etc.). Les modules <strong>recommandés</strong> du métier restent toujours disponibles ;
+            vous pouvez en ajouter d&apos;autres. <strong>Enregistrer</strong>, puis l&apos;agent actualise{' '}
+            <strong>/staff</strong> (F5).
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={() => onChange(getEligibleModulesForSupportKind(supportKind))}
+            onClick={() => onChange(recommendedList)}
             className="text-[10px] font-semibold px-2 py-1 rounded-md border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100"
           >
             Recommandés

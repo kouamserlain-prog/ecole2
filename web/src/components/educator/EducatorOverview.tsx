@@ -22,6 +22,7 @@ import {
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import GdprUserRightsPanel from '../gdpr/GdprUserRightsPanel';
+import { PremiumOverviewHero, PremiumStatGrid } from '../dashboard/premium';
 
 interface EducatorOverviewProps {
   searchQuery?: string;
@@ -140,77 +141,45 @@ const EducatorOverview = ({ searchQuery = '' }: EducatorOverviewProps) => {
     );
   }
 
+  const assignedClasses = (profile as { assignedClasses?: unknown[] } | undefined)?.assignedClasses;
+  const hasNoClassAssignment = !profileLoading && Array.isArray(assignedClasses) && assignedClasses.length === 0;
+
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-violet-500 via-indigo-500 to-purple-600 p-[1px] shadow-lg shadow-violet-500/15">
-        <div className="rounded-[15px] bg-white/97 backdrop-blur-xl px-5 py-4 sm:px-6 sm:py-5">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.14em]">
-            Vie scolaire & conduite
+      {hasNoClassAssignment ? (
+        <Card className="border-amber-200 bg-amber-50/90 p-4">
+          <p className="text-sm text-amber-950 font-medium">Aucune classe ne vous est assignée</p>
+          <p className="text-sm text-amber-900/90 mt-1">
+            Contactez l&apos;administration pour qu&apos;une classe vous soit attribuée. En attendant, les listes
+            d&apos;élèves et emplois du temps restent vides.
           </p>
-          <p className="font-display text-lg sm:text-xl font-bold text-slate-900 mt-1">
-            {format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}
-          </p>
-          <p className="text-sm text-slate-600 mt-2 max-w-3xl leading-relaxed">
-            Tableau de bord disciplinaire : répartition des évaluations, élèves à accompagner et activité récente. Les
-            chiffres sont calculés sur l’ensemble des fiches de conduite enregistrées.
-          </p>
-        </div>
-      </div>
-
-      {/* Stats Cards - Principales */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-purple-500 to-indigo-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-purple-100 text-sm font-medium mb-1">Total Élèves</p>
-              <p className="text-3xl font-bold">{detailedStats?.totalStudents || stats?.totalStudents || 0}</p>
-              <p className="text-purple-200 text-xs mt-1">
-                {detailedStats?.evaluatedStudents || 0} évalués
-              </p>
-            </div>
-            <FiUsers className="w-12 h-12 text-purple-200" />
-          </div>
         </Card>
+      ) : null}
+      <PremiumOverviewHero
+        eyebrow="Vie scolaire & conduite"
+        title={format(new Date(), 'EEEE d MMMM yyyy', { locale: fr })}
+        gradient="from-violet-600 via-indigo-600 to-purple-700"
+        description="Tableau de bord disciplinaire : répartition des évaluations et élèves à accompagner."
+      />
 
-        <Card className="bg-gradient-to-br from-indigo-500 to-blue-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-indigo-100 text-sm font-medium mb-1">Évaluations</p>
-              <p className="text-3xl font-bold">{detailedStats?.totalConducts || stats?.totalConducts || 0}</p>
-              <p className="text-indigo-200 text-xs mt-1">
-                Moyenne: {detailedStats?.averageConduct ? detailedStats.averageConduct.toFixed(1) : '0'}/20
-              </p>
-            </div>
-            <FiShield className="w-12 h-12 text-indigo-200" />
-          </div>
-        </Card>
+            <PremiumStatGrid
+        columns={4}
+        items={[
+          { label: 'Total élèves', value: detailedStats?.totalStudents || stats?.totalStudents || 0, subtitle: `${detailedStats?.evaluatedStudents || 0} évalués`, icon: FiUsers, accent: 'violet' },
+          { label: 'Évaluations', value: detailedStats?.totalConducts || stats?.totalConducts || 0, subtitle: `Moy. ${detailedStats?.averageConduct ? detailedStats.averageConduct.toFixed(1) : '0'}/20`, icon: FiShield, accent: 'indigo' },
+          { label: 'Excellentes', value: detailedStats?.excellentConducts || 0, subtitle: '≥ 15/20', icon: FiCheckCircle, accent: 'emerald' },
+          { label: 'À surveiller', value: detailedStats?.studentsWithIssues || 0, subtitle: 'Moyenne < 10/20', icon: FiAlertCircle, accent: 'rose' },
+        ]}
+      />
 
-        <Card className="bg-gradient-to-br from-green-500 to-emerald-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-green-100 text-sm font-medium mb-1">Excellentes</p>
-              <p className="text-3xl font-bold">{detailedStats?.excellentConducts || 0}</p>
-              <p className="text-green-200 text-xs mt-1">
-                ≥ 15/20
-              </p>
-            </div>
-            <FiCheckCircle className="w-12 h-12 text-green-200" />
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-red-500 to-pink-600 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-red-100 text-sm font-medium mb-1">À surveiller</p>
-              <p className="text-3xl font-bold">{detailedStats?.studentsWithIssues || 0}</p>
-              <p className="text-red-200 text-xs mt-1">
-                Moyenne &lt; 10/20
-              </p>
-            </div>
-            <FiAlertCircle className="w-12 h-12 text-red-200" />
-          </div>
-        </Card>
-      </div>
+      <PremiumStatGrid
+        columns={3}
+        items={[
+          { label: 'Ce mois', value: detailedStats?.thisMonthConducts || stats?.recentConducts || 0, subtitle: 'Évaluations créées', icon: FiTrendingUp, accent: 'blue' },
+          { label: 'Bonnes', value: detailedStats?.goodConducts || 0, subtitle: '10-15/20', icon: FiBarChart, accent: 'amber' },
+          { label: 'Faibles', value: detailedStats?.poorConducts || 0, subtitle: '< 10/20', icon: FiXCircle, accent: 'rose' },
+        ]}
+      />
 
       {/* Stats Cards - Secondaires */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

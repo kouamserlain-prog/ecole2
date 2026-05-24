@@ -374,6 +374,32 @@ async function main() {
     await expectOk('Économe GET /admin/students (module économat)', '/admin/students', bursarToken, schoolId || undefined);
   }
 
+  const secretaryToken = await login('secretary@school.com');
+  if (secretaryToken) {
+    await expectOk(
+      'Secrétaire GET /admin/students (students_mgmt)',
+      '/admin/students',
+      secretaryToken,
+      schoolId || undefined,
+    );
+    await expectOk(
+      'Secrétaire GET /admin/classes (classes_mgmt)',
+      '/admin/classes',
+      secretaryToken,
+      schoolId || undefined,
+    );
+    const deleteStudents = await req('/admin/students', {
+      token: secretaryToken,
+      schoolId: schoolId || undefined,
+      method: 'DELETE',
+    });
+    assert(
+      'Secrétaire DELETE /admin/students autorisé avec students_mgmt',
+      deleteStudents.status !== 403 && deleteStudents.status !== 401,
+      String(deleteStudents.status),
+    );
+  }
+
   console.log('\n=== Bilan ===');
   console.log(`  Réussis : ${passed}`);
   console.log(`  Échoués : ${failed}`);

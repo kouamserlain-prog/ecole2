@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Layout from '../../components/Layout';
+import { PremiumPortalShell, PremiumModuleHeader } from '../../components/dashboard/premium';
+import PortalRoleModulesHub from '../../components/dashboard/PortalRoleModulesHub';
+import { PARENT_MODULE_CATEGORIES } from '@/lib/portalModuleCategories';
 import ParentSidebar, { type ParentNavItem } from '../../components/parent/ParentSidebar';
 import ParentOverview from '../../components/parent/ParentOverview';
 import ChildrenList from '../../components/parent/ChildrenList';
@@ -131,6 +134,18 @@ const ParentDashboard = () => {
     []
   );
 
+  const hubTabs = useMemo(
+    () =>
+      navItems.map((n) => ({
+        id: n.id,
+        label: n.label,
+        icon: n.icon,
+        color: n.color,
+        description: tabDescriptions[n.id] ?? n.label,
+      })),
+    [navItems, tabDescriptions]
+  );
+
   useEffect(() => {
     const t = searchParams?.get('tab');
     if (t && VALID_PARENT_TABS.includes(t as ParentTabId)) {
@@ -158,7 +173,8 @@ const ParentDashboard = () => {
 
   return (
     <Layout user={user} onLogout={logout} role="PARENT">
-      <div className="min-h-screen premium-body">
+      <PremiumPortalShell variant="parent">
+      <div className="min-h-screen">
         <ParentSidebar
           items={navItems}
           activeTab={activeTab}
@@ -219,30 +235,25 @@ const ParentDashboard = () => {
 
           <main className="px-3 sm:px-6 py-4 sm:py-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] overflow-x-hidden scroll-smooth">
             <div className="max-w-[1200px] mx-auto space-y-4 sm:space-y-5">
-              <div
-                className={`rounded-2xl bg-gradient-to-r ${activeMeta.color} p-[1px] shadow-[0_20px_40px_-18px_rgba(12,10,9,0.18)] ring-1 ring-amber-900/10`}
-              >
-                <div className="rounded-[15px] bg-white/95 backdrop-blur-xl px-3 py-3 sm:px-5 sm:py-4 border border-white/60">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${activeMeta.color} text-white flex items-center justify-center shadow-md ring-1 ring-white/25 shrink-0`}
-                    >
-                      <ActiveTabIcon className="w-5 h-5" aria-hidden />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight">{activeMeta.label}</h2>
-                      <p className="text-xs sm:text-sm text-stone-600 mt-1 line-clamp-2 leading-relaxed">{activeDescription}</p>
-                    </div>
-                    <span className="hidden sm:inline-flex items-center gap-1.5 ml-auto px-2.5 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-700 shrink-0 ring-1 ring-stone-200/80">
-                      <FiCommand className="w-3.5 h-3.5 text-amber-700/90" aria-hidden />
-                      Parent
-                    </span>
-                  </div>
-                </div>
-              </div>
+                            <PremiumModuleHeader
+                title={activeMeta.label}
+                description={activeDescription}
+                icon={ActiveTabIcon}
+                gradient={activeMeta.color}
+                badge="Parent"
+              />
 
               <div className="animate-slide-up">
-                {activeTab === 'overview' && <ParentOverview />}
+                {activeTab === 'overview' && (
+                  <>
+                    <ParentOverview />
+                    <PortalRoleModulesHub
+                      tabs={hubTabs}
+                      categories={PARENT_MODULE_CATEGORIES}
+                      onNavigate={changeTab}
+                    />
+                  </>
+                )}
                 {activeTab === 'notifications' && <ParentNotificationsPanel />}
                 {activeTab === 'communication' && (
                   <SchoolCommunication role="parent" contextStudentId={selectedChild} />
@@ -352,6 +363,7 @@ const ParentDashboard = () => {
           </main>
         </div>
       </div>
+      </PremiumPortalShell>
     </Layout>
   );
 };

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { hashPassword, validatePasswordStrength } from './password.util';
+import { hashPassword, hashSecret, validatePasswordStrength } from './password.util';
 import { createPasswordResetToken, sendWelcomeSetPasswordEmail } from './email.util';
 
 const SETUP_TOKEN_HOURS = 48;
@@ -17,7 +17,7 @@ export async function resolveAdminProvidedOrInvitePassword(
     return { hashedPassword: await hashPassword(raw), shouldSendSetupEmail: false };
   }
   const placeholder = crypto.randomBytes(48).toString('base64url');
-  return { hashedPassword: await hashPassword(placeholder), shouldSendSetupEmail: true };
+  return { hashedPassword: await hashSecret(placeholder), shouldSendSetupEmail: true };
 }
 
 export async function inviteNewUserToSetPassword(

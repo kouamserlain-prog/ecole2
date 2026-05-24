@@ -11,9 +11,20 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
 } from 'recharts';
-import { CHART_GRID, CHART_MARGIN_COMPACT, CHART_ANIMATION_MS } from '../charts';
+import {
+  CHART_GRID,
+  CHART_MARGIN_COMPACT,
+  CHART_ANIMATION_MS,
+  CHART_AXIS_TICK,
+  RechartsViewport,
+  PremiumChartCard,
+} from '../charts';
+import {
+  PremiumOverviewHero,
+  PremiumStatGrid,
+  PremiumGlassCard,
+} from '../dashboard/premium';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 
@@ -88,116 +99,49 @@ const TeacherOverview = () => {
   }
 
   const stats = [
-    {
-      title: 'Mes Cours',
-      value: courses?.length || 0,
-      icon: FiBook,
-      color: 'from-blue-500 to-blue-600',
-      subtitle: 'Cours actifs',
-    },
-    {
-      title: 'Élèves',
-      value: totalStudents,
-      icon: FiUsers,
-      color: 'from-green-500 to-green-600',
-      subtitle: 'Total élèves',
-    },
-    {
-      title: 'Notes',
-      value: totalGrades,
-      icon: FiClipboard,
-      color: 'from-purple-500 to-purple-600',
-      subtitle: 'Notes saisies',
-    },
-    {
-      title: 'Devoirs',
-      value: totalAssignments,
-      icon: FiFileText,
-      color: 'from-indigo-500 to-indigo-600',
-      subtitle: 'Devoirs créés',
-    },
+    { label: 'Mes cours', value: courses?.length || 0, subtitle: 'Cours actifs', icon: FiBook, accent: 'indigo' as const },
+    { label: 'Élèves', value: totalStudents, subtitle: 'Total élèves', icon: FiUsers, accent: 'emerald' as const },
+    { label: 'Notes', value: totalGrades, subtitle: 'Notes saisies', icon: FiClipboard, accent: 'violet' as const },
+    { label: 'Devoirs', value: totalAssignments, subtitle: 'Devoirs créés', icon: FiFileText, accent: 'amber' as const },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 p-[1px] shadow-lg shadow-emerald-500/15">
-        <div className="rounded-[15px] bg-white/97 backdrop-blur-xl px-5 py-4 sm:px-6 sm:py-5">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.14em]">
-            Pilotage pédagogique
-          </p>
-          <p className="font-display text-lg sm:text-xl font-bold text-slate-900 mt-1">
-            {format(new Date(), "EEEE d MMMM yyyy", { locale: fr })}
-          </p>
-          <p className="text-sm text-slate-600 mt-2 max-w-3xl leading-relaxed">
-            Agrégation de vos cours, effectifs suivis et charge documentaire (notes, devoirs). Idéal pour prioriser vos
-            séances et le suivi des élèves.
-          </p>
-        </div>
-      </div>
+      <PremiumOverviewHero
+        eyebrow="Pilotage pédagogique"
+        title={format(new Date(), 'EEEE d MMMM yyyy', { locale: fr })}
+        gradient="from-emerald-600 via-teal-600 to-cyan-700"
+        description="Agrégation de vos cours, effectifs suivis et charge documentaire."
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={index} variant="premium" hover className="overflow-hidden ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-600 mb-1">{stat.title}</p>
-                  <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-                  {stat.subtitle && (
-                    <p className="text-xs text-gray-500 mt-1">{stat.subtitle}</p>
-                  )}
-                </div>
-                <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white transform rotate-3 hover:rotate-6 transition-transform`}>
-                  <Icon className="w-8 h-8" />
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+      <PremiumStatGrid items={stats} columns={4} />
 
       {teachKpi?.charts?.gradesByMonth && teachKpi.charts.gradesByMonth.length > 0 && (
-        <Card variant="premium" className="ring-1 ring-slate-900/5 p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">KPI & tendance des notes (90 j.)</h3>
-              <p className="text-xs text-slate-600 mt-1">
-                Moyenne sur 20 par mois · {teachKpi.cards?.gradesRecorded90d ?? 0} note(s) · RDV parents en attente :{' '}
-                {teachKpi.cards?.pendingParentAppointments ?? 0}
-              </p>
-            </div>
-            {teachKpi.cards?.averageGradeOn20Last90d != null && (
+        <PremiumChartCard
+          title="KPI & tendance des notes (90 j.)"
+          subtitle={`Moyenne sur 20 · ${teachKpi.cards?.gradesRecorded90d ?? 0} note(s) · RDV parents : ${teachKpi.cards?.pendingParentAppointments ?? 0}`}
+          icon={FiTrendingUp}
+          accent="emerald"
+          height={224}
+          badge={
+            teachKpi.cards?.averageGradeOn20Last90d != null ? (
               <div className="text-right">
-                <p className="text-[10px] uppercase text-slate-500 font-semibold">Moyenne brute (période)</p>
-                <p className="text-2xl font-bold text-teal-800">{teachKpi.cards.averageGradeOn20Last90d} / 20</p>
+                <p className="text-[10px] font-bold uppercase text-stone-500">Moyenne période</p>
+                <p className="text-xl font-bold text-teal-800">{teachKpi.cards.averageGradeOn20Last90d} / 20</p>
               </div>
-            )}
-          </div>
-          <div className="h-56 w-full min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={teachKpi.charts.gradesByMonth}
-                margin={{ ...CHART_MARGIN_COMPACT, top: 8 }}
-              >
-                <CartesianGrid {...CHART_GRID} />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 20]} width={28} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => [`${v} / 20`, 'Moyenne']} />
-                <Line
-                  type="monotone"
-                  dataKey="average20"
-                  stroke="#0d9488"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  connectNulls
-                  isAnimationActive
-                  animationDuration={CHART_ANIMATION_MS}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+            ) : undefined
+          }
+        >
+          <RechartsViewport height={200} className="w-full">
+            <LineChart data={teachKpi.charts.gradesByMonth} margin={{ ...CHART_MARGIN_COMPACT, top: 8 }}>
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="label" tick={CHART_AXIS_TICK} />
+              <YAxis domain={[0, 20]} width={28} tick={CHART_AXIS_TICK} />
+              <Tooltip formatter={(v: number) => [`${v} / 20`, 'Moyenne']} />
+              <Line type="monotone" dataKey="average20" stroke="#0d9488" strokeWidth={2.5} dot={{ r: 4 }} connectNulls isAnimationActive animationDuration={CHART_ANIMATION_MS} />
+            </LineChart>
+          </RechartsViewport>
+        </PremiumChartCard>
       )}
 
       {/* Prochaines actions */}

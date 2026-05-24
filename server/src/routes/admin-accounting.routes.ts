@@ -1,6 +1,16 @@
 import express from 'express';
 import type { PaymentMethod, PettyCashMovementType, Prisma, SchoolExpenseCategory } from '@prisma/client';
 import prisma from '../utils/prisma';
+import type { SchoolContextRequest } from '../utils/school-context.util';
+import { studentScopeWhere } from '../utils/school-context.util';
+import {
+  assertBudgetLineInSchool,
+  assertPettyCashInSchool,
+  assertSchoolExpenseInSchool,
+  assertSupplierInSchool,
+  resolveAccountingScope,
+  resolvePaymentStudentScope,
+} from '../utils/admin-accounting-scope.util';
 
 const router = express.Router();
 
@@ -25,23 +35,26 @@ const PETTY_LEDGER_OUT = { code: '530', label: 'Caisse — sorties' };
 
 // --- Fournisseurs ---
 
-router.get('/suppliers', async (_req, res) => {
+router.get('/suppliers', async (req: SchoolContextRequest, res) => {
   try {
-    const rows = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+    const { where } = resolveAccountingScope(req);
+    const rows = await prisma.supplier.findMany({ where, orderBy: { name: 'asc' } });
     res.json(rows);
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : 'Erreur serveur' });
   }
 });
 
-router.post('/suppliers', async (req, res) => {
+router.post('/suppliers', async (req: SchoolContextRequest, res) => {
   try {
+    const { schoolId } = resolveAccountingScope(req);
     const { name, contactName, email, phone, taxId, address, notes, isActive } = req.body ?? {};
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name est requis' });
     }
     const row = await prisma.supplier.create({
       data: {
+        schoolId,
         name: name.trim(),
         contactName: contactName ? String(contactName) : null,
         email: email ? String(email) : null,
@@ -58,8 +71,11 @@ router.post('/suppliers', async (req, res) => {
   }
 });
 
-router.put('/suppliers/:id', async (req, res) => {
+router.put('/suppliers/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertSupplierInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Fournisseur introuvable' });
+    }
     const { name, contactName, email, phone, taxId, address, notes, isActive } = req.body ?? {};
     const row = await prisma.supplier.update({
       where: { id: req.params.id },
@@ -80,8 +96,11 @@ router.put('/suppliers/:id', async (req, res) => {
   }
 });
 
-router.delete('/suppliers/:id', async (req, res) => {
+router.delete('/suppliers/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertSupplierInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Fournisseur introuvable' });
+    }
     await prisma.supplier.delete({ where: { id: req.params.id } });
     res.json({ message: 'Supprimé' });
   } catch (e: unknown) {
@@ -91,10 +110,11 @@ router.delete('/suppliers/:id', async (req, res) => {
 
 // --- Dépenses ---
 
-router.get('/school-expenses', async (req, res) => {
+router.get('/school-expenses', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: schoolScope } = resolveAccountingScope(req);
     const { academicYear, from, to, category } = req.query;
-    const where: Prisma.SchoolExpenseWhereInput = {};
+    const where: Prisma.SchoolExpenseWhereInput = { ...schoolScope };
     if (academicYear && typeof academicYear === 'string') where.academicYear = academicYear;
     if (category && typeof category === 'string') where.category = category as SchoolExpenseCategory;
     if (from && typeof from === 'string') {
@@ -119,8 +139,9 @@ router.get('/school-expenses', async (req, res) => {
   }
 });
 
-router.post('/school-expenses', async (req, res) => {
+router.post('/school-expenses', async (req: SchoolContextRequest, res) => {
   try {
+    const { schoolId } = resolveAccountingScope(req);
     const adminId = req.user!.id;
     const {
       supplierId,
@@ -140,6 +161,7 @@ router.post('/school-expenses', async (req, res) => {
     if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'Montant invalide' });
     const row = await prisma.schoolExpense.create({
       data: {
+        schoolId,
         supplierId: supplierId || null,
         academicYear: academicYear ? String(academicYear) : null,
         expenseDate: new Date(expenseDate),
@@ -159,8 +181,11 @@ router.post('/school-expenses', async (req, res) => {
   }
 });
 
-router.put('/school-expenses/:id', async (req, res) => {
+router.put('/school-expenses/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertSchoolExpenseInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Dépense introuvable' });
+    }
     const {
       supplierId,
       academicYear,
@@ -193,8 +218,11 @@ router.put('/school-expenses/:id', async (req, res) => {
   }
 });
 
-router.delete('/school-expenses/:id', async (req, res) => {
+router.delete('/school-expenses/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertSchoolExpenseInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Dépense introuvable' });
+    }
     await prisma.schoolExpense.delete({ where: { id: req.params.id } });
     res.json({ message: 'Supprimé' });
   } catch (e: unknown) {
@@ -204,10 +232,11 @@ router.delete('/school-expenses/:id', async (req, res) => {
 
 // --- Petite caisse ---
 
-router.get('/petty-cash-movements', async (req, res) => {
+router.get('/petty-cash-movements', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: schoolScope } = resolveAccountingScope(req);
     const { from, to } = req.query;
-    const where: Prisma.PettyCashMovementWhereInput = {};
+    const where: Prisma.PettyCashMovementWhereInput = { ...schoolScope };
     if (from && typeof from === 'string') where.movementDate = { gte: new Date(from) };
     if (to && typeof to === 'string') {
       where.movementDate = { ...((where.movementDate as object) || {}), lte: new Date(to) };
@@ -223,8 +252,9 @@ router.get('/petty-cash-movements', async (req, res) => {
   }
 });
 
-router.post('/petty-cash-movements', async (req, res) => {
+router.post('/petty-cash-movements', async (req: SchoolContextRequest, res) => {
   try {
+    const { schoolId } = resolveAccountingScope(req);
     const adminId = req.user!.id;
     const { movementDate, type, amount, reason, reference } = req.body ?? {};
     if (!movementDate || !type || amount == null || !reason) {
@@ -236,6 +266,7 @@ router.post('/petty-cash-movements', async (req, res) => {
     if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'Montant invalide' });
     const row = await prisma.pettyCashMovement.create({
       data: {
+        schoolId,
         movementDate: new Date(movementDate),
         type: t,
         amount: amt,
@@ -250,8 +281,11 @@ router.post('/petty-cash-movements', async (req, res) => {
   }
 });
 
-router.delete('/petty-cash-movements/:id', async (req, res) => {
+router.delete('/petty-cash-movements/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertPettyCashInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Mouvement introuvable' });
+    }
     await prisma.pettyCashMovement.delete({ where: { id: req.params.id } });
     res.json({ message: 'Supprimé' });
   } catch (e: unknown) {
@@ -259,9 +293,13 @@ router.delete('/petty-cash-movements/:id', async (req, res) => {
   }
 });
 
-router.get('/petty-cash-balance', async (_req, res) => {
+router.get('/petty-cash-balance', async (req: SchoolContextRequest, res) => {
   try {
-    const all = await prisma.pettyCashMovement.findMany({ select: { type: true, amount: true } });
+    const { where } = resolveAccountingScope(req);
+    const all = await prisma.pettyCashMovement.findMany({
+      where,
+      select: { type: true, amount: true },
+    });
     let bal = 0;
     for (const m of all) {
       bal += m.type === 'IN' ? m.amount : -m.amount;
@@ -274,10 +312,11 @@ router.get('/petty-cash-balance', async (_req, res) => {
 
 // --- Budget prévisionnel ---
 
-router.get('/budget-lines', async (req, res) => {
+router.get('/budget-lines', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: schoolScope } = resolveAccountingScope(req);
     const { academicYear } = req.query;
-    const where: Prisma.BudgetLineWhereInput = {};
+    const where: Prisma.BudgetLineWhereInput = { ...schoolScope };
     if (academicYear && typeof academicYear === 'string') where.academicYear = academicYear;
     const rows = await prisma.budgetLine.findMany({
       where,
@@ -289,14 +328,16 @@ router.get('/budget-lines', async (req, res) => {
   }
 });
 
-router.post('/budget-lines', async (req, res) => {
+router.post('/budget-lines', async (req: SchoolContextRequest, res) => {
   try {
+    const { schoolId } = resolveAccountingScope(req);
     const { academicYear, label, category, budgetedAmount, notes } = req.body ?? {};
     if (!academicYear || !label || budgetedAmount == null) {
       return res.status(400).json({ error: 'academicYear, label et budgetedAmount sont requis' });
     }
     const row = await prisma.budgetLine.create({
       data: {
+        schoolId,
         academicYear: String(academicYear).trim(),
         label: String(label).trim(),
         category: (category as SchoolExpenseCategory) || 'OTHER',
@@ -310,8 +351,11 @@ router.post('/budget-lines', async (req, res) => {
   }
 });
 
-router.put('/budget-lines/:id', async (req, res) => {
+router.put('/budget-lines/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertBudgetLineInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Ligne budgétaire introuvable' });
+    }
     const { academicYear, label, category, budgetedAmount, notes } = req.body ?? {};
     const row = await prisma.budgetLine.update({
       where: { id: req.params.id },
@@ -329,8 +373,11 @@ router.put('/budget-lines/:id', async (req, res) => {
   }
 });
 
-router.delete('/budget-lines/:id', async (req, res) => {
+router.delete('/budget-lines/:id', async (req: SchoolContextRequest, res) => {
   try {
+    if (!(await assertBudgetLineInSchool(req.params.id, req))) {
+      return res.status(404).json({ error: 'Ligne budgétaire introuvable' });
+    }
     await prisma.budgetLine.delete({ where: { id: req.params.id } });
     res.json({ message: 'Supprimé' });
   } catch (e: unknown) {
@@ -340,20 +387,22 @@ router.delete('/budget-lines/:id', async (req, res) => {
 
 // --- Synthèses ---
 
-router.get('/accounting/summary', async (req, res) => {
+router.get('/accounting/summary', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: acctWhere } = resolveAccountingScope(req);
+    const studentWhere = resolvePaymentStudentScope(req);
     const { academicYear, from, to } = req.query;
     const dateFrom = from && typeof from === 'string' ? new Date(from) : undefined;
     const dateTo = to && typeof to === 'string' ? new Date(to) : undefined;
 
-    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED' };
+    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED', student: studentWhere };
     if (dateFrom || dateTo) {
       payWhere.paidAt = {};
       if (dateFrom) (payWhere.paidAt as Prisma.DateTimeFilter).gte = dateFrom;
       if (dateTo) (payWhere.paidAt as Prisma.DateTimeFilter).lte = dateTo;
     }
     if (academicYear && typeof academicYear === 'string') {
-      payWhere.tuitionFee = { academicYear: String(academicYear) };
+      payWhere.tuitionFee = { academicYear: String(academicYear), student: studentWhere };
     }
     const payments = await prisma.payment.findMany({
       where: payWhere,
@@ -361,7 +410,7 @@ router.get('/accounting/summary', async (req, res) => {
     });
     const tuitionRevenue = payments.reduce((s, p) => s + p.amount, 0);
 
-    const expWhere: Prisma.SchoolExpenseWhereInput = {};
+    const expWhere: Prisma.SchoolExpenseWhereInput = { ...acctWhere };
     if (dateFrom || dateTo) {
       expWhere.expenseDate = {};
       if (dateFrom) (expWhere.expenseDate as Prisma.DateTimeFilter).gte = dateFrom;
@@ -381,15 +430,17 @@ router.get('/accounting/summary', async (req, res) => {
     }, {});
 
     const petty = await prisma.pettyCashMovement.findMany({
-      where:
-        dateFrom || dateTo
+      where: {
+        ...acctWhere,
+        ...(dateFrom || dateTo
           ? {
               movementDate: {
                 ...(dateFrom ? { gte: dateFrom } : {}),
                 ...(dateTo ? { lte: dateTo } : {}),
               },
             }
-          : {},
+          : {}),
+      },
       select: { type: true, amount: true },
     });
     let pettyNet = 0;
@@ -405,7 +456,10 @@ router.get('/accounting/summary', async (req, res) => {
       }
     }
 
-    const allPetty = await prisma.pettyCashMovement.findMany({ select: { type: true, amount: true } });
+    const allPetty = await prisma.pettyCashMovement.findMany({
+      where: acctWhere,
+      select: { type: true, amount: true },
+    });
     let pettyBalance = 0;
     for (const p of allPetty) {
       pettyBalance += p.type === 'IN' ? p.amount : -p.amount;
@@ -413,8 +467,10 @@ router.get('/accounting/summary', async (req, res) => {
 
     const budgetRows =
       academicYear && typeof academicYear === 'string'
-        ? await prisma.budgetLine.findMany({ where: { academicYear: String(academicYear) } })
-        : [];
+        ? await prisma.budgetLine.findMany({
+            where: { academicYear: String(academicYear), ...acctWhere },
+          })
+        : await prisma.budgetLine.findMany({ where: acctWhere });
     const budgetTotal = budgetRows.reduce((s, b) => s + b.budgetedAmount, 0);
 
     res.json({
@@ -445,8 +501,10 @@ router.get('/accounting/summary', async (req, res) => {
   }
 });
 
-router.get('/accounting/journal', async (req, res) => {
+router.get('/accounting/journal', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: acctWhere } = resolveAccountingScope(req);
+    const studentWhere = resolvePaymentStudentScope(req);
     const { from, to, academicYear } = req.query;
     const dateFrom = from && typeof from === 'string' ? new Date(from) : undefined;
     const dateTo = to && typeof to === 'string' ? new Date(to) : undefined;
@@ -463,14 +521,14 @@ router.get('/accounting/journal', async (req, res) => {
     };
     const rows: JRow[] = [];
 
-    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED' };
+    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED', student: studentWhere };
     if (dateFrom || dateTo) {
       payWhere.paidAt = {};
       if (dateFrom) (payWhere.paidAt as Prisma.DateTimeFilter).gte = dateFrom;
       if (dateTo) (payWhere.paidAt as Prisma.DateTimeFilter).lte = dateTo;
     }
     if (academicYear && typeof academicYear === 'string') {
-      payWhere.tuitionFee = { academicYear: String(academicYear) };
+      payWhere.tuitionFee = { academicYear: String(academicYear), student: studentWhere };
     }
     const pays = await prisma.payment.findMany({
       where: payWhere,
@@ -492,7 +550,7 @@ router.get('/accounting/journal', async (req, res) => {
       });
     }
 
-    const expWhere: Prisma.SchoolExpenseWhereInput = {};
+    const expWhere: Prisma.SchoolExpenseWhereInput = { ...acctWhere };
     if (dateFrom || dateTo) {
       expWhere.expenseDate = {};
       if (dateFrom) (expWhere.expenseDate as Prisma.DateTimeFilter).gte = dateFrom;
@@ -517,7 +575,7 @@ router.get('/accounting/journal', async (req, res) => {
       });
     }
 
-    const pcWhere: Prisma.PettyCashMovementWhereInput = {};
+    const pcWhere: Prisma.PettyCashMovementWhereInput = { ...acctWhere };
     if (dateFrom || dateTo) {
       pcWhere.movementDate = {};
       if (dateFrom) (pcWhere.movementDate as Prisma.DateTimeFilter).gte = dateFrom;
@@ -544,8 +602,10 @@ router.get('/accounting/journal', async (req, res) => {
   }
 });
 
-router.get('/accounting/ledger', async (req, res) => {
+router.get('/accounting/ledger', async (req: SchoolContextRequest, res) => {
   try {
+    const { where: acctWhere } = resolveAccountingScope(req);
+    const studentWhere = resolvePaymentStudentScope(req);
     const { from, to, academicYear } = req.query;
     const dateFrom = from && typeof from === 'string' ? new Date(from) : undefined;
     const dateTo = to && typeof to === 'string' ? new Date(to) : undefined;
@@ -558,14 +618,14 @@ router.get('/accounting/ledger', async (req, res) => {
     };
     const rows: JRow[] = [];
 
-    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED' };
+    const payWhere: Prisma.PaymentWhereInput = { status: 'COMPLETED', student: studentWhere };
     if (dateFrom || dateTo) {
       payWhere.paidAt = {};
       if (dateFrom) (payWhere.paidAt as Prisma.DateTimeFilter).gte = dateFrom;
       if (dateTo) (payWhere.paidAt as Prisma.DateTimeFilter).lte = dateTo;
     }
     if (academicYear && typeof academicYear === 'string') {
-      payWhere.tuitionFee = { academicYear: String(academicYear) };
+      payWhere.tuitionFee = { academicYear: String(academicYear), student: studentWhere };
     }
     const pays = await prisma.payment.findMany({ where: payWhere, select: { amount: true } });
     const tuitionSum = pays.reduce((s, p) => s + p.amount, 0);
@@ -578,7 +638,7 @@ router.get('/accounting/ledger', async (req, res) => {
       });
     }
 
-    const expWhere: Prisma.SchoolExpenseWhereInput = {};
+    const expWhere: Prisma.SchoolExpenseWhereInput = { ...acctWhere };
     if (dateFrom || dateTo) {
       expWhere.expenseDate = {};
       if (dateFrom) (expWhere.expenseDate as Prisma.DateTimeFilter).gte = dateFrom;
@@ -601,7 +661,7 @@ router.get('/accounting/ledger', async (req, res) => {
       rows.push({ ledgerCode: v.code, ledgerLabel: v.label, kind: 'EXPENSE', amount: Math.round(v.amount) });
     }
 
-    const pcWhere: Prisma.PettyCashMovementWhereInput = {};
+    const pcWhere: Prisma.PettyCashMovementWhereInput = { ...acctWhere };
     if (dateFrom || dateTo) {
       pcWhere.movementDate = {};
       if (dateFrom) (pcWhere.movementDate as Prisma.DateTimeFilter).gte = dateFrom;

@@ -6,6 +6,24 @@ export type TuitionLevelRateRow = {
   catalogId: string | null;
 };
 
+export type ClassTuitionRateRow = {
+  classId: string;
+  className: string;
+  classLevel: string;
+  academicYear: string | null;
+  amount: number | null;
+  catalogId: string | null;
+};
+
+export type ResolvedTuitionForClass = {
+  amount: number;
+  classId: string;
+  className: string;
+  classLevel: string;
+  catalogId: string;
+  source: 'BY_CLASS' | 'BY_LEVEL';
+};
+
 export const adminTuitionCatalogApi = {
   getLevelTuitionRates: async (academicYear: string) => {
     const response = await api.get('/admin/tuition-level-rates', {
@@ -29,6 +47,25 @@ export const adminTuitionCatalogApi = {
       params: { studentId, academicYear },
     });
     return response.data as { amount: number; classLevel: string; catalogId: string };
+  },
+  getClassTuitionRates: async (academicYear: string) => {
+    const response = await api.get('/admin/tuition-class-rates', {
+      params: { academicYear },
+    });
+    return response.data as { academicYear: string; rates: ClassTuitionRateRow[] };
+  },
+  saveClassTuitionRates: async (data: {
+    academicYear: string;
+    rates: { classId: string; amount: number }[];
+  }) => {
+    const response = await api.put('/admin/tuition-class-rates', data);
+    return response.data;
+  },
+  resolveTuitionForClass: async (classId: string, academicYear: string) => {
+    const response = await api.get('/admin/tuition-level-rates/resolve-for-class', {
+      params: { classId, academicYear },
+    });
+    return response.data as ResolvedTuitionForClass;
   },
   getTuitionFeeCatalog: async () => {
     const response = await api.get('/admin/tuition-fee-catalog');
@@ -67,9 +104,9 @@ export const adminTuitionCatalogApi = {
     academicYear: string;
     anchorDueDate: string;
     classId?: string;
+    classLevel?: string;
     studentIds?: string[];
     discountAmount?: number;
-    scholarshipLabel?: string;
     descriptionExtra?: string;
   }) => {
     const response = await api.post('/admin/tuition-fee-catalog/apply-to-students', data);
@@ -85,7 +122,6 @@ export const adminTuitionCatalogApi = {
     /** Remise totale répartie sur les lignes au prorata des % du gabarit */
     discountAmount?: number;
     feeType?: string;
-    scholarshipLabel?: string;
     catalogId?: string;
   }) => {
     const response = await api.post('/admin/tuition-payment-schedule-templates/apply-to-student', data);

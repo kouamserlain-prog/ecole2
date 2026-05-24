@@ -6,9 +6,12 @@ import { adminApi } from '../../services/api';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import toast from 'react-hot-toast';
-import { FiLayers, FiShuffle, FiCreditCard, FiArchive, FiTrash2, FiPlus } from 'react-icons/fi';
+import { FiLayers, FiShuffle, FiCreditCard, FiArchive, FiTrash2, FiPlus, FiDownload } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
+import { downloadStudentEnrollmentDossier } from '@/lib/downloadStudentEnrollmentDossier';
+import { useSchool } from '@/contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '@/hooks/useSchoolReady';
 
 const TRANSFER_LABELS: Record<string, string> = {
   CLASS_CHANGE: 'Changement de classe',
@@ -23,6 +26,10 @@ type StudentDossierPanelProps = {
 
 const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) => {
   const queryClient = useQueryClient();
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
+  const studentQueryKey = schoolQueryKey(['student', studentId], activeSchoolId);
+  const [dossierDownloading, setDossierDownloading] = useState(false);
   const [historyForm, setHistoryForm] = useState({
     academicYear: '',
     className: '',
@@ -38,8 +45,9 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
   });
 
   const { data: classes } = useQuery({
-    queryKey: ['classes'],
+    queryKey: schoolQueryKey(['classes'], activeSchoolId),
     queryFn: adminApi.getClasses,
+    enabled: schoolReady,
   });
 
   const { data: digitalCard, refetch: refetchCard } = useQuery({
@@ -58,7 +66,7 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
         notes: historyForm.notes.trim() || undefined,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
       toast.success('Historique enregistré');
       setHistoryForm({
         academicYear: '',
@@ -74,7 +82,7 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
   const deleteHistoryMutation = useMutation({
     mutationFn: (historyId: string) => adminApi.deleteStudentSchoolHistory(studentId, historyId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
       toast.success('Entrée supprimée');
     },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
@@ -90,7 +98,7 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
         reason: transferForm.reason.trim() || undefined,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
       queryClient.invalidateQueries({ queryKey: ['students'] });
       toast.success('Mouvement enregistré');
     },
@@ -100,7 +108,7 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
   const archiveMutation = useMutation({
     mutationFn: () => adminApi.archiveStudent(studentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student', studentId] });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
       queryClient.invalidateQueries({ queryKey: ['students'] });
       toast.success('Dossier archivé');
     },
@@ -108,8 +116,9 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
   });
 
   const { data: student } = useQuery({
-    queryKey: ['student', studentId],
+    queryKey: studentQueryKey,
     queryFn: () => adminApi.getStudent(studentId),
+    enabled: schoolReady && !!studentId,
   });
 
   const history = (student as any)?.schoolHistory as
@@ -138,6 +147,39 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
 
   return (
     <div className="space-y-4">
+      <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/80 via-white to-violet-50/40">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Dossier d&apos;inscription (PDF)</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Synthèse complète : identité, scolarité, responsables, vigilance médicale, pièces jointes et QR
+              carte numérique.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            disabled={dossierDownloading}
+            onClick={async () => {
+              setDossierDownloading(true);
+              try {
+                await downloadStudentEnrollmentDossier(studentId);
+                toast.success('Dossier PDF téléchargé');
+              } catch (e: unknown) {
+                const err = e as { response?: { data?: { error?: string } } };
+                toast.error(err.response?.data?.error || 'Impossible de générer le dossier PDF');
+              } finally {
+                setDossierDownloading(false);
+              }
+            }}
+            className="inline-flex items-center gap-2 shrink-0"
+          >
+            <FiDownload className="w-4 h-4" aria-hidden />
+            {dossierDownloading ? 'Génération…' : 'Télécharger le dossier'}
+          </Button>
+        </div>
+      </Card>
+
       <Card>
         <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
           <FiCreditCard className="text-indigo-600" aria-hidden />

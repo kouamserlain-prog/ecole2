@@ -58,8 +58,8 @@ export const ADMIN_MODULE_LABELS: Record<AdminModuleId, string> = {
   grading: 'Notation & évaluation',
   classes: 'Classes',
   teachers: 'Enseignants',
-  educators: 'Éducateurs',
-  'staff-personnel': 'Personnel administratif',
+  educators: 'Éducateurs (voir Personnel)',
+  'staff-personnel': 'Personnel',
   'parent-guardians': 'Parents & tuteurs',
   management: 'Gestion complète',
   roles: 'Multi-rôles',
@@ -130,7 +130,7 @@ export const ADMIN_MODULE_CATEGORIES: {
   },
   {
     title: 'Personnel & accès',
-    moduleIds: ['teachers', 'educators', 'staff-personnel', 'parent-guardians', 'hr', 'roles'],
+    moduleIds: ['teachers', 'staff-personnel', 'parent-guardians', 'hr', 'roles'],
   },
   {
     title: 'Finances, inscriptions & admin',

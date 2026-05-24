@@ -8,8 +8,19 @@ import {
 } from '../utils/admin-user-initial-password.util';
 import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { sanitizeVisibleStaffModules } from '../utils/staff-visible-modules.util';
+import type { SchoolContextRequest } from '../utils/school-context.util';
+import {
+  assertSupportKindActiveForSchool,
+  sanitizeVisibleStaffModulesForSchool,
+} from '../utils/school-staff-metiers.util';
+import { listPersonnelRegistry } from '../utils/personnel-registry.util';
 
 const router = express.Router();
+
+function staffSchoolScopeWhere(schoolId: string | undefined) {
+  if (!schoolId) return {};
+  return { schoolId };
+}
 
 const userSelect = {
   id: true,
@@ -237,9 +248,22 @@ router.delete('/staff/job-descriptions/:id', async (req, res) => {
   }
 });
 
-router.get('/staff/org-chart', async (_req, res) => {
+/** Annuaire unifié : personnel administratif / soutien + éducateurs. */
+router.get('/staff/personnel-registry', async (req: SchoolContextRequest, res) => {
   try {
+    const list = await listPersonnelRegistry(req.schoolId);
+    res.json(list);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erreur serveur';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/staff/org-chart', async (req: SchoolContextRequest, res) => {
+  try {
+    const schoolId = req.schoolId;
     const all = await prisma.staffMember.findMany({
+      where: staffSchoolScopeWhere(schoolId),
       include: {
         user: { select: { ...userSelect } },
         jobDescription: { select: { id: true, title: true, code: true } },
@@ -295,9 +319,10 @@ router.get('/staff/org-chart', async (_req, res) => {
   }
 });
 
-router.get('/staff', async (_req, res) => {
+router.get('/staff', async (req: SchoolContextRequest, res) => {
   try {
     const list = await prisma.staffMember.findMany({
+      where: staffSchoolScopeWhere(req.schoolId),
       include: staffListInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -346,11 +371,16 @@ router.post(
     body('managerId').optional().isString(),
     body('visibleStaffModules').optional().isArray(),
   ],
-  async (req, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
+      }
+
+      const schoolId = req.schoolId;
+      if (!schoolId) {
+        return res.status(400).json({ error: 'Établissement actif requis (en-tête X-School-Id).' });
       }
 
       const emailNorm = normalizeEmail(req.body.email);
@@ -384,6 +414,16 @@ router.post(
         return res.status(400).json({ error: 'supportKind est réservé à la catégorie SUPPORT.' });
       }
 
+      if (staffCategory === 'SUPPORT' && supportKind) {
+        try {
+          await assertSupportKindActiveForSchool(schoolId, supportKind);
+        } catch {
+          return res.status(400).json({
+            error: 'Ce métier n’est pas activé pour cet établissement. Configurez-le dans Métiers par établissement.',
+          });
+        }
+      }
+
       const existingUser = await prisma.user.findUnique({ where: { email: emailNorm } });
       if (existingUser) {
         return res.status(400).json({ error: 'Cet email est déjà utilisé' });
@@ -410,11 +450,15 @@ router.post(
 
       const { hashedPassword, shouldSendSetupEmail } = await resolveAdminProvidedOrInvitePassword(password);
 
-      const modulesForCreate = sanitizeVisibleStaffModules(
-        staffCategory,
-        staffCategory === 'SUPPORT' ? supportKind : null,
-        visibleStaffModules,
-      );
+      const modulesForCreate =
+        staffCategory === 'SUPPORT'
+          ? await sanitizeVisibleStaffModulesForSchool(
+              staffCategory,
+              supportKind,
+              visibleStaffModules,
+              schoolId,
+            )
+          : sanitizeVisibleStaffModules(staffCategory, null, visibleStaffModules);
 
       const user = await prisma.user.create({
         data: {
@@ -429,6 +473,7 @@ router.post(
               employeeId,
               staffCategory,
               supportKind: staffCategory === 'SUPPORT' ? supportKind : null,
+              schoolId,
               jobTitle: jobTitle || null,
               department: department || null,
               hireDate: new Date(hireDate),
@@ -490,14 +535,18 @@ router.get('/staff/:id', async (req, res) => {
   }
 });
 
-router.put('/staff/:id', async (req, res) => {
+router.put('/staff/:id', async (req: SchoolContextRequest, res) => {
   try {
+    const schoolId = req.schoolId;
     const staff = await prisma.staffMember.findUnique({
       where: { id: req.params.id },
       include: { user: true },
     });
     if (!staff) {
       return res.status(404).json({ error: 'Membre du personnel introuvable' });
+    }
+    if (schoolId && staff.schoolId && staff.schoolId !== schoolId) {
+      return res.status(403).json({ error: 'Ce personnel appartient à un autre établissement.' });
     }
 
     const {
@@ -566,9 +615,27 @@ router.put('/staff/:id', async (req, res) => {
           : null
         : staff.supportKind;
 
+    const effectiveSchoolId = staff.schoolId ?? schoolId;
+    if (nextCategory === 'SUPPORT' && nextSupportKind && effectiveSchoolId) {
+      try {
+        await assertSupportKindActiveForSchool(effectiveSchoolId, nextSupportKind);
+      } catch {
+        return res.status(400).json({
+          error: 'Ce métier n’est pas activé pour cet établissement.',
+        });
+      }
+    }
+
     const nextModules =
       visibleStaffModules !== undefined
-        ? sanitizeVisibleStaffModules(nextCategory, nextSupportKind, visibleStaffModules)
+        ? nextCategory === 'SUPPORT' && effectiveSchoolId
+          ? await sanitizeVisibleStaffModulesForSchool(
+              nextCategory,
+              nextSupportKind,
+              visibleStaffModules,
+              effectiveSchoolId,
+            )
+          : sanitizeVisibleStaffModules(nextCategory, nextSupportKind, visibleStaffModules)
         : undefined;
 
     await prisma.$transaction(async (tx) => {
@@ -585,6 +652,7 @@ router.put('/staff/:id', async (req, res) => {
       await tx.staffMember.update({
         where: { id: req.params.id },
         data: {
+          ...(schoolId && !staff.schoolId ? { schoolId } : {}),
           ...(employeeId !== undefined && { employeeId }),
           ...(staffCategory !== undefined && { staffCategory }),
           ...(supportKind !== undefined && {

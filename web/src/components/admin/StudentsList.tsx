@@ -25,7 +25,8 @@ import {
   FiBook,
   FiArchive,
 } from 'react-icons/fi';
-import toast from 'react-hot-toast';
+import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
+import { useSchool } from '../../contexts/SchoolContext';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import {
@@ -38,6 +39,14 @@ import {
   normalizeStateAssignment,
   stateAssignmentBadgeVariant,
 } from '../../lib/stateAssignment';
+import {
+  buildClassMetaFromApi,
+  downloadClassRosterCsv,
+  downloadClassRosterPdf,
+  mapApiStudentToRosterRow,
+  type ClassRosterMeta,
+} from '../../lib/classRosterExport';
+import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
@@ -78,15 +87,19 @@ const StudentsList: React.FC<StudentsListProps> = ({
     if (searchQuery) setSearchTerm(searchQuery);
   }, [searchQuery]);
 
+  const { activeSchoolId, activeSchool } = useSchool();
+  const schoolReady = useSchoolReady();
+
   const { data: students, isLoading } = useQuery({
-    queryKey: ['students'],
+    queryKey: schoolQueryKey(['students'], activeSchoolId),
     queryFn: adminApi.getStudents,
+    enabled: schoolReady,
   });
 
   const { data: classesForFilter } = useQuery({
-    queryKey: ['classes'],
+    queryKey: schoolQueryKey(['classes'], activeSchoolId),
     queryFn: adminApi.getClasses,
-    enabled: showClassFilter,
+    enabled: (showClassFilter || groupByClass) && schoolReady,
   });
 
   const deleteStudentMutation = useMutation({
@@ -203,6 +216,34 @@ const StudentsList: React.FC<StudentsListProps> = ({
     if (next.has(className)) next.delete(className);
     else next.add(className);
     setExpandedClasses(next);
+  };
+
+  const downloadClassGroupRoster = (classStudents: any[], format: 'pdf' | 'csv') => {
+    if (!classStudents.length) {
+      toast.error('Aucun élève dans cette classe');
+      return;
+    }
+    const classId = classStudents[0].classId as string | undefined;
+    const fromApi = classesForFilter?.find((c: { id: string }) => c.id === classId);
+    const meta: ClassRosterMeta = fromApi
+      ? buildClassMetaFromApi(fromApi as Parameters<typeof buildClassMetaFromApi>[0])
+      : {
+          classId: classId || classStudents[0].class?.id || 'unknown',
+          className: classStudents[0].class?.name || 'Classe',
+          level: classStudents[0].class?.level ?? null,
+          schoolName: null,
+        };
+    meta.schoolName = activeSchool?.name ?? null;
+    const roster = classStudents.map((s) =>
+      mapApiStudentToRosterRow(s as Parameters<typeof mapApiStudentToRosterRow>[0])
+    );
+    if (format === 'pdf') {
+      downloadClassRosterPdf(meta, roster);
+      toast.success(`Liste PDF — ${meta.className}`);
+    } else {
+      downloadClassRosterCsv(meta, roster);
+      toast.success(`Liste CSV — ${meta.className}`);
+    }
   };
 
   const stats = useMemo(() => {
@@ -806,37 +847,62 @@ const StudentsList: React.FC<StudentsListProps> = ({
 
                     return (
                       <div key={className}>
-                        <button
-                          type="button"
-                          onClick={() => toggleClass(className)}
-                          className="w-full flex items-center justify-between px-4 py-3 hover:bg-amber-50/25 transition-colors text-left"
-                        >
-                          <div className="flex items-center gap-3">
-                            {isExpanded ? (
-                              <FiChevronUp className="w-5 h-5 text-stone-500 shrink-0" aria-hidden />
-                            ) : (
-                              <FiChevronDown className="w-5 h-5 text-stone-500 shrink-0" aria-hidden />
-                            )}
-                            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                              <FiBook className="w-5 h-5 text-indigo-600" aria-hidden />
-                            </div>
-                            <div>
-                              <span
-                                className={
-                                  compact
-                                    ? 'font-medium text-stone-900 text-xs'
-                                    : 'font-medium text-stone-900 text-sm'
-                                }
-                              >
-                                {className}
-                              </span>
-                              {classLevel && (
-                                <span className="text-xs text-stone-500 ml-2">— {classLevel}</span>
+                        <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-amber-50/25 transition-colors gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleClass(className)}
+                            className="flex-1 flex items-center gap-3 text-left min-w-0"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {isExpanded ? (
+                                <FiChevronUp className="w-5 h-5 text-stone-500 shrink-0" aria-hidden />
+                              ) : (
+                                <FiChevronDown className="w-5 h-5 text-stone-500 shrink-0" aria-hidden />
                               )}
+                              <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                                <FiBook className="w-5 h-5 text-indigo-600" aria-hidden />
+                              </div>
+                              <div className="min-w-0">
+                                <span
+                                  className={
+                                    compact
+                                      ? 'font-medium text-stone-900 text-xs'
+                                      : 'font-medium text-stone-900 text-sm'
+                                  }
+                                >
+                                  {className}
+                                </span>
+                                {classLevel && (
+                                  <span className="text-xs text-stone-500 ml-2">— {classLevel}</span>
+                                )}
+                              </div>
                             </div>
+                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className={compact ? 'text-[10px] px-2 py-1' : undefined}
+                              onClick={() => downloadClassGroupRoster(classStudents, 'pdf')}
+                              title="Télécharger la liste PDF"
+                            >
+                              <FiDownload className="w-3.5 h-3.5 mr-1" aria-hidden />
+                              PDF
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className={compact ? 'text-[10px] px-2 py-1' : undefined}
+                              onClick={() => downloadClassGroupRoster(classStudents, 'csv')}
+                              title="Télécharger la liste CSV"
+                            >
+                              CSV
+                            </Button>
+                            <Badge variant="info">{classStudents.length} élève(s)</Badge>
                           </div>
-                          <Badge variant="info">{classStudents.length} élève(s)</Badge>
-                        </button>
+                        </div>
                         {isExpanded && (
                           <div className="bg-stone-50/60 border-t border-amber-100/40">
                             <Table
