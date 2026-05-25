@@ -51,6 +51,13 @@ function scopedHealthEmergencyWhere(req: SchoolContextRequest) {
   };
 }
 
+function scopedHealthCampaignWhere(req: SchoolContextRequest) {
+  if (req.school?.isDefault) {
+    return { OR: [{ schoolId: req.schoolId! }, { schoolId: null }] };
+  }
+  return { schoolId: req.schoolId! };
+}
+
 async function getStaffMemberId(userId: string): Promise<string | null> {
   const s = await prisma.staffMember.findUnique({ where: { userId }, select: { id: true } });
   return s?.id ?? null;
@@ -442,9 +449,10 @@ router.post('/visits', async (req: AuthRequest, res) => {
   }
 });
 
-router.get('/campaigns', async (_req, res) => {
+router.get('/campaigns', async (req: SchoolContextRequest, res) => {
   try {
     const rows = await prisma.healthCampaign.findMany({
+      where: scopedHealthCampaignWhere(req),
       orderBy: { startDate: 'desc' },
       include: { _count: { select: { participations: true } } },
     });
@@ -454,7 +462,7 @@ router.get('/campaigns', async (_req, res) => {
   }
 });
 
-router.post('/campaigns', async (req, res) => {
+router.post('/campaigns', async (req: SchoolContextRequest, res) => {
   try {
     const { kind, title, description, startDate, endDate, targetLevels, isActive } = req.body ?? {};
     if (!kind || !title || !startDate) {
@@ -462,6 +470,7 @@ router.post('/campaigns', async (req, res) => {
     }
     const row = await prisma.healthCampaign.create({
       data: {
+        schoolId: req.schoolId!,
         kind: kind as HealthCampaignKind,
         title: String(title).trim(),
         description: description?.trim() || null,
@@ -477,11 +486,16 @@ router.post('/campaigns', async (req, res) => {
   }
 });
 
-router.patch('/campaigns/:id', async (req, res) => {
+router.patch('/campaigns/:id', async (req: SchoolContextRequest, res) => {
   try {
     const b = req.body ?? {};
+    const existing = await prisma.healthCampaign.findFirst({
+      where: { id: req.params.id, ...scopedHealthCampaignWhere(req) },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ error: 'Campagne introuvable' });
     const row = await prisma.healthCampaign.update({
-      where: { id: req.params.id },
+      where: { id: existing.id },
       data: {
         ...(b.title !== undefined && { title: String(b.title).trim() }),
         ...(b.description !== undefined && { description: b.description?.trim() || null }),
@@ -600,7 +614,7 @@ router.get('/reports', async (req: SchoolContextRequest, res) => {
       prisma.healthEmergencyLog.count({
         where: { reportedAt: visitWhere.visitedAt, ...scopedHealthEmergencyWhere(req) },
       }),
-      prisma.healthCampaign.count({ where: { isActive: true } }),
+      prisma.healthCampaign.count({ where: { isActive: true, ...scopedHealthCampaignWhere(req) } }),
       prisma.infirmaryVisit.count({ where: { ...visitWhere, parentNotified: true } }),
     ]);
 
@@ -766,7 +780,7 @@ router.get('/statistics', async (req: SchoolContextRequest, res) => {
         prisma.healthEmergencyLog.count({
           where: { resolvedAt: null, ...scopedHealthEmergencyWhere(req) },
         }),
-        prisma.healthCampaign.count({ where: { isActive: true } }),
+        prisma.healthCampaign.count({ where: { isActive: true, ...scopedHealthCampaignWhere(req) } }),
       ]);
 
     const byOutcome = await prisma.infirmaryVisit.groupBy({

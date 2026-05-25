@@ -22,6 +22,8 @@ const STAFF_GET_STAYS_ON_ADMIN_PREFIXES = [
   '/admin/suppliers',
   '/admin/school-expenses',
   '/admin/petty-cash',
+  '/admin/petty-cash-movements',
+  '/admin/petty-cash-balance',
   '/admin/budget-lines',
   '/admin/accounting',
   '/admin/students',

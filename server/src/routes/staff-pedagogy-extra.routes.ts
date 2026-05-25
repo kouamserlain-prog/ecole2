@@ -1,6 +1,12 @@
 import express from 'express';
 import type { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import type { AuthRequest } from '../middleware/auth.middleware';
+import {
+  classScopeWhere,
+  studentScopeWhere,
+  type SchoolContextRequest,
+} from '../utils/school-context.util';
 
 const router = express.Router();
 
@@ -15,12 +21,32 @@ const userPublic = {
   role: true,
 } satisfies Prisma.UserSelect;
 
-router.get('/messages', async (req, res) => {
+function activeStudentScope(req: SchoolContextRequest): Prisma.StudentWhereInput {
+  return studentScopeWhere(req.schoolId!, req.school?.isDefault ?? false);
+}
+
+function activeClassScope(req: SchoolContextRequest): Prisma.ClassWhereInput {
+  return classScopeWhere(req.schoolId!, req.school?.isDefault ?? false);
+}
+
+function activeCourseScope(req: SchoolContextRequest): Prisma.CourseWhereInput {
+  return { class: activeClassScope(req) };
+}
+
+function activeTeacherScope(req: SchoolContextRequest): Prisma.TeacherWhereInput {
+  const classScope = activeClassScope(req);
+  return {
+    OR: [{ classes: { some: classScope } }, { courses: { some: { class: classScope } } }],
+  };
+}
+
+router.get('/messages', async (req: AuthRequest, res) => {
   try {
-    const { userId, unread } = req.query;
+    const { unread } = req.query;
+    const userId = req.user!.id;
     const rows = await prisma.message.findMany({
       where: {
-        ...(userId && typeof userId === 'string' ? { receiverId: userId } : {}),
+        OR: [{ receiverId: userId }, { senderId: userId }],
         ...(unread === 'true' ? { read: false } : {}),
       },
       include: {
@@ -35,9 +61,16 @@ router.get('/messages', async (req, res) => {
   }
 });
 
-router.get('/announcements', async (req, res) => {
+router.get('/announcements', async (req: SchoolContextRequest, res) => {
   try {
     const { published, targetRole, targetClass } = req.query;
+    if (targetClass && typeof targetClass === 'string') {
+      const cls = await prisma.class.findFirst({
+        where: { id: targetClass, ...activeClassScope(req) },
+        select: { id: true },
+      });
+      if (!cls) return res.json([]);
+    }
     const rows = await prisma.announcement.findMany({
       where: {
         ...(published !== undefined ? { published: published === 'true' } : {}),
@@ -56,12 +89,12 @@ router.get('/announcements', async (req, res) => {
   }
 });
 
-router.get('/notifications', async (req, res) => {
+router.get('/notifications', async (req: AuthRequest, res) => {
   try {
-    const { userId, unread } = req.query;
+    const { unread } = req.query;
     const rows = await prisma.notification.findMany({
       where: {
-        ...(userId && typeof userId === 'string' ? { userId } : {}),
+        userId: req.user!.id,
         ...(unread === 'true' ? { read: false } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -73,11 +106,12 @@ router.get('/notifications', async (req, res) => {
   }
 });
 
-router.get('/users', async (req, res) => {
+router.get('/users', async (req: SchoolContextRequest, res) => {
   try {
     const { role, isActive } = req.query;
     const rows = await prisma.user.findMany({
       where: {
+        schoolMemberships: { some: { schoolId: req.schoolId! } },
         ...(role && typeof role === 'string' ? { role: role as never } : {}),
         ...(isActive !== undefined ? { isActive: isActive === 'true' } : {}),
       },
@@ -287,14 +321,19 @@ router.get('/material/room-reservations', async (req, res) => {
   }
 });
 
-router.get('/pedagogical/class-stats', async (req, res) => {
+router.get('/pedagogical/class-stats', async (req: SchoolContextRequest, res) => {
   try {
     const { classId } = req.query;
     if (!classId || typeof classId !== 'string') {
       return res.status(400).json({ error: 'classId requis' });
     }
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, ...activeClassScope(req) },
+      select: { id: true },
+    });
+    if (!cls) return res.status(404).json({ error: 'Classe introuvable dans cet établissement' });
     const students = await prisma.student.findMany({
-      where: { classId },
+      where: { classId, ...activeStudentScope(req) },
       include: {
         user: { select: { firstName: true, lastName: true } },
         grades: { include: { course: true } },
@@ -325,12 +364,17 @@ router.get('/pedagogical/class-stats', async (req, res) => {
   }
 });
 
-router.get('/pedagogical/course-stats', async (req, res) => {
+router.get('/pedagogical/course-stats', async (req: SchoolContextRequest, res) => {
   try {
     const { courseId, classId } = req.query;
-    const where: Prisma.GradeWhereInput = {};
+    const where: Prisma.GradeWhereInput = {
+      student: {
+        ...activeStudentScope(req),
+        ...(classId && typeof classId === 'string' ? { classId } : {}),
+      },
+      course: activeCourseScope(req),
+    };
     if (courseId && typeof courseId === 'string') where.courseId = courseId;
-    if (classId && typeof classId === 'string') where.student = { classId };
     const grades = await prisma.grade.findMany({
       where,
       include: {
@@ -362,11 +406,14 @@ router.get('/pedagogical/course-stats', async (req, res) => {
   }
 });
 
-router.get('/pedagogical/students-at-risk', async (req, res) => {
+router.get('/pedagogical/students-at-risk', async (req: SchoolContextRequest, res) => {
   try {
     const { classId } = req.query;
     const students = await prisma.student.findMany({
-      where: classId && typeof classId === 'string' ? { classId } : {},
+      where: {
+        ...activeStudentScope(req),
+        ...(classId && typeof classId === 'string' ? { classId } : {}),
+      },
       include: {
         user: { select: { firstName: true, lastName: true, email: true } },
         class: { select: { name: true, level: true } },
@@ -410,9 +457,13 @@ router.get('/pedagogical/students-at-risk', async (req, res) => {
   }
 });
 
-router.get('/reports/summary', async (_req, res) => {
+router.get('/reports/summary', async (req: SchoolContextRequest, res) => {
   try {
     const now = new Date();
+    const studentScope = activeStudentScope(req);
+    const classScope = activeClassScope(req);
+    const teacherScope = activeTeacherScope(req);
+    const courseScope = activeCourseScope(req);
     const [
       studentsTotal,
       studentsActive,
@@ -426,27 +477,28 @@ router.get('/reports/summary', async (_req, res) => {
       absenceTotals,
       allStudents,
     ] = await Promise.all([
-      prisma.student.count(),
-      prisma.student.count({ where: { isActive: true, enrollmentStatus: 'ACTIVE' } }),
-      prisma.teacher.count(),
-      prisma.educator.count(),
-      prisma.class.count(),
-      prisma.course.count(),
-      prisma.assignment.count(),
-      prisma.user.count(),
+      prisma.student.count({ where: studentScope }),
+      prisma.student.count({ where: { isActive: true, enrollmentStatus: 'ACTIVE', ...studentScope } }),
+      prisma.teacher.count({ where: teacherScope }),
+      prisma.educator.count({ where: { classAssignments: { some: { class: classScope } } } }),
+      prisma.class.count({ where: classScope }),
+      prisma.course.count({ where: courseScope }),
+      prisma.assignment.count({ where: { course: courseScope } }),
+      prisma.user.count({ where: { schoolMemberships: { some: { schoolId: req.schoolId! } } } }),
       prisma.studentAssignment
-        .findMany({ select: { submitted: true } })
+        .findMany({ where: { student: studentScope }, select: { submitted: true } })
         .then((rows) => ({
           total: rows.length,
           submitted: rows.filter((r) => r.submitted).length,
         })),
       prisma.absence
-        .findMany({ select: { excused: true } })
+        .findMany({ where: { student: studentScope }, select: { excused: true } })
         .then((rows) => ({
           total: rows.length,
           excused: rows.filter((a) => a.excused).length,
         })),
       prisma.student.findMany({
+        where: studentScope,
         include: { grades: true, absences: true },
         take: 2000,
       }),
@@ -502,10 +554,10 @@ router.get('/reports/summary', async (_req, res) => {
   }
 });
 
-router.get('/courses/:courseId', async (req, res) => {
+router.get('/courses/:courseId', async (req: SchoolContextRequest, res) => {
   try {
-    const course = await prisma.course.findUnique({
-      where: { id: req.params.courseId },
+    const course = await prisma.course.findFirst({
+      where: { id: req.params.courseId, ...activeCourseScope(req) },
       include: {
         class: {
           include: {
@@ -525,10 +577,10 @@ router.get('/courses/:courseId', async (req, res) => {
   }
 });
 
-router.get('/students/nfc/:nfcId', async (req, res) => {
+router.get('/students/nfc/:nfcId', async (req: SchoolContextRequest, res) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { nfcId: req.params.nfcId },
+      where: { nfcId: req.params.nfcId, ...activeStudentScope(req) },
       include: {
         user: { select: userPublic },
         class: { select: { id: true, name: true, level: true } },
@@ -541,10 +593,10 @@ router.get('/students/nfc/:nfcId', async (req, res) => {
   }
 });
 
-router.get('/teachers/:id/schedule-availability', async (req, res) => {
+router.get('/teachers/:id/schedule-availability', async (req: SchoolContextRequest, res) => {
   try {
-    const teacher = await prisma.teacher.findUnique({
-      where: { id: req.params.id },
+    const teacher = await prisma.teacher.findFirst({
+      where: { id: req.params.id, ...activeTeacherScope(req) },
       select: { id: true },
     });
     if (!teacher) return res.status(404).json({ error: 'Enseignant non trouvé' });
@@ -569,7 +621,7 @@ router.get('/schedule-room-blocks', async (_req, res) => {
   }
 });
 
-router.get('/hr/teacher-leaves', async (req, res) => {
+router.get('/hr/teacher-leaves', async (req: SchoolContextRequest, res) => {
   try {
     const { status } = req.query;
     const where: Prisma.TeacherLeaveWhereInput = {};
@@ -580,7 +632,7 @@ router.get('/hr/teacher-leaves', async (req, res) => {
       where.status = status as 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
     }
     const rows = await prisma.teacherLeave.findMany({
-      where,
+      where: { ...where, teacher: activeTeacherScope(req) },
       orderBy: { startDate: 'desc' },
       include: {
         teacher: {
@@ -596,9 +648,10 @@ router.get('/hr/teacher-leaves', async (req, res) => {
   }
 });
 
-router.get('/hr/teacher-performance-reviews', async (_req, res) => {
+router.get('/hr/teacher-performance-reviews', async (req: SchoolContextRequest, res) => {
   try {
     const rows = await prisma.teacherPerformanceReview.findMany({
+      where: { teacher: activeTeacherScope(req) },
       orderBy: { createdAt: 'desc' },
       include: {
         teacher: {

@@ -17,9 +17,14 @@ import { listPersonnelRegistry } from '../utils/personnel-registry.util';
 
 const router = express.Router();
 
-function staffSchoolScopeWhere(schoolId: string | undefined) {
+function staffSchoolScopeWhere(schoolId: string | undefined, isDefaultSchool = false): Prisma.StaffMemberWhereInput {
   if (!schoolId) return {};
+  if (isDefaultSchool) return { OR: [{ schoolId }, { schoolId: null }] };
   return { schoolId };
+}
+
+function currentStaffSchoolScope(req: SchoolContextRequest): Prisma.StaffMemberWhereInput {
+  return staffSchoolScopeWhere(req.schoolId, req.school?.isDefault ?? false);
 }
 
 const userSelect = {
@@ -261,9 +266,8 @@ router.get('/staff/personnel-registry', async (req: SchoolContextRequest, res) =
 
 router.get('/staff/org-chart', async (req: SchoolContextRequest, res) => {
   try {
-    const schoolId = req.schoolId;
     const all = await prisma.staffMember.findMany({
-      where: staffSchoolScopeWhere(schoolId),
+      where: currentStaffSchoolScope(req),
       include: {
         user: { select: { ...userSelect } },
         jobDescription: { select: { id: true, title: true, code: true } },
@@ -322,7 +326,7 @@ router.get('/staff/org-chart', async (req: SchoolContextRequest, res) => {
 router.get('/staff', async (req: SchoolContextRequest, res) => {
   try {
     const list = await prisma.staffMember.findMany({
-      where: staffSchoolScopeWhere(req.schoolId),
+      where: currentStaffSchoolScope(req),
       include: staffListInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -512,10 +516,10 @@ router.post(
   }
 );
 
-router.get('/staff/:id', async (req, res) => {
+router.get('/staff/:id', async (req: SchoolContextRequest, res) => {
   try {
-    const staff = await prisma.staffMember.findUnique({
-      where: { id: req.params.id },
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
       include: {
         ...staffListInclude,
         directReports: {
@@ -538,17 +542,13 @@ router.get('/staff/:id', async (req, res) => {
 router.put('/staff/:id', async (req: SchoolContextRequest, res) => {
   try {
     const schoolId = req.schoolId;
-    const staff = await prisma.staffMember.findUnique({
-      where: { id: req.params.id },
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
       include: { user: true },
     });
     if (!staff) {
       return res.status(404).json({ error: 'Membre du personnel introuvable' });
     }
-    if (schoolId && staff.schoolId && staff.schoolId !== schoolId) {
-      return res.status(403).json({ error: 'Ce personnel appartient à un autre établissement.' });
-    }
-
     const {
       firstName,
       lastName,
@@ -575,7 +575,9 @@ router.put('/staff/:id', async (req: SchoolContextRequest, res) => {
     }
 
     if (managerId) {
-      const mgr = await prisma.staffMember.findUnique({ where: { id: managerId } });
+      const mgr = await prisma.staffMember.findFirst({
+        where: { id: managerId, ...currentStaffSchoolScope(req) },
+      });
       if (!mgr) {
         return res.status(400).json({ error: 'Manager introuvable' });
       }
@@ -693,9 +695,11 @@ router.put('/staff/:id', async (req: SchoolContextRequest, res) => {
   }
 });
 
-router.delete('/staff/:id', async (req, res) => {
+router.delete('/staff/:id', async (req: SchoolContextRequest, res) => {
   try {
-    const staff = await prisma.staffMember.findUnique({ where: { id: req.params.id } });
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
+    });
     if (!staff) {
       return res.status(404).json({ error: 'Membre du personnel introuvable' });
     }
@@ -714,11 +718,18 @@ router.delete('/staff/:id', async (req, res) => {
   }
 });
 
-router.get('/staff/:id/attendances', async (req, res) => {
+router.get('/staff/:id/attendances', async (req: SchoolContextRequest, res) => {
   try {
     const { from, to } = req.query;
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
+      select: { id: true },
+    });
+    if (!staff) {
+      return res.status(404).json({ error: 'Membre du personnel introuvable' });
+    }
     const where: Prisma.StaffAttendanceWhereInput = {
-      staffId: req.params.id,
+      staffId: staff.id,
       ...(from && to
         ? { attendanceDate: { gte: String(from), lte: String(to) } }
         : from
@@ -739,13 +750,15 @@ router.get('/staff/:id/attendances', async (req, res) => {
   }
 });
 
-router.post('/staff/:id/attendances', async (req, res) => {
+router.post('/staff/:id/attendances', async (req: SchoolContextRequest, res) => {
   try {
     const { attendanceDate, status, source, notes } = req.body;
     if (!attendanceDate || typeof attendanceDate !== 'string') {
       return res.status(400).json({ error: 'attendanceDate requis (YYYY-MM-DD)' });
     }
-    const staff = await prisma.staffMember.findUnique({ where: { id: req.params.id } });
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
+    });
     if (!staff) {
       return res.status(404).json({ error: 'Membre du personnel introuvable' });
     }
@@ -781,10 +794,17 @@ router.post('/staff/:id/attendances', async (req, res) => {
   }
 });
 
-router.delete('/staff/:id/attendances/:attendanceId', async (req, res) => {
+router.delete('/staff/:id/attendances/:attendanceId', async (req: SchoolContextRequest, res) => {
   try {
+    const staff = await prisma.staffMember.findFirst({
+      where: { id: req.params.id, ...currentStaffSchoolScope(req) },
+      select: { id: true },
+    });
+    if (!staff) {
+      return res.status(404).json({ error: 'Membre du personnel introuvable' });
+    }
     const row = await prisma.staffAttendance.findFirst({
-      where: { id: req.params.attendanceId, staffId: req.params.id },
+      where: { id: req.params.attendanceId, staffId: staff.id },
     });
     if (!row) {
       return res.status(404).json({ error: 'Pointage introuvable' });

@@ -6364,7 +6364,7 @@ router.post('/tuition-fees/run-reminders', async (_req, res) => {
 });
 
 /** Enregistrement d’un encaissement au guichet (espèces ou virement sur place). */
-router.post('/tuition-fees/counter-payment', async (req, res) => {
+router.post('/tuition-fees/counter-payment', async (req: SchoolContextRequest, res) => {
   try {
     const adminId = req.user!.id;
     const { tuitionFeeId, amount, paymentMethod, notes } = req.body ?? {};
@@ -6378,6 +6378,19 @@ router.post('/tuition-fees/counter-payment', async (req, res) => {
     const payAmount = Math.round(Number(amount));
     if (!Number.isFinite(payAmount) || payAmount <= 0) {
       return res.status(400).json({ error: 'Montant invalide' });
+    }
+
+    try {
+      await assertTuitionFeeInSchool(
+        String(tuitionFeeId),
+        req.schoolId,
+        req.school?.isDefault ?? false,
+      );
+    } catch (e) {
+      if (e instanceof SchoolAccessDeniedError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
     }
 
     const fee = await prisma.tuitionFee.findUnique({

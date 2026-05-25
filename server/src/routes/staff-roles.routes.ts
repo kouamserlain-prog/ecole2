@@ -489,9 +489,9 @@ router.get('/treasury/recent-payments', requireStaffModule('treasury'), async (r
   }
 });
 
-router.get('/treasury/pending-cash', requireStaffAnyModule(CASH_VALIDATION_MODULES), async (_req, res) => {
+router.get('/treasury/pending-cash', requireStaffAnyModule(CASH_VALIDATION_MODULES), async (req: SchoolContextRequest, res) => {
   try {
-    const rows = await listPendingCashPayments();
+    const rows = await listPendingCashPayments(prisma, req.schoolId);
     res.json(rows);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
@@ -501,7 +501,7 @@ router.get('/treasury/pending-cash', requireStaffAnyModule(CASH_VALIDATION_MODUL
 router.post(
   '/treasury/pending-cash/:id/validate',
   requireStaffAnyModule(CASH_VALIDATION_MODULES),
-  async (req: AuthRequest, res) => {
+  async (req: SchoolContextRequest, res) => {
   try {
     const staff = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -513,7 +513,7 @@ router.post(
       id: staff.id,
       role: staff.role,
       name,
-    });
+    }, req.schoolId);
     res.json({ payment, message: 'Paiement espèces validé et pris en compte' });
   } catch (error: unknown) {
     const err = error as Error & { status?: number };
@@ -525,7 +525,7 @@ router.post(
 router.post(
   '/treasury/pending-cash/:id/reject',
   requireStaffAnyModule(CASH_VALIDATION_MODULES),
-  async (req: AuthRequest, res) => {
+  async (req: SchoolContextRequest, res) => {
   try {
     const staff = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -533,7 +533,7 @@ router.post(
     });
     const name = [staff?.firstName, staff?.lastName].filter(Boolean).join(' ').trim() || 'Économe';
     const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
-    const payment = await rejectCashPayment(prisma, req.params.id, { name }, reason);
+    const payment = await rejectCashPayment(prisma, req.params.id, { name }, reason, req.schoolId);
     res.json({ payment, message: 'Déclaration espèces refusée' });
   } catch (error: unknown) {
     const err = error as Error & { status?: number };

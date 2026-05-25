@@ -1361,6 +1361,7 @@ model InfirmaryVisit {
 
 model HealthCampaign {
   id          String             @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId    String?            @db.ObjectId
   kind        HealthCampaignKind
   title       String
   description String?
@@ -1371,9 +1372,11 @@ model HealthCampaign {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
+  school         School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   vaccinations   StudentVaccination[]
   participations HealthCampaignParticipation[]
 
+  @@index([schoolId])
   @@index([kind, isActive])
   @@map("health_campaigns")
 }
@@ -2499,6 +2502,7 @@ model School {
   admissions      Admission[]
   staffMembers    StaffMember[]
   staffMetiers    SchoolStaffMetier[]
+  healthCampaigns HealthCampaign[]
   workspaces      AdminWorkspace[]
   branding        AppBranding?
 
