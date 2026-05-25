@@ -24,7 +24,18 @@ const MODULE_ROUTE_RULES: ModuleRouteRule[] = [
   { moduleId: 'staff_mgmt', prefixes: ['/staff-personnel', '/staff'], access: 'write' },
   { moduleId: 'parents_mgmt', prefixes: ['/parents'], access: 'write' },
   { moduleId: 'admissions', prefixes: ['/admissions'], access: 'write' },
-  { moduleId: 'academic_mgmt', prefixes: ['/courses', '/school-calendar-events', '/school-gallery-items'], access: 'write' },
+  {
+    moduleId: 'academic_mgmt',
+    prefixes: [
+      '/courses',
+      '/school-calendar-events',
+      '/school-gallery-items',
+      '/school-curricula',
+      '/school-tracks',
+      '/subject-options',
+    ],
+    access: 'write',
+  },
   {
     moduleId: 'grading_mgmt',
     prefixes: ['/grades', '/assignments', '/report-cards', '/academic-change-requests'],

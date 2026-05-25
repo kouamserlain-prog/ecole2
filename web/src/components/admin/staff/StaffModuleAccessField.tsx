@@ -43,8 +43,8 @@ export default function StaffModuleAccessField({
           <p className="text-xs font-semibold text-stone-800">Modules visibles dans l&apos;espace personnel</p>
           <p className="text-[11px] text-stone-500 mt-0.5">
             Chaque module coché apparaît dans <strong>/staff</strong> avec ses fonctionnalités (création,
-            modification, etc.). Les modules <strong>recommandés</strong> du métier restent toujours disponibles ;
-            vous pouvez en ajouter d&apos;autres. <strong>Enregistrer</strong>, puis l&apos;agent actualise{' '}
+            modification, etc.). Tous les modules sont cochables ; le métier ou l&apos;agent dépend exactement
+            de la sélection enregistrée. <strong>Enregistrer</strong>, puis l&apos;agent actualise{' '}
             <strong>/staff</strong> (F5).
           </p>
         </div>

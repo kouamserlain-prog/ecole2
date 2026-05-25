@@ -179,7 +179,7 @@ export async function resolveAdminVisibleModules(
 }> {
   const all = [...ADMIN_MODULE_IDS] as AdminModuleId[];
 
-  if (role === 'SUPER_ADMIN') {
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
     return { visibleModules: all, unrestricted: true, workspaces: [] };
   }
 

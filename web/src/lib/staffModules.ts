@@ -942,119 +942,8 @@ const TAB_META: Record<StaffModuleId, Omit<StaffTabMeta, 'id'>> = {
 
 
 export function getEligibleModulesForSupportKind(kind: SupportStaffKindKey): StaffModuleId[] {
-  switch (kind) {
-
-    case 'SECRETARY':
-
-      return [
-        'overview',
-        'notifications_mgmt',
-        'counter',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'students_mgmt',
-        'classes_mgmt',
-        'parents_mgmt',
-        'class_councils',
-        'communication_mgmt',
-        'extracurricular_mgmt',
-      ];
-
-    case 'BURSAR':
-
-      return [
-        'overview',
-        'counter',
-        'admissions',
-        'treasury',
-        'notifications_mgmt',
-        'reports_mgmt',
-        'extracurricular_mgmt',
-        'attendance_mgmt',
-        'parents_mgmt',
-        'hr_mgmt',
-        'fees_mgmt',
-        'tuition_fees_mgmt',
-        'payments_mgmt',
-        'accounting_mgmt',
-        'administrative_mgmt',
-        'communication_mgmt',
-        'material_mgmt',
-      ];
-
-    case 'ACCOUNTANT':
-
-      return [
-        'overview',
-        'counter',
-        'admissions',
-        'treasury',
-        'notifications_mgmt',
-        'reports_mgmt',
-        'fees_mgmt',
-        'tuition_fees_mgmt',
-        'payments_mgmt',
-        'accounting_mgmt',
-        'administrative_mgmt',
-        'communication_mgmt',
-      ];
-
-    case 'STUDIES_DIRECTOR':
-
-      return [
-        'overview',
-        'notifications_mgmt',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'validations',
-        'grading_mgmt',
-        'academic_overview',
-        'class_councils',
-        'parents_mgmt',
-        'pedagogical_tracking',
-        'discipline_mgmt',
-        'extracurricular_mgmt',
-        'orientation_mgmt',
-        'communication_mgmt',
-        'hr_mgmt',
-      ];
-
-    case 'NURSE':
-
-      return ['overview', 'notifications_mgmt', 'health_log', 'communication_mgmt'];
-
-    case 'LIBRARIAN':
-
-      return ['overview', 'notifications_mgmt', 'library', 'digital_library', 'communication_mgmt'];
-
-    case 'IT':
-
-      return ['overview', 'notifications_mgmt', 'it_requests', 'communication_mgmt'];
-
-    case 'MAINTENANCE':
-
-      return ['overview', 'notifications_mgmt', 'maintenance_requests', 'communication_mgmt'];
-
-    case 'OTHER':
-
-      return [
-        'overview',
-        'notifications_mgmt',
-        'counter',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'communication_mgmt',
-      ];
-
-    default:
-
-      return ['overview'];
-
-  }
-
+  void kind;
+  return getAllStaffVisibleModules();
 }
 
 
@@ -1082,9 +971,8 @@ export function resolveVisibleStaffModules(
     return getEligibleModulesForSupportKind(kind);
   }
 
-  const eligible = getEligibleModulesForSupportKind(kind);
   const picked = sanitizeStaffModulesForSave(stored);
-  return [...new Set<StaffModuleId>([...eligible, ...picked])];
+  return [...new Set<StaffModuleId>(picked)];
 }
 
 

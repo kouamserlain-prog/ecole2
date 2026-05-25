@@ -65,7 +65,7 @@ function modulesFromStored(
     const id = normalizeStaffModuleId(raw);
     if (id && id !== 'overview') set.add(id);
   }
-  if (set.size === 1) {
+  if (set.size === 1 && modules.length === 0) {
     return getEligibleModulesForSupportKind(supportKind);
   }
   return [...set];
@@ -192,7 +192,7 @@ export async function resolveVisibleStaffModulesAtSchool(
   if (!picked.includes('overview')) {
     picked.unshift('overview');
   }
-  return [...new Set<StaffModuleId>([...eligible, ...picked])];
+  return [...new Set<StaffModuleId>(picked)];
 }
 
 export async function sanitizeVisibleStaffModulesForSchool(
@@ -207,7 +207,7 @@ export async function sanitizeVisibleStaffModulesForSchool(
   }
   await assertSupportKindActiveForSchool(schoolId, supportKind);
   if (!Array.isArray(requested) || requested.length === 0) {
-    return getEligibleModulesForStaffMemberAtSchool(staffCategory, supportKind, schoolId);
+    return ['overview'];
   }
   // Plafond = modules possibles pour ce métier (plateforme), pas seulement le sous-ensemble
   // « recommandé » configuré pour l’établissement — aligné avec l’UI « vous pouvez en ajouter d’autres ».

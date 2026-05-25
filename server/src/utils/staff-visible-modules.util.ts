@@ -50,6 +50,10 @@ export type StaffModuleId = (typeof STAFF_MODULE_IDS)[number];
 
 const MODULE_SET = new Set<string>(STAFF_MODULE_IDS);
 
+export function getAllStaffVisibleModules(): StaffModuleId[] {
+  return [...STAFF_MODULE_IDS];
+}
+
 /** Correspondance ids module ADMIN → ids module STAFF (évite perte à l’enregistrement). */
 const STAFF_MODULE_ALIASES: Record<string, StaffModuleId> = {
   accounting: 'accounting_mgmt',
@@ -133,102 +137,11 @@ export const STAFF_MODULE_LABELS: Record<StaffModuleId, string> = {
   administrative_mgmt: 'Gestion administrative',
 };
 
-/** Modules éligibles selon le métier (supportKind). */
+/** Tous les modules STAFF sont cochables pour chaque métier. */
 export function getEligibleModulesForSupportKind(
-  supportKind: SupportStaffKind | null | undefined,
+  _supportKind: SupportStaffKind | null | undefined,
 ): StaffModuleId[] {
-  if (!supportKind) return ['overview'];
-  switch (supportKind) {
-    case 'SECRETARY':
-      return [
-        'overview',
-        'notifications_mgmt',
-        'counter',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'students_mgmt',
-        'classes_mgmt',
-        'parents_mgmt',
-        'class_councils',
-        'communication_mgmt',
-        'extracurricular_mgmt',
-      ];
-    case 'BURSAR':
-      return [
-        'overview',
-        'counter',
-        'admissions',
-        'treasury',
-        'notifications_mgmt',
-        'reports_mgmt',
-        'extracurricular_mgmt',
-        'attendance_mgmt',
-        'parents_mgmt',
-        'hr_mgmt',
-        'fees_mgmt',
-        'tuition_fees_mgmt',
-        'payments_mgmt',
-        'accounting_mgmt',
-        'administrative_mgmt',
-        'communication_mgmt',
-        'material_mgmt',
-      ];
-    case 'ACCOUNTANT':
-      return [
-        'overview',
-        'counter',
-        'admissions',
-        'treasury',
-        'notifications_mgmt',
-        'reports_mgmt',
-        'fees_mgmt',
-        'tuition_fees_mgmt',
-        'payments_mgmt',
-        'accounting_mgmt',
-        'administrative_mgmt',
-        'communication_mgmt',
-      ];
-    case 'STUDIES_DIRECTOR':
-      return [
-        'overview',
-        'notifications_mgmt',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'validations',
-        'grading_mgmt',
-        'academic_overview',
-        'class_councils',
-        'parents_mgmt',
-        'pedagogical_tracking',
-        'discipline_mgmt',
-        'extracurricular_mgmt',
-        'orientation_mgmt',
-        'communication_mgmt',
-        'hr_mgmt',
-      ];
-    case 'NURSE':
-      return ['overview', 'notifications_mgmt', 'health_log', 'communication_mgmt'];
-    case 'LIBRARIAN':
-      return ['overview', 'notifications_mgmt', 'library', 'digital_library', 'communication_mgmt'];
-    case 'IT':
-      return ['overview', 'notifications_mgmt', 'it_requests', 'communication_mgmt'];
-    case 'MAINTENANCE':
-      return ['overview', 'notifications_mgmt', 'maintenance_requests', 'communication_mgmt'];
-    case 'OTHER':
-      return [
-        'overview',
-        'notifications_mgmt',
-        'counter',
-        'admissions',
-        'appointments',
-        'student_registry',
-        'communication_mgmt',
-      ];
-    default:
-      return ['overview'];
-  }
+  return getAllStaffVisibleModules();
 }
 
 export function getEligibleModulesForStaffMember(
@@ -236,7 +149,6 @@ export function getEligibleModulesForStaffMember(
   supportKind: SupportStaffKind | null | undefined,
 ): StaffModuleId[] {
   if (staffCategory === 'SUPPORT') {
-    // Comptes legacy sans métier : droits secrétariat par défaut (dont admissions)
     return getEligibleModulesForSupportKind(supportKind ?? 'SECRETARY');
   }
   return ['overview'];
@@ -251,7 +163,7 @@ export function sanitizeVisibleStaffModules(
     return ['overview'];
   }
   if (!Array.isArray(requested) || requested.length === 0) {
-    return getEligibleModulesForStaffMember(staffCategory, supportKind);
+    return ['overview'];
   }
   const withOverview = new Set<StaffModuleId>(['overview']);
   for (const raw of requested) {
@@ -269,9 +181,8 @@ export function resolveVisibleStaffModules(
   if (staffCategory !== 'SUPPORT') {
     return ['overview'];
   }
-  const eligible = getEligibleModulesForStaffMember(staffCategory, supportKind);
   if (!stored || stored.length === 0) {
-    return eligible;
+    return getEligibleModulesForStaffMember(staffCategory, supportKind);
   }
   let picked = stored
     .map((id) => normalizeStaffModuleId(id))
@@ -280,8 +191,7 @@ export function resolveVisibleStaffModules(
     picked.unshift('overview');
   }
 
-  // Modules recommandés du métier toujours présents + modules ajoutés par l’admin.
-  return [...new Set<StaffModuleId>([...eligible, ...picked])];
+  return [...new Set<StaffModuleId>(picked)];
 }
 
 /**

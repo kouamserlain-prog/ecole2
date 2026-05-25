@@ -9,6 +9,13 @@ import { notifyUsersImportant } from '../utils/notify-important.util';
 
 const router = express.Router();
 
+router.use((req, _res, next) => {
+  if (!req.path.startsWith('/notifications')) {
+    return next('router');
+  }
+  next();
+});
+
 async function requireStaffNotificationsAccess(
   req: AuthRequest,
   res: express.Response,

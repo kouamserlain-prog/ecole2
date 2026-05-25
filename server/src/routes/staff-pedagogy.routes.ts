@@ -9,11 +9,11 @@ import extracurricularAdminRoutes from './admin-extracurricular.routes';
 import adminReportsRoutes from './admin-reports.routes';
 import staffPedagogyExtraRoutes from './staff-pedagogy-extra.routes';
 import tuitionCatalogRoutes from './admin-tuition-catalog.routes';
+import { getStaffMemberModuleContext } from '../utils/staff-visible-modules.util';
 import {
-  getStaffMemberModuleContext,
-  type StaffModuleId,
-} from '../utils/staff-visible-modules.util';
-import { staffTuitionRatesReadAllowed } from '../utils/staff-module-admin-access.util';
+  staffModuleAdminPathAllowed,
+  staffTuitionRatesReadAllowed,
+} from '../utils/staff-module-admin-access.util';
 import {
   classScopeWhere,
   readSchoolIdFromRequest,
@@ -25,30 +25,6 @@ import {
 } from '../utils/prisma-relation-exists.util';
 
 const router = express.Router();
-
-export const PEDAGOGY_STAFF_MODULE_IDS: StaffModuleId[] = [
-  'students_mgmt',
-  'academic_mgmt',
-  'grading_mgmt',
-  'classes_mgmt',
-  'teachers_mgmt',
-  'educators_mgmt',
-  'staff_mgmt',
-  'parents_mgmt',
-  'pedagogical_tracking',
-  'discipline_mgmt',
-  'extracurricular_mgmt',
-  'orientation_mgmt',
-  'communication_mgmt',
-  'library_mgmt',
-  'material_mgmt',
-  'reports_mgmt',
-  'analytics_mgmt',
-  'schedule_mgmt',
-  'pointage_mgmt',
-  'attendance_mgmt',
-  'hr_mgmt',
-];
 
 const userPublic = {
   id: true,
@@ -112,16 +88,25 @@ function stripStaffSalary<T extends { salary?: unknown }>(row: T): Omit<T, 'sala
   return rest;
 }
 
-async function requireStaffPedagogy(req: AuthRequest, res: express.Response, next: express.NextFunction) {
+function pedagogyPathToAdminPath(path: string): string {
+  const raw = path.split('?')[0] || '/';
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+async function requireStaffPedagogyPathAccess(
+  req: AuthRequest,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   try {
     const ctx = await getStaffMemberModuleContext(req.user!.id);
     if (!ctx) {
       return res.status(403).json({ error: 'Profil personnel introuvable.' });
     }
-    const allowed = ctx.visibleModules.some((m) => PEDAGOGY_STAFF_MODULE_IDS.includes(m));
-    if (!allowed) {
+    const adminPath = pedagogyPathToAdminPath(req.path || '/');
+    if (!staffModuleAdminPathAllowed(ctx.visibleModules, adminPath, req.method)) {
       return res.status(403).json({
-        error: 'Ce module pédagogique n’est pas activé pour votre compte. Contactez l’administration.',
+        error: 'Ces données ne sont pas activées pour votre métier. Contactez l’administration.',
       });
     }
     next();
@@ -130,12 +115,25 @@ async function requireStaffPedagogy(req: AuthRequest, res: express.Response, nex
   }
 }
 
+function isTuitionRatesPedagogyPath(path: string): boolean {
+  const raw = path.split('?')[0] || '/';
+  return (
+    raw === '/tuition-level-rates' ||
+    raw.startsWith('/tuition-level-rates/') ||
+    raw === '/tuition-class-rates' ||
+    raw.startsWith('/tuition-class-rates/')
+  );
+}
+
 async function requireStaffTuitionRatesRead(
   req: AuthRequest,
   res: express.Response,
   next: express.NextFunction,
 ) {
   try {
+    if (!isTuitionRatesPedagogyPath(req.path || '/')) {
+      return next();
+    }
     const ctx = await getStaffMemberModuleContext(req.user!.id);
     if (!ctx) {
       return res.status(403).json({ error: 'Profil personnel introuvable.' });
@@ -166,7 +164,7 @@ function tuitionCatalogReadOnlyRouter() {
 
 router.use(requireStaffTuitionRatesRead, tuitionCatalogReadOnlyRouter());
 
-router.use(requireStaffPedagogy);
+router.use(requireStaffPedagogyPathAccess);
 
 router.get('/students', async (req, res) => {
   try {

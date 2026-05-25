@@ -55,6 +55,17 @@ describe('staff-module-admin-access', () => {
     );
   });
 
+  it('un module pédagogique seul ne reçoit pas les données des autres modules', () => {
+    assert.equal(staffModuleAdminPathAllowed(scheduleOnly, '/students', 'GET'), false);
+    assert.equal(staffModuleAdminPathAllowed(['reports_mgmt'], '/teachers', 'GET'), false);
+  });
+
+  it('academic_mgmt reçoit les données de configuration académique', () => {
+    assert.equal(staffModuleAdminPathAllowed(['academic_mgmt'], '/school-curricula', 'GET'), true);
+    assert.equal(staffModuleAdminPathAllowed(['academic_mgmt'], '/school-tracks', 'GET'), true);
+    assert.equal(staffModuleAdminPathAllowed(['academic_mgmt'], '/subject-options', 'GET'), true);
+  });
+
   it('admissions seul peut GET resolve-for-class (secrétaire, DES, etc.)', () => {
     assert.equal(
       staffModuleAdminPathAllowed(

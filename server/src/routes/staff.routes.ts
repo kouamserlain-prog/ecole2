@@ -127,11 +127,15 @@ router.get('/counter-tuition/students', async (req: SchoolContextRequest, res) =
 
     const students = await prisma.student.findMany({
       where: {
-        ...counterStudentScope(req),
-        OR: [
-          { studentId: { contains: q } },
-          { user: { firstName: { contains: q } } },
-          { user: { lastName: { contains: q } } },
+        AND: [
+          counterStudentScope(req),
+          {
+            OR: [
+              { studentId: { contains: q } },
+              { user: { firstName: { contains: q } } },
+              { user: { lastName: { contains: q } } },
+            ],
+          },
         ],
       },
       take: 30,
@@ -290,17 +294,28 @@ router.post('/counter-tuition/students/:studentId/payments', async (req: SchoolC
 });
 
 /** Recherche élèves (modules infirmerie, etc.). */
-router.get('/students/search', requireStaffModule('health_log'), async (req: AuthRequest, res) => {
+router.get(
+  '/students/search',
+  requireStaffModule('health_log'),
+  (req, res, next) => attachSchoolContext(req as SchoolContextRequest, res, next),
+  async (req: SchoolContextRequest, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
     const students = await prisma.student.findMany({
       where: {
-        isActive: true,
-        OR: [
-          { studentId: { contains: q } },
-          { user: { firstName: { contains: q } } },
-          { user: { lastName: { contains: q } } },
+        AND: [
+          {
+            isActive: true,
+            ...studentScopeWhere(req.schoolId!, req.school?.isDefault ?? false),
+          },
+          {
+            OR: [
+              { studentId: { contains: q } },
+              { user: { firstName: { contains: q } } },
+              { user: { lastName: { contains: q } } },
+            ],
+          },
         ],
       },
       take: 30,

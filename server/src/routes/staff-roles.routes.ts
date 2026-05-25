@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import type { AdmissionStatus, ParentTeacherAppointmentStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
+import { attachSchoolContext } from '../middleware/school-context.middleware';
 import {
   assertStaffHasModule,
   getStaffMemberModuleContext,
@@ -14,14 +15,19 @@ import {
   validateCashPayment,
 } from '../utils/cash-payment-validation.util';
 import { enrollStudentFromAdmission } from '../utils/admission-enroll.util';
-import { admissionScopeWhere } from '../utils/school-context.util';
-import { ensureDefaultSchool } from '../utils/ensure-default-school.util';
+import {
+  admissionScopeWhere,
+  classScopeWhere,
+  studentScopeWhere,
+  type SchoolContextRequest,
+} from '../utils/school-context.util';
 import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 
 const router = express.Router();
 
 router.use(authenticate);
 router.use(authorize('STAFF'));
+router.use((req, res, next) => attachSchoolContext(req as SchoolContextRequest, res, next));
 
 const CASH_VALIDATION_MODULES: StaffModuleId[] = [
   'treasury',
@@ -82,16 +88,23 @@ const SECRETARY_ADMISSION_STATUSES = new Set<AdmissionStatus>([
   'WAITLIST',
 ]);
 
-async function staffAdmissionScope(): Promise<ReturnType<typeof admissionScopeWhere>> {
-  const defaultId = await ensureDefaultSchool();
-  return admissionScopeWhere(defaultId, true);
+function currentStudentScope(req: SchoolContextRequest) {
+  return studentScopeWhere(req.schoolId!, req.school?.isDefault ?? false);
+}
+
+function currentClassScope(req: SchoolContextRequest) {
+  return classScopeWhere(req.schoolId!, req.school?.isDefault ?? false);
+}
+
+function currentAdmissionScope(req: SchoolContextRequest) {
+  return admissionScopeWhere(req.schoolId!, req.school?.isDefault ?? false);
 }
 
 // ——— Secrétariat : admissions ———
 
-router.get('/admissions/stats', requireStaffModule('admissions'), async (_req, res) => {
+router.get('/admissions/stats', requireStaffModule('admissions'), async (req: SchoolContextRequest, res) => {
   try {
-    const scope = await staffAdmissionScope();
+    const scope = currentAdmissionScope(req);
     const [pending, underReview, accepted, total] = await Promise.all([
       prisma.admission.count({ where: { ...scope, status: 'PENDING' } }),
       prisma.admission.count({ where: { ...scope, status: 'UNDER_REVIEW' } }),
@@ -104,9 +117,10 @@ router.get('/admissions/stats', requireStaffModule('admissions'), async (_req, r
   }
 });
 
-router.get('/admissions/classes', requireStaffModule('admissions'), async (_req, res) => {
+router.get('/admissions/classes', requireStaffModule('admissions'), async (req: SchoolContextRequest, res) => {
   try {
     const classes = await prisma.class.findMany({
+      where: currentClassScope(req),
       select: { id: true, name: true, level: true, academicYear: true },
       orderBy: [{ academicYear: 'desc' }, { name: 'asc' }],
     });
@@ -119,22 +133,26 @@ router.get('/admissions/classes', requireStaffModule('admissions'), async (_req,
 router.get('/admissions', requireStaffModule('admissions'), async (req, res) => {
   try {
     const { status, academicYear, q } = req.query;
-    const scope = await staffAdmissionScope();
+    const scope = currentAdmissionScope(req as SchoolContextRequest);
     const admissions = await prisma.admission.findMany({
       where: {
-        ...scope,
-        ...(status && typeof status === 'string' ? { status: status as AdmissionStatus } : {}),
-        ...(academicYear && typeof academicYear === 'string' ? { academicYear } : {}),
-        ...(q && typeof q === 'string' && q.trim()
-          ? {
-              OR: [
-                { firstName: { contains: q.trim() } },
-                { lastName: { contains: q.trim() } },
-                { email: { contains: q.trim() } },
-                { reference: { contains: q.trim() } },
-              ],
-            }
-          : {}),
+        AND: [
+          scope,
+          ...(status && typeof status === 'string' ? [{ status: status as AdmissionStatus }] : []),
+          ...(academicYear && typeof academicYear === 'string' ? [{ academicYear }] : []),
+          ...(q && typeof q === 'string' && q.trim()
+            ? [
+                {
+                  OR: [
+                    { firstName: { contains: q.trim() } },
+                    { lastName: { contains: q.trim() } },
+                    { email: { contains: q.trim() } },
+                    { reference: { contains: q.trim() } },
+                  ],
+                },
+              ]
+            : []),
+        ],
       },
       include: {
         proposedClass: { select: { id: true, name: true, level: true, academicYear: true } },
@@ -152,12 +170,14 @@ router.patch(
   '/admissions/:id',
   requireStaffModule('admissions'),
   body('status').optional().isString(),
-  async (req: AuthRequest, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-      const existing = await prisma.admission.findUnique({ where: { id: req.params.id } });
+      const existing = await prisma.admission.findFirst({
+        where: { id: req.params.id, ...currentAdmissionScope(req) },
+      });
       if (!existing) return res.status(404).json({ error: 'Dossier introuvable' });
       if (existing.status === 'ENROLLED') {
         return res.status(400).json({ error: 'Dossier déjà inscrit — modification limitée' });
@@ -226,7 +246,7 @@ router.post(
 
 // ——— Secrétariat : rendez-vous parents ———
 
-router.get('/appointments/stats', requireStaffModule('appointments'), async (_req, res) => {
+router.get('/appointments/stats', requireStaffModule('appointments'), async (req: SchoolContextRequest, res) => {
   try {
     const now = new Date();
     const startOfDay = new Date(now);
@@ -235,11 +255,19 @@ router.get('/appointments/stats', requireStaffModule('appointments'), async (_re
     endOfDay.setHours(23, 59, 59, 999);
 
     const [pending, today, confirmed] = await Promise.all([
-      prisma.parentTeacherAppointment.count({ where: { status: 'PENDING' } }),
       prisma.parentTeacherAppointment.count({
-        where: { scheduledStart: { gte: startOfDay, lte: endOfDay }, status: { not: 'CANCELLED' } },
+        where: { status: 'PENDING', student: currentStudentScope(req) },
       }),
-      prisma.parentTeacherAppointment.count({ where: { status: 'CONFIRMED' } }),
+      prisma.parentTeacherAppointment.count({
+        where: {
+          scheduledStart: { gte: startOfDay, lte: endOfDay },
+          status: { not: 'CANCELLED' },
+          student: currentStudentScope(req),
+        },
+      }),
+      prisma.parentTeacherAppointment.count({
+        where: { status: 'CONFIRMED', student: currentStudentScope(req) },
+      }),
     ]);
     res.json({ pending, today, confirmed });
   } catch (error: unknown) {
@@ -252,6 +280,7 @@ router.get('/appointments', requireStaffModule('appointments'), async (req, res)
     const { status, from, to, q } = req.query;
     const rows = await prisma.parentTeacherAppointment.findMany({
       where: {
+        student: currentStudentScope(req as SchoolContextRequest),
         ...(status && typeof status === 'string'
           ? { status: status as ParentTeacherAppointmentStatus }
           : {}),
@@ -297,12 +326,17 @@ router.get('/registry/students', requireStaffModule('student_registry'), async (
 
     const students = await prisma.student.findMany({
       where: {
-        isActive: true,
-        OR: [
-          { studentId: { contains: q } },
-          { user: { firstName: { contains: q } } },
-          { user: { lastName: { contains: q } } },
-          { user: { email: { contains: q } } },
+        AND: [
+          { isActive: true },
+          currentStudentScope(req as SchoolContextRequest),
+          {
+            OR: [
+              { studentId: { contains: q } },
+              { user: { firstName: { contains: q } } },
+              { user: { lastName: { contains: q } } },
+              { user: { email: { contains: q } } },
+            ],
+          },
         ],
       },
       take: 40,
@@ -327,7 +361,7 @@ router.get('/registry/students', requireStaffModule('student_registry'), async (
 router.get('/registry/students/:id', requireStaffModule('student_registry'), async (req, res) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { id: req.params.id, isActive: true },
+      where: { id: req.params.id, isActive: true, ...currentStudentScope(req as SchoolContextRequest) },
       include: {
         user: { select: { firstName: true, lastName: true, email: true, phone: true } },
         class: { select: { name: true, level: true, academicYear: true } },
@@ -349,7 +383,7 @@ router.get('/registry/students/:id', requireStaffModule('student_registry'), asy
 
 // ——— Économe / comptabilité : trésorerie ———
 
-router.get('/treasury/summary', requireStaffModule('treasury'), async (_req, res) => {
+router.get('/treasury/summary', requireStaffModule('treasury'), async (req: SchoolContextRequest, res) => {
   try {
     const now = new Date();
     const startOfDay = new Date(now);
@@ -358,6 +392,7 @@ router.get('/treasury/summary', requireStaffModule('treasury'), async (_req, res
 
     const [fees, paymentsToday, paymentsMonth, overdueCount] = await Promise.all([
       prisma.tuitionFee.findMany({
+        where: { student: currentStudentScope(req) },
         select: {
           id: true,
           amount: true,
@@ -368,17 +403,17 @@ router.get('/treasury/summary', requireStaffModule('treasury'), async (_req, res
         },
       }),
       prisma.payment.aggregate({
-        where: { status: 'COMPLETED', paidAt: { gte: startOfDay } },
+        where: { status: 'COMPLETED', paidAt: { gte: startOfDay }, student: currentStudentScope(req) },
         _sum: { amount: true },
         _count: true,
       }),
       prisma.payment.aggregate({
-        where: { status: 'COMPLETED', paidAt: { gte: startOfMonth } },
+        where: { status: 'COMPLETED', paidAt: { gte: startOfMonth }, student: currentStudentScope(req) },
         _sum: { amount: true },
         _count: true,
       }),
       prisma.tuitionFee.count({
-        where: { isPaid: false, dueDate: { lt: now } },
+        where: { isPaid: false, dueDate: { lt: now }, student: currentStudentScope(req) },
       }),
     ]);
 
@@ -407,11 +442,11 @@ router.get('/treasury/summary', requireStaffModule('treasury'), async (_req, res
   }
 });
 
-router.get('/treasury/overdue', requireStaffModule('treasury'), async (_req, res) => {
+router.get('/treasury/overdue', requireStaffModule('treasury'), async (req: SchoolContextRequest, res) => {
   try {
     const now = new Date();
     const fees = await prisma.tuitionFee.findMany({
-      where: { isPaid: false, dueDate: { lt: now } },
+      where: { isPaid: false, dueDate: { lt: now }, student: currentStudentScope(req) },
       include: {
         student: {
           include: {
@@ -437,10 +472,10 @@ router.get('/treasury/overdue', requireStaffModule('treasury'), async (_req, res
   }
 });
 
-router.get('/treasury/recent-payments', requireStaffModule('treasury'), async (_req, res) => {
+router.get('/treasury/recent-payments', requireStaffModule('treasury'), async (req: SchoolContextRequest, res) => {
   try {
     const rows = await prisma.payment.findMany({
-      where: { status: 'COMPLETED' },
+      where: { status: 'COMPLETED', student: currentStudentScope(req) },
       orderBy: { paidAt: 'desc' },
       take: 50,
       include: {
@@ -509,14 +544,19 @@ router.post(
 
 // ——— Directeur des études : pilotage ———
 
-router.get('/academic/overview', requireStaffModule('academic_overview'), async (_req, res) => {
+router.get('/academic/overview', requireStaffModule('academic_overview'), async (req: SchoolContextRequest, res) => {
   try {
     const [classCount, studentCount, pendingValidations, gradeAgg, classes] = await Promise.all([
-      prisma.class.count(),
-      prisma.student.count({ where: { isActive: true } }),
+      prisma.class.count({ where: currentClassScope(req) }),
+      prisma.student.count({ where: { isActive: true, ...currentStudentScope(req) } }),
       prisma.academicChangeRequest.count({ where: { status: 'PENDING_STUDIES_DIRECTOR' } }),
-      prisma.grade.aggregate({ _avg: { score: true }, _count: true }),
+      prisma.grade.aggregate({
+        where: { student: currentStudentScope(req) },
+        _avg: { score: true },
+        _count: true,
+      }),
       prisma.class.findMany({
+        where: currentClassScope(req),
         select: {
           id: true,
           name: true,
@@ -545,7 +585,12 @@ router.get('/academic/class-averages', requireStaffModule('academic_overview'), 
   try {
     const classId = typeof req.query.classId === 'string' ? req.query.classId : undefined;
     const grades = await prisma.grade.findMany({
-      where: classId ? { student: { classId } } : {},
+      where: {
+        student: {
+          ...currentStudentScope(req as SchoolContextRequest),
+          ...(classId ? { classId } : {}),
+        },
+      },
       select: { score: true, maxScore: true, student: { select: { classId: true } } },
     });
 
@@ -564,7 +609,7 @@ router.get('/academic/class-averages', requireStaffModule('academic_overview'), 
     const classRows =
       classIds.length > 0
         ? await prisma.class.findMany({
-            where: { id: { in: classIds } },
+            where: { id: { in: classIds }, ...currentClassScope(req as SchoolContextRequest) },
             select: { id: true, name: true, level: true },
           })
         : [];
@@ -593,6 +638,7 @@ router.get('/class-councils', requireStaffModule('class_councils'), async (req, 
     const { classId, period, academicYear } = req.query;
     const rows = await prisma.classCouncilSession.findMany({
       where: {
+        class: currentClassScope(req as SchoolContextRequest),
         ...(classId && typeof classId === 'string' ? { classId } : {}),
         ...(period && typeof period === 'string' ? { period } : {}),
         ...(academicYear && typeof academicYear === 'string' ? { academicYear } : {}),
@@ -607,9 +653,10 @@ router.get('/class-councils', requireStaffModule('class_councils'), async (req, 
   }
 });
 
-router.get('/class-councils/classes', requireStaffModule('class_councils'), async (_req, res) => {
+router.get('/class-councils/classes', requireStaffModule('class_councils'), async (req: SchoolContextRequest, res) => {
   try {
     const classes = await prisma.class.findMany({
+      where: currentClassScope(req),
       select: { id: true, name: true, level: true, academicYear: true },
       orderBy: { name: 'asc' },
     });
@@ -625,6 +672,13 @@ router.post('/class-councils', requireStaffModule('class_councils'), async (req:
       req.body ?? {};
     if (!classId || !period || !academicYear || !meetingDate) {
       return res.status(400).json({ error: 'classId, period, academicYear et meetingDate sont requis' });
+    }
+    const classRow = await prisma.class.findFirst({
+      where: { id: classId, ...currentClassScope(req as SchoolContextRequest) },
+      select: { id: true },
+    });
+    if (!classRow) {
+      return res.status(404).json({ error: 'Classe introuvable pour cet établissement' });
     }
     const created = await prisma.classCouncilSession.create({
       data: {
@@ -649,6 +703,13 @@ router.post('/class-councils', requireStaffModule('class_councils'), async (req:
 router.patch('/class-councils/:id', requireStaffModule('class_councils'), async (req, res) => {
   try {
     const { title, meetingDate, summary, decisions, recommendations } = req.body ?? {};
+    const existing = await prisma.classCouncilSession.findFirst({
+      where: { id: req.params.id, class: currentClassScope(req as SchoolContextRequest) },
+      select: { id: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Conseil introuvable pour cet établissement' });
+    }
     const updated = await prisma.classCouncilSession.update({
       where: { id: req.params.id },
       data: {
