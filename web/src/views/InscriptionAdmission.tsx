@@ -96,6 +96,7 @@ const InscriptionAdmission = () => {
     faviconUrl: null,
     appTitle: null,
     appTagline: null,
+    currentAcademicYear: null,
     schoolDisplayName: null,
     schoolAddress: null,
     schoolPhone: null,

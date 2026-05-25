@@ -26,6 +26,7 @@ export type BrandingPublicRow = {
   faviconUrl: string | null;
   appTitle: string | null;
   appTagline: string | null;
+  currentAcademicYear?: string | null;
   schoolDisplayName: string | null;
   schoolAddress: string | null;
   schoolPhone: string | null;
@@ -45,6 +46,7 @@ export function toPublicBrandingShape(row: BrandingPublicRow): BrandingPublicRow
     homePageImages: sanitizeHomePageImages(row.homePageImages),
     appTitle: row.appTitle,
     appTagline: row.appTagline,
+    currentAcademicYear: row.currentAcademicYear ?? null,
     schoolDisplayName: row.schoolDisplayName,
     schoolAddress: row.schoolAddress,
     schoolPhone: row.schoolPhone,

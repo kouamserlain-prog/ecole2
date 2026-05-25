@@ -13,6 +13,7 @@ import { publicApi } from '@/services/api/public';
 import { resolveUploadPublicUrl } from '@/lib/uploadsPublicUrl';
 import { applyBrandingToDocument } from '@/lib/applyBrandingDocument';
 import type { HomePageImagesRecord } from '@/lib/homePageImages.types';
+import { ACADEMIC_YEAR_OVERRIDE_STORAGE_KEY } from '@/utils/academicYear';
 
 export type AppBrandingPayload = {
   navigationLogoUrl: string | null;
@@ -20,6 +21,7 @@ export type AppBrandingPayload = {
   faviconUrl: string | null;
   appTitle: string | null;
   appTagline: string | null;
+  currentAcademicYear: string | null;
   schoolDisplayName: string | null;
   schoolAddress: string | null;
   schoolPhone: string | null;
@@ -47,6 +49,7 @@ const DEFAULT_BRANDING: AppBrandingPayload = {
   faviconUrl: null,
   appTitle: null,
   appTagline: null,
+  currentAcademicYear: null,
   schoolDisplayName: null,
   schoolAddress: null,
   schoolPhone: null,
@@ -74,6 +77,7 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
         faviconUrl: data.faviconUrl ?? null,
         appTitle: data.appTitle ?? null,
         appTagline: data.appTagline ?? null,
+        currentAcademicYear: data.currentAcademicYear ?? null,
         schoolDisplayName: data.schoolDisplayName ?? null,
         schoolAddress: data.schoolAddress ?? null,
         schoolPhone: data.schoolPhone ?? null,
@@ -86,6 +90,15 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
             ? (data.homePageImages as HomePageImagesRecord)
             : {},
       });
+      try {
+        if (data.currentAcademicYear) {
+          window.localStorage.setItem(ACADEMIC_YEAR_OVERRIDE_STORAGE_KEY, data.currentAcademicYear);
+        } else {
+          window.localStorage.removeItem(ACADEMIC_YEAR_OVERRIDE_STORAGE_KEY);
+        }
+      } catch {
+        /* ignore */
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Chargement de la charte impossible';
       setError(msg);

@@ -115,12 +115,6 @@ export const studentApi = {
     });
     return response.data;
   },
-  confirmPayment: async (paymentId: string, transactionId?: string) => {
-    const response = await api.post(`/student/payments/${paymentId}/confirm`, {
-      transactionId,
-    });
-    return response.data;
-  },
   getPayments: async () => {
     const response = await api.get('/student/payments');
     return response.data;

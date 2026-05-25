@@ -35,17 +35,38 @@ const diskStorage = multer.diskStorage({
 
 const storage = useBlobStorage() ? multer.memoryStorage() : diskStorage;
 
-// Filtre des types de fichiers
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+const GENERAL_ALLOWED_MIMES_BY_EXT: Record<string, readonly string[]> = {
+  '.jpeg': ['image/jpeg'],
+  '.jpg': ['image/jpeg'],
+  '.png': ['image/png'],
+  '.gif': ['image/gif'],
+  '.pdf': ['application/pdf'],
+  '.doc': ['application/msword'],
+  '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+};
 
-  if (mimetype && extname) {
-    return cb(null, true);
-  } else {
-    cb(new Error('Type de fichier non autorisé. Utilisez jpeg, jpg, png, gif, pdf, doc ou docx.'));
+function mimeAllowedForExtension(
+  originalName: string,
+  mimetype: string | undefined,
+  allowedByExt: Record<string, readonly string[]>,
+): boolean {
+  const ext = path.extname(originalName).toLowerCase();
+  const allowedMimes = allowedByExt[ext];
+  if (!allowedMimes) return false;
+
+  const normalizedMime = (mimetype || '').toLowerCase().split(';')[0].trim();
+  if (!normalizedMime || normalizedMime === 'application/octet-stream') {
+    return true;
   }
+  return allowedMimes.includes(normalizedMime);
+}
+
+// Filtre des types de fichiers
+const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  if (mimeAllowedForExtension(file.originalname, file.mimetype, GENERAL_ALLOWED_MIMES_BY_EXT)) {
+    return cb(null, true);
+  }
+  cb(new Error('Type de fichier non autorisé. Utilisez jpeg, jpg, png, gif, pdf, doc ou docx.'));
 };
 
 export const upload = multer({
@@ -88,7 +109,6 @@ const BRANDING_ALLOWED_MIMES = new Set([
   'image/jpg',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
   'image/x-icon',
   'image/vnd.microsoft.icon',
   'image/heic',
@@ -96,7 +116,7 @@ const BRANDING_ALLOWED_MIMES = new Set([
 ]);
 
 const brandingExtOk = (name: string) =>
-  /\.(jpeg|jpg|png|gif|webp|svg|ico|heic|heif)$/i.test(path.extname(name));
+  /\.(jpeg|jpg|png|gif|webp|ico|heic|heif)$/i.test(path.extname(name));
 
 const brandingFileFilter = (_req: unknown, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   if (file.fieldname !== 'branding') {
@@ -104,7 +124,7 @@ const brandingFileFilter = (_req: unknown, file: Express.Multer.File, cb: multer
   }
   if (!brandingExtOk(file.originalname)) {
     return cb(
-      new Error('Format non autorisé pour le logo. Utilisez une image (PNG, JPG, WEBP, SVG, ICO, HEIC…).')
+      new Error('Format non autorisé pour le logo. Utilisez une image (PNG, JPG, WEBP, ICO, HEIC…).')
     );
   }
   const mime = (file.mimetype || '').toLowerCase().split(';')[0].trim();
@@ -112,7 +132,7 @@ const brandingFileFilter = (_req: unknown, file: Express.Multer.File, cb: multer
     return cb(null, true);
   }
   return cb(
-    new Error('Format non autorisé pour le logo. Utilisez une image (PNG, JPG, WEBP, SVG, ICO, HEIC…).')
+    new Error('Format non autorisé pour le logo. Utilisez une image (PNG, JPG, WEBP, ICO, HEIC…).')
   );
 };
 

@@ -7,6 +7,7 @@ import Input from '../ui/Input';
 import Badge from '../ui/Badge';
 import toast from 'react-hot-toast';
 import HomePageImagesPanel from './HomePageImagesPanel';
+import { getCurrentAcademicYear } from '@/utils/academicYear';
 import {
   FiBriefcase,
   FiBook, 
@@ -85,7 +86,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
 
   // Academic settings
   const [academicSettings, setAcademicSettings] = useState({
-    currentYear: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+    currentYear: getCurrentAcademicYear(),
     startDate: `${new Date().getFullYear()}-09-01`,
     endDate: `${new Date().getFullYear() + 1}-06-30`,
     trimesters: [
@@ -154,6 +155,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
         if (!cancelled) {
           setAppTitleDraft(typeof b.appTitle === 'string' ? b.appTitle : '');
           setAppTaglineDraft(typeof b.appTagline === 'string' ? b.appTagline : '');
+          setAcademicSettings((prev) => ({
+            ...prev,
+            currentYear:
+              typeof b.currentAcademicYear === 'string' && b.currentAcademicYear.trim()
+                ? b.currentAcademicYear
+                : getCurrentAcademicYear(),
+          }));
           setSchoolSettings({
             name: typeof b.schoolDisplayName === 'string' ? b.schoolDisplayName : '',
             address: typeof b.schoolAddress === 'string' ? b.schoolAddress : '',
@@ -167,6 +175,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
         if (!cancelled) {
           setAppTitleDraft('');
           setAppTaglineDraft('');
+          setAcademicSettings((prev) => ({ ...prev, currentYear: getCurrentAcademicYear() }));
           setSchoolSettings({
             name: '',
             address: '',
@@ -186,7 +195,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
   const triggerBrandingUpload = (slot: 'navigation' | 'login' | 'favicon' | 'studiesDirector') => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/png,image/jpeg,image/jpg,image/webp,image/gif,image/svg+xml,.ico';
+    input.accept = 'image/png,image/jpeg,image/jpg,image/webp,image/gif,image/x-icon,.ico';
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -240,9 +249,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
     setIsSaving(true);
     
     try {
+      const academicYear = academicSettings.currentYear.trim();
+      if (!/^\d{4}-\d{4}$/.test(academicYear)) {
+        toast.error('Année scolaire invalide. Format attendu : 2026-2027');
+        return;
+      }
+      const [startYear, endYear] = academicYear.split('-').map((v) => parseInt(v, 10));
+      if (endYear !== startYear + 1) {
+        toast.error('Année scolaire invalide : l’année de fin doit suivre l’année de début.');
+        return;
+      }
       await adminApi.updateAppBranding({
         appTitle: appTitleDraft.trim() || null,
         appTagline: appTaglineDraft.trim() || null,
+        currentAcademicYear: academicYear,
         schoolDisplayName: schoolSettings.name.trim() || null,
         schoolAddress: schoolSettings.address.trim() || null,
         schoolPhone: schoolSettings.phone.trim() || null,
@@ -739,7 +759,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Année académique
+                        Année scolaire active
                       </label>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -750,9 +770,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                           value={academicSettings.currentYear}
                           onChange={(e) => setAcademicSettings({ ...academicSettings, currentYear: e.target.value })}
                           className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/20 focus:border-green-500 transition-all"
-                          placeholder="2024-2025"
+                          placeholder="2026-2027"
                         />
                       </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Utilisée par défaut dans les inscriptions, frais, bulletins et affichages.
+                      </p>
                     </div>
 
                     <div>

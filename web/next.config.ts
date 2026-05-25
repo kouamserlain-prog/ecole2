@@ -46,15 +46,38 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
 ] as const;
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https:",
+  "media-src 'self' blob: https:",
+  "connect-src 'self' https: wss:",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+  "style-src 'self' 'unsafe-inline' https:",
+  "upgrade-insecure-requests",
+].join("; ");
+
+const PRODUCTION_SECURITY_HEADERS =
+  process.env.NODE_ENV === "production"
+    ? ([
+        { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
+        { key: "Content-Security-Policy", value: CONTENT_SECURITY_POLICY },
+      ] as const)
+    : [];
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(process.cwd()),
   },
   async headers() {
     return [
-      { source: "/:path*", headers: [...SECURITY_HEADERS] },
-      { source: "/inscription", headers: [...NO_STORE_CACHE_HEADERS, ...SECURITY_HEADERS] },
-      { source: "/pre-inscription", headers: [...NO_STORE_CACHE_HEADERS, ...SECURITY_HEADERS] },
+      { source: "/:path*", headers: [...SECURITY_HEADERS, ...PRODUCTION_SECURITY_HEADERS] },
+      { source: "/inscription", headers: [...NO_STORE_CACHE_HEADERS, ...SECURITY_HEADERS, ...PRODUCTION_SECURITY_HEADERS] },
+      { source: "/pre-inscription", headers: [...NO_STORE_CACHE_HEADERS, ...SECURITY_HEADERS, ...PRODUCTION_SECURITY_HEADERS] },
     ];
   },
   async rewrites() {

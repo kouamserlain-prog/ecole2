@@ -16,6 +16,7 @@ export type AppBrandingRow = {
   faviconUrl: string | null;
   appTitle: string | null;
   appTagline: string | null;
+  currentAcademicYear?: string | null;
   schoolDisplayName: string | null;
   schoolAddress: string | null;
   schoolPhone: string | null;

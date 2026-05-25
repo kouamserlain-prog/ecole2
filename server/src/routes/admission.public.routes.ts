@@ -124,8 +124,24 @@ router.post(
 
       const reportCard = await term3ReportCardDataFromUpload(req);
 
+      let schoolId: string;
+      const slug = readSchoolSlugFromRequest(req);
+      if (slug) {
+        const school = await resolveSchoolBySlug(slug);
+        if (!school) {
+          unlinkUploadedFile(req.file);
+          return res.status(400).json({
+            error: 'Établissement inconnu. Vérifiez le lien de pré-inscription.',
+          });
+        }
+        schoolId = school.id;
+      } else {
+        schoolId = await ensureDefaultSchool();
+      }
+
       const openDuplicate = await prisma.admission.findFirst({
         where: {
+          schoolId,
           email: emailNorm,
           academicYear: String(academicYear).trim(),
           status: { in: ['PENDING', 'UNDER_REVIEW', 'WAITLIST', 'ACCEPTED'] },
@@ -142,21 +158,6 @@ router.post(
       }
 
       const reference = await generateUniqueReference();
-
-      let schoolId: string | undefined;
-      const slug = readSchoolSlugFromRequest(req);
-      if (slug) {
-        const school = await resolveSchoolBySlug(slug);
-        if (!school) {
-          unlinkUploadedFile(req.file);
-          return res.status(400).json({
-            error: 'Établissement inconnu. Vérifiez le lien de pré-inscription.',
-          });
-        }
-        schoolId = school.id;
-      } else {
-        schoolId = await ensureDefaultSchool();
-      }
 
       const admission = await prisma.admission.create({
         data: {

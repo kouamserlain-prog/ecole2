@@ -89,12 +89,12 @@ Vous avez 4 options :
 - Rendez-vous à l'administration de l'établissement avec le montant exact
 - Le paiement sera enregistré manuellement par le personnel administratif
 
-### Étape 5 : Confirmer le paiement
+### Étape 5 : Enregistrer la demande de paiement
 
 1. Vérifiez tous les détails
-2. Cliquez sur **"Confirmer le paiement"**
-3. Attendez la confirmation (2-3 secondes pour les paiements en ligne)
-4. Vous recevrez une notification de succès
+2. Cliquez sur le bouton de paiement ou d'enregistrement affiché dans le formulaire
+3. Le paiement est créé avec le statut **"En attente"**
+4. Il sera validé par l'administration, l'économe ou un webhook sécurisé du prestataire de paiement si l'intégration est active
 
 ### Étape 6 : Consulter l'historique
 
@@ -131,12 +131,12 @@ Vous avez 4 options :
 
 Les mêmes 4 options sont disponibles que pour les étudiants (voir ci-dessus).
 
-### Étape 5 : Confirmer le paiement
+### Étape 5 : Enregistrer la demande de paiement
 
 1. Vérifiez tous les détails
-2. Cliquez sur **"Confirmer le paiement"**
-3. Attendez la confirmation
-4. Vous recevrez une notification de succès
+2. Cliquez sur le bouton de paiement ou d'enregistrement affiché dans le formulaire
+3. Le paiement reste **"En attente"** jusqu'à validation
+4. Contactez l'administration si vous avez déjà effectué le versement mais que le statut ne change pas
 
 ### Étape 6 : Consulter l'historique
 
@@ -151,7 +151,7 @@ Les mêmes 4 options sont disponibles que pour les étudiants (voir ci-dessus).
 
 ### 1. Carte Bancaire
 - **Avantages** : Paiement instantané, sécurisé
-- **Délai de confirmation** : Immédiat
+- **Délai de confirmation** : Après validation sécurisée par l'administration ou par le prestataire de paiement
 - **Frais** : Selon votre banque
 
 ### 2. Mobile Money
@@ -161,7 +161,7 @@ Les mêmes 4 options sont disponibles que pour les étudiants (voir ci-dessus).
   - MTN Mobile Money
   - Moov Money
   - Autres opérateurs
-- **Délai de confirmation** : 2-3 secondes après confirmation
+- **Délai de confirmation** : Après validation sécurisée par l'administration ou par le prestataire de paiement
 - **Frais** : Selon votre opérateur
 
 ### 3. Virement Bancaire

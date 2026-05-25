@@ -41,6 +41,25 @@ function formatApiError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+type ClassOption = {
+  id: string;
+  name: string;
+  level?: string | null;
+  section?: string | null;
+  academicYear?: string | null;
+};
+
+function formatLevelOption(cls: ClassOption): string {
+  const level = cls.level?.trim() || cls.name;
+  const name = cls.name?.trim();
+  const sameNameAndLevel = name.toLowerCase() === level.toLowerCase();
+  const section = cls.section?.trim();
+
+  if (section) return `${level} sect. ${section}`;
+  if (!sameNameAndLevel && name) return `${level} — ${name}`;
+  return level;
+}
+
 const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) => {
   const queryClient = useQueryClient();
   const schoolReady = useSchoolReady();
@@ -85,11 +104,11 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
     enabled: isOpen && schoolReady,
   });
 
+  const classOptions = classes as ClassOption[] | undefined;
+
   const selectedClass = useMemo(
-    () => (classes as { id: string; name: string; level?: string; academicYear?: string }[] | undefined)?.find(
-      (c) => c.id === formData.classId
-    ),
-    [classes, formData.classId]
+    () => classOptions?.find((c) => c.id === formData.classId),
+    [classOptions, formData.classId]
   );
 
   const tuitionAcademicYear =
@@ -468,7 +487,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  <label htmlFor="add-student-date-of-birth" className="block text-xs font-semibold text-stone-700 mb-1">
                     Date de naissance <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
@@ -476,6 +495,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                       <FiCalendar className="h-3.5 w-3.5 text-stone-400" />
                     </div>
                     <input
+                      id="add-student-date-of-birth"
                       type="date"
                       name="dateOfBirth"
                       value={formData.dateOfBirth}
@@ -495,10 +515,11 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  <label htmlFor="add-student-gender" className="block text-xs font-semibold text-stone-700 mb-1">
                     Genre <span className="text-red-500">*</span>
                   </label>
                   <select
+                    id="add-student-gender"
                     name="gender"
                     value={formData.gender}
                     onChange={handleChange}
@@ -573,20 +594,20 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    Classe
+                  <label htmlFor="add-student-class-id" className="block text-xs font-semibold text-stone-700 mb-1">
+                    Niveau
                   </label>
                   <select
+                    id="add-student-class-id"
                     name="classId"
                     value={formData.classId}
                     onChange={handleChange}
                     className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500/40 transition-all"
                   >
-                    <option value="">Sélectionner une classe</option>
-                    {classes?.map((cls: any) => (
+                    <option value="">Sélectionner un niveau</option>
+                    {classOptions?.map((cls) => (
                       <option key={cls.id} value={cls.id}>
-                        {cls.level}
-                        {cls.section ? ` sect. ${cls.section}` : ''} — {cls.name}
+                        {formatLevelOption(cls)}
                       </option>
                     ))}
                   </select>
@@ -599,7 +620,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                       academicYear={tuitionAcademicYear}
                       classLabel={
                         selectedClass
-                          ? `${selectedClass.name}${selectedClass.level ? ` (${selectedClass.level})` : ''}`
+                          ? formatLevelOption(selectedClass)
                           : undefined
                       }
                     />
@@ -607,10 +628,11 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                 ) : null}
 
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  <label htmlFor="add-student-class-group-id" className="block text-xs font-semibold text-stone-700 mb-1">
                     Groupe <span className="text-stone-400 font-normal">(optionnel)</span>
                   </label>
                   <select
+                    id="add-student-class-group-id"
                     name="classGroupId"
                     value={formData.classGroupId}
                     onChange={handleChange}
@@ -630,7 +652,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  <label htmlFor="add-student-enrollment-date" className="block text-xs font-semibold text-stone-700 mb-1">
                     Date d'inscription
                   </label>
                   <div className="relative">
@@ -638,6 +660,7 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                       <FiCalendar className="h-3.5 w-3.5 text-stone-400" />
                     </div>
                     <input
+                      id="add-student-enrollment-date"
                       type="date"
                       name="enrollmentDate"
                       value={formData.enrollmentDate}

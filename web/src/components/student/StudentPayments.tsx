@@ -131,28 +131,14 @@ const StudentPayments = () => {
         queryClient.invalidateQueries({ queryKey: ['student-payments'] });
         return;
       }
-      toast.success('Paiement initié avec succès');
-      setTimeout(() => {
-        confirmPaymentMutation.mutate({
-          paymentId: (data as { payment: { id: string } }).payment.id,
-        });
-      }, 2000);
+      toast.success(
+        'Paiement enregistré. Il restera en attente jusqu’à validation sécurisée.',
+      );
+      queryClient.invalidateQueries({ queryKey: ['student-tuition-fees'] });
+      queryClient.invalidateQueries({ queryKey: ['student-payments'] });
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Erreur lors de l\'initiation du paiement');
-    },
-  });
-
-  const confirmPaymentMutation = useMutation({
-    mutationFn: ({ paymentId, transactionId }: { paymentId: string; transactionId?: string }) =>
-      studentApi.confirmPayment(paymentId, transactionId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['student-tuition-fees'] });
-      queryClient.invalidateQueries({ queryKey: ['student-payments'] });
-      toast.success('Paiement confirmé avec succès !');
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || 'Erreur lors de la confirmation du paiement');
     },
   });
 
@@ -565,6 +551,7 @@ const StudentPayments = () => {
           </div>
           <div className="flex gap-2">
             <select
+              aria-label="Filtrer les frais par statut"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as any)}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
@@ -741,6 +728,7 @@ const StudentPayments = () => {
             <h3 className="text-xl font-bold text-gray-900">Historique des paiements</h3>
             <div className="flex gap-2">
               <select
+                aria-label="Filtrer l'historique par méthode de paiement"
                 value={filterMethod}
                 onChange={(e) => setFilterMethod(e.target.value as any)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
@@ -856,12 +844,12 @@ const StudentPayments = () => {
                     </div>
                     {selectedFee.paymentProgress !== undefined && (
                       <div className="mt-2">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, selectedFee.paymentProgress)}%` }}
-                          ></div>
-                        </div>
+                        <progress
+                          aria-label="Progression du paiement"
+                          className="w-full h-2 accent-purple-600"
+                          value={Math.min(100, selectedFee.paymentProgress)}
+                          max={100}
+                        />
                         <p className="text-xs text-gray-500 mt-1 text-right">
                           {selectedFee.paymentProgress.toFixed(1)}% payé
                         </p>

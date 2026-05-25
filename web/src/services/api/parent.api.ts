@@ -24,12 +24,6 @@ export const parentApi = {
     });
     return response.data;
   },
-  confirmPayment: async (studentId: string, paymentId: string, transactionId?: string) => {
-    const response = await api.post(`/parent/children/${studentId}/payments/${paymentId}/confirm`, {
-      transactionId,
-    });
-    return response.data;
-  },
   getChildPayments: async (studentId: string) => {
     const response = await api.get(`/parent/children/${studentId}/payments`);
     return response.data;

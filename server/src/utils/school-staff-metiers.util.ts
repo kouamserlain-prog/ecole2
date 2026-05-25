@@ -209,13 +209,13 @@ export async function sanitizeVisibleStaffModulesForSchool(
   if (!Array.isArray(requested) || requested.length === 0) {
     return getEligibleModulesForStaffMemberAtSchool(staffCategory, supportKind, schoolId);
   }
-  const eligible = new Set(
-    await getEligibleModulesForStaffMemberAtSchool(staffCategory, supportKind, schoolId),
-  );
+  // Plafond = modules possibles pour ce métier (plateforme), pas seulement le sous-ensemble
+  // « recommandé » configuré pour l’établissement — aligné avec l’UI « vous pouvez en ajouter d’autres ».
+  const allowed = new Set(getEligibleModulesForSupportKind(supportKind ?? 'OTHER'));
   const withOverview = new Set<StaffModuleId>(['overview']);
   for (const raw of requested) {
     const id = normalizeStaffModuleId(raw);
-    if (id && id !== 'overview' && eligible.has(id)) withOverview.add(id);
+    if (id && id !== 'overview' && allowed.has(id)) withOverview.add(id);
   }
   return [...withOverview];
 }

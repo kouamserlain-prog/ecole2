@@ -34,6 +34,7 @@ import {
   getEligibleModulesForSupportKind,
   resolveVisibleStaffModules,
   sanitizeStaffModulesForSave,
+  STAFF_MODULE_LABELS,
   type StaffModuleId,
 } from '@/lib/staffModules';
 import { useAppBranding } from '@/contexts/AppBrandingContext';
@@ -1207,9 +1208,22 @@ function StaffFormModal({
     },
     onSuccess: (data) => {
       const sent = (data as { passwordSetupEmailSent?: boolean })?.passwordSetupEmailSent;
+      const savedMods = (data as { visibleStaffModules?: string[] })?.visibleStaffModules;
+      let modulesWarning = false;
+      if (staffCategory === 'SUPPORT' && Array.isArray(savedMods)) {
+        const requested = sanitizeStaffModulesForSave(visibleStaffModules);
+        const missing = requested.filter((id) => !savedMods.includes(id));
+        if (missing.length > 0) {
+          modulesWarning = true;
+          toast(
+            `Enregistré, mais certains modules ne sont pas autorisés pour ce métier : ${missing.map((id) => STAFF_MODULE_LABELS[id]).join(', ')}.`,
+            { icon: '⚠️', duration: 6000 },
+          );
+        }
+      }
       if (!staffId && sent) {
         toast.success('Personnel créé. Un lien pour choisir le mot de passe a été envoyé par e-mail (48 h).');
-      } else {
+      } else if (!modulesWarning) {
         toast.success(staffId ? 'Mis à jour' : 'Personnel créé');
       }
       qc.invalidateQueries({ queryKey: ['admin-staff-member-edit', staffId] });

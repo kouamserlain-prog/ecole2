@@ -2646,6 +2646,8 @@ model AppBranding {
   faviconUrl        String?
   appTitle          String?
   appTagline        String?
+  /// Année scolaire active choisie par l’admin (sinon calcul automatique septembre → août)
+  currentAcademicYear String?
   /// Fiche établissement (onglet Paramètres → Établissement)
   schoolDisplayName String?
   schoolAddress     String?

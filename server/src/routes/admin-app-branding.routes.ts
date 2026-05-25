@@ -32,6 +32,7 @@ function emptyBrandingResponse() {
     faviconUrl: null,
     appTitle: null,
     appTagline: null,
+    currentAcademicYear: null,
     schoolDisplayName: null,
     schoolAddress: null,
     schoolPhone: null,
@@ -49,6 +50,24 @@ function trimText(v: unknown, max: number): string | null | undefined {
   if (typeof v !== 'string') return undefined;
   const t = v.trim();
   return t.length === 0 ? null : t.slice(0, max);
+}
+
+function normalizeAcademicYearSetting(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== 'string') return undefined;
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{4})\s*[-–/]\s*(\d{4})$/);
+  if (!match) {
+    throw new Error('Année scolaire invalide. Format attendu : 2026-2027.');
+  }
+  const start = parseInt(match[1], 10);
+  const end = parseInt(match[2], 10);
+  if (end !== start + 1) {
+    throw new Error('Année scolaire invalide : l’année de fin doit suivre l’année de début.');
+  }
+  return `${start}-${end}`;
 }
 
 function toPublicShape(row: Parameters<typeof toPublicBrandingShape>[0]) {
@@ -98,12 +117,14 @@ router.put('/app-branding', async (req: SchoolContextRequest, res) => {
       : APP_BRANDING_ID;
 
     const body = req.body as Record<string, unknown>;
-    const data: Prisma.AppBrandingUncheckedUpdateInput = {};
+    const data: Record<string, unknown> = {};
 
     const title = trimText(body.appTitle, 120);
     const tagline = trimText(body.appTagline, 160);
+    const currentAcademicYear = normalizeAcademicYearSetting(body.currentAcademicYear);
     if (title !== undefined) data.appTitle = title;
     if (tagline !== undefined) data.appTagline = tagline;
+    if (currentAcademicYear !== undefined) data.currentAcademicYear = currentAcademicYear;
 
     const schoolName = trimText(body.schoolDisplayName, 200);
     const schoolAddr = trimText(body.schoolAddress, 500);
@@ -173,7 +194,7 @@ router.put('/app-branding', async (req: SchoolContextRequest, res) => {
       create: {
         id: brandingId,
         schoolId: req.schoolId ?? undefined,
-        ...(data as Omit<Prisma.AppBrandingUncheckedCreateInput, 'id' | 'schoolId'>),
+        ...data,
       },
       update: data,
     });
@@ -182,7 +203,8 @@ router.put('/app-branding', async (req: SchoolContextRequest, res) => {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Erreur serveur';
     console.error('PUT /admin/app-branding:', error);
-    res.status(500).json({ error: message });
+    const status = message.startsWith('Année scolaire invalide') ? 400 : 500;
+    res.status(status).json({ error: message });
   }
 });
 

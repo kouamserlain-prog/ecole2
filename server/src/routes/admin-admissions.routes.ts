@@ -5,7 +5,10 @@ import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/
 import type { SchoolContextRequest } from '../utils/school-context.util';
 import { admissionScopeWhere } from '../utils/school-context.util';
 import { enrollStudentFromAdmission } from '../utils/admission-enroll.util';
-import type { AuthRequest } from '../middleware/auth.middleware';
+import {
+  assertClassInSchool,
+  SchoolAccessDeniedError,
+} from '../utils/school-access-guard.util';
 
 const router = express.Router();
 
@@ -94,10 +97,13 @@ router.get('/admissions/stats', async (req: SchoolContextRequest, res) => {
   }
 });
 
-router.get('/admissions/:id', async (req, res) => {
+router.get('/admissions/:id', async (req: SchoolContextRequest, res) => {
   try {
-    const admission = await prisma.admission.findUnique({
-      where: { id: req.params.id },
+    const admission = await prisma.admission.findFirst({
+      where: {
+        id: req.params.id,
+        ...admissionScopeWhere(req.schoolId!, req.school?.isDefault),
+      },
       include: {
         proposedClass: true,
       },
@@ -121,15 +127,18 @@ router.patch(
       .isIn(['PENDING', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'WAITLIST', 'ENROLLED'])
       .withMessage('Statut invalide'),
   ],
-  async (req, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const existing = await prisma.admission.findUnique({
-        where: { id: req.params.id },
+      const existing = await prisma.admission.findFirst({
+        where: {
+          id: req.params.id,
+          ...admissionScopeWhere(req.schoolId!, req.school?.isDefault),
+        },
       });
       if (!existing) {
         return res.status(404).json({ error: 'Dossier introuvable' });
@@ -140,6 +149,18 @@ router.patch(
 
       const { status, adminNotes, proposedClassId } = req.body;
       const adminId = (req as any).user?.id;
+      const nextProposedClassId =
+        proposedClassId === '' || proposedClassId === null || proposedClassId === undefined
+          ? null
+          : String(proposedClassId);
+
+      if (nextProposedClassId) {
+        await assertClassInSchool(
+          nextProposedClassId,
+          req.schoolId,
+          req.school?.isDefault ?? false,
+        );
+      }
 
       if (status === 'ENROLLED' && !existing.enrolledStudentId) {
         return res.status(400).json({
@@ -152,7 +173,7 @@ router.patch(
         ...(status !== undefined && { status }),
         ...(adminNotes !== undefined && { adminNotes: adminNotes === '' ? null : String(adminNotes) }),
         ...(proposedClassId !== undefined && {
-          proposedClassId: proposedClassId === '' || proposedClassId === null ? null : proposedClassId,
+          proposedClassId: nextProposedClassId,
         }),
         ...(status !== undefined &&
           status !== existing.status && {
@@ -189,6 +210,9 @@ router.patch(
       res.json(enriched);
     } catch (error: any) {
       console.error('PATCH /admissions/:id:', error);
+      if (error instanceof SchoolAccessDeniedError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message || 'Erreur serveur' });
     }
   }
@@ -203,11 +227,31 @@ router.post(
       .custom(optionalPasswordPolicyValidator)
       .withMessage(PASSWORD_POLICY_HINT),
   ],
-  async (req: AuthRequest, res) => {
+  async (req: SchoolContextRequest, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
+      }
+
+      const scopedAdmission = await prisma.admission.findFirst({
+        where: {
+          id: req.params.id,
+          ...admissionScopeWhere(req.schoolId!, req.school?.isDefault),
+        },
+        select: { id: true, proposedClassId: true },
+      });
+      if (!scopedAdmission) {
+        return res.status(404).json({ error: 'Dossier introuvable' });
+      }
+
+      const classId = req.body?.classId || scopedAdmission.proposedClassId;
+      if (classId) {
+        await assertClassInSchool(
+          String(classId),
+          req.schoolId,
+          req.school?.isDefault ?? false,
+        );
       }
 
       const result = await enrollStudentFromAdmission(
@@ -220,6 +264,9 @@ router.post(
     } catch (error: unknown) {
       const err = error as Error & { statusCode?: number };
       console.error('POST /admissions/:id/enroll:', error);
+      if (error instanceof SchoolAccessDeniedError) {
+        return res.status(error.status).json({ error: error.message });
+      }
       const code = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
       res.status(code).json({ error: err.message || 'Erreur serveur' });
     }

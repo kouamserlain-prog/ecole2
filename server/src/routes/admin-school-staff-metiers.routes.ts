@@ -9,6 +9,7 @@ import {
   SUPPORT_STAFF_KINDS,
 } from '../utils/school-staff-metiers.util';
 import {
+  getEligibleModulesForSupportKind,
   normalizeStaffModuleId,
   STAFF_MODULE_LABELS,
   type StaffModuleId,
@@ -52,10 +53,11 @@ router.put('/school-staff-metiers/:supportKind', async (req: SchoolContextReques
 
     const modules: StaffModuleId[] = [];
     if (Array.isArray(defaultModules)) {
+      const allowed = new Set(getEligibleModulesForSupportKind(supportKind));
       const set = new Set<StaffModuleId>(['overview']);
       for (const raw of defaultModules) {
         const id = normalizeStaffModuleId(raw);
-        if (id) set.add(id);
+        if (id && allowed.has(id)) set.add(id);
       }
       modules.push(...set);
     }

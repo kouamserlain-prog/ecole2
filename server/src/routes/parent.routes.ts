@@ -3,8 +3,6 @@ import type { Prisma } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
 import { findSchedulesWithRelations } from '../utils/safe-schedule-query.util';
-import { autoReceiptUrl } from '../utils/tuition-financial-automation.util';
-import { syncTuitionFeePaidStatusForFeeId } from '../utils/tuition-fee-paid-sync.util';
 import {
   decryptParentTeacherAppointmentRow,
   decryptStudentRecord,
@@ -1209,81 +1207,12 @@ router.post('/children/:studentId/payments', async (req: AuthRequest, res) => {
   }
 });
 
-// Confirmer un paiement
+// La confirmation des paiements en ligne doit venir d'un webhook prestataire signé, jamais du portail parent.
 router.post('/children/:studentId/payments/:id/confirm', async (req: AuthRequest, res) => {
-  try {
-    const { studentId, id } = req.params;
-    const { transactionId } = req.body;
-
-    // Vérifier que l'élève est bien un enfant du parent
-    const parent = await prisma.parent.findFirst({
-      where: {
-        userId: req.user!.id,
-      },
-      include: {
-        students: {
-          where: {
-            studentId,
-          },
-        },
-      },
-    });
-
-    if (!parent || parent.students.length === 0) {
-      return res.status(403).json({ error: 'Accès refusé' });
-    }
-
-    const payment = await prisma.payment.findFirst({
-      where: {
-        id,
-        studentId,
-        payerId: req.user!.id,
-      },
-      include: {
-        tuitionFee: true,
-      },
-    });
-
-    if (!payment) {
-      return res.status(404).json({ error: 'Paiement non trouvé ou non autorisé' });
-    }
-
-    if (payment.status !== 'PENDING') {
-      return res.status(400).json({ error: 'Ce paiement ne peut plus être modifié' });
-    }
-
-    if (payment.paymentMethod === 'CASH') {
-      return res.status(403).json({
-        error:
-          "Les paiements en espèces doivent être validés par l'économe après dépôt du montant à l'administration.",
-      });
-    }
-
-    // Mettre à jour le paiement comme complété + reçu automatique (référence PDF côté client)
-    const updatedPayment = await prisma.payment.update({
-      where: { id },
-      data: {
-        status: 'COMPLETED',
-        transactionId: transactionId || `TXN-${Date.now()}`,
-        paidAt: new Date(),
-        receiptUrl: autoReceiptUrl(payment.paymentReference || id),
-      },
-    });
-
-    // Mettre à jour le solde du frais (isPaid / paidAt)
-    await syncTuitionFeePaidStatusForFeeId(prisma, payment.tuitionFeeId);
-
-    res.json({
-      payment: updatedPayment,
-      message: 'Paiement confirmé avec succès',
-    });
-  } catch (error: any) {
-    console.error('Erreur lors de la confirmation du paiement:', error);
-    res.status(500).json({ 
-      error: error.message || 'Erreur serveur',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
+  return res.status(409).json({
+    error:
+      'Confirmation désactivée : le paiement sera validé par l’administration ou par un webhook de paiement sécurisé.',
+  });
 });
 
 // Obtenir l'historique des paiements pour un enfant

@@ -274,6 +274,7 @@
       linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
     background-size: 52px 52px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 35%, black 15%, transparent 72%);
     mask-image: radial-gradient(ellipse 75% 65% at 50% 35%, black 15%, transparent 72%);
   }
 
@@ -374,6 +375,7 @@
   }
 
   .home-marquee {
+    -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
     mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
   }
 
@@ -589,6 +591,123 @@
     z-index: 0;
   }
 
+  .home-experience-shell {
+    isolation: isolate;
+  }
+
+  .home-experience-shell::before {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    z-index: 0;
+    border-radius: calc(2.25rem - 2px);
+    pointer-events: none;
+    background:
+      linear-gradient(115deg, rgba(255, 255, 255, 0.86), transparent 36%),
+      radial-gradient(circle at 12% 90%, rgba(90, 91, 154, 0.12), transparent 38%);
+    opacity: 0.88;
+  }
+
+  .home-experience-card::after,
+  .home-step-card::after,
+  .home-testimonial-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.42), transparent 38%, rgba(201, 162, 39, 0.08));
+    opacity: 0.7;
+  }
+
+  .home-experience-card > *,
+  .home-step-card > *,
+  .home-testimonial-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .home-hero-premium-badge {
+    animation: homePremiumFloat 7s ease-in-out infinite;
+  }
+
+  .home-hero-premium-badge--right {
+    animation-delay: -2.5s;
+  }
+
+  @keyframes homePremiumFloat {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  .home-journey-grid {
+    opacity: 0.28;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(circle at center, black 0%, transparent 72%);
+    mask-image: radial-gradient(circle at center, black 0%, transparent 72%);
+  }
+
+  .home-step-card::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(145deg, rgba(201, 162, 39, 0.28), transparent 42%, rgba(107, 108, 174, 0.22));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 350ms ease;
+  }
+
+  .home-step-card:hover::before {
+    opacity: 1;
+  }
+
+  .home-platform-panel {
+    isolation: isolate;
+  }
+
+  .home-platform-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px),
+      radial-gradient(circle at 75% 65%, rgba(201, 162, 39, 0.12) 0 1px, transparent 1px);
+    background-size: 24px 24px, 34px 34px;
+    opacity: 0.38;
+  }
+
+  .home-dashboard-mockup::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.12) 42%, transparent 64%);
+    transform: translateX(-120%);
+    animation: homeDashboardSheen 6s ease-in-out infinite;
+  }
+
+  @keyframes homeDashboardSheen {
+    0%,
+    45% {
+      transform: translateX(-120%);
+    }
+    70%,
+    100% {
+      transform: translateX(120%);
+    }
+  }
+
   @keyframes homeAccentPulse {
     0%,
     100% {
@@ -607,6 +726,11 @@
 
   @media (prefers-reduced-motion: reduce) {
     .home-section-accent--glow {
+      animation: none;
+    }
+
+    .home-hero-premium-badge,
+    .home-dashboard-mockup::after {
       animation: none;
     }
 

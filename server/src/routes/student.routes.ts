@@ -2,8 +2,6 @@ import express from 'express';
 import type { Prisma } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
-import { autoReceiptUrl } from '../utils/tuition-financial-automation.util';
-import { syncTuitionFeePaidStatusForFeeId } from '../utils/tuition-fee-paid-sync.util';
 import { academicYearFromDate } from '../utils/academicYear.util';
 import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
 import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
@@ -1562,71 +1560,12 @@ router.post('/payments', async (req: AuthRequest, res) => {
   }
 });
 
-// Confirmer un paiement (simulation - à remplacer par un webhook réel)
+// La confirmation des paiements en ligne doit venir d'un webhook prestataire signé, jamais du portail élève.
 router.post('/payments/:id/confirm', async (req: AuthRequest, res) => {
-  try {
-    const { id } = req.params;
-    const { transactionId } = req.body;
-
-    const student = await prisma.student.findFirst({
-      where: {
-        userId: req.user!.id,
-      },
-    });
-
-    if (!student) {
-      return res.status(404).json({ error: 'Élève non trouvé' });
-    }
-
-    const payment = await prisma.payment.findFirst({
-      where: {
-        id,
-        studentId: student.id,
-        payerId: req.user!.id,
-      },
-      include: {
-        tuitionFee: true,
-      },
-    });
-
-    if (!payment) {
-      return res.status(404).json({ error: 'Paiement non trouvé ou non autorisé' });
-    }
-
-    if (payment.status !== 'PENDING') {
-      return res.status(400).json({ error: 'Ce paiement ne peut plus être modifié' });
-    }
-
-    if (payment.paymentMethod === 'CASH') {
-      return res.status(403).json({
-        error:
-          "Les paiements en espèces doivent être validés par l'économe après dépôt du montant à l'administration.",
-      });
-    }
-
-    const updatedPayment = await prisma.payment.update({
-      where: { id },
-      data: {
-        status: 'COMPLETED',
-        transactionId: transactionId || `TXN-${Date.now()}`,
-        paidAt: new Date(),
-        receiptUrl: autoReceiptUrl(payment.paymentReference || id),
-      },
-    });
-
-    await syncTuitionFeePaidStatusForFeeId(prisma, payment.tuitionFeeId);
-
-    res.json({
-      payment: updatedPayment,
-      message: 'Paiement confirmé avec succès',
-    });
-  } catch (error: any) {
-    console.error('Erreur lors de la confirmation du paiement:', error);
-    res.status(500).json({ 
-      error: error.message || 'Erreur serveur',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
+  return res.status(409).json({
+    error:
+      'Confirmation désactivée : le paiement sera validé par l’administration ou par un webhook de paiement sécurisé.',
+  });
 });
 
 // Obtenir l'historique des paiements

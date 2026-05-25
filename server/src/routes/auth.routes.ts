@@ -32,6 +32,12 @@ import { prismaConnectionErrorMessage } from '../utils/production-env-diagnostic
 
 const router = express.Router();
 
+function publicAccountRegistrationEnabled(): boolean {
+  const raw = process.env.PUBLIC_ACCOUNT_REGISTRATION_ENABLED?.trim().toLowerCase();
+  if (raw) return ['1', 'true', 'yes', 'on'].includes(raw);
+  return process.env.NODE_ENV !== 'production';
+}
+
 async function withSyncedStaffModules<
   T extends {
     staffProfile?: {
@@ -73,6 +79,12 @@ router.post(
   ],
   async (req, res) => {
     try {
+      if (!publicAccountRegistrationEnabled()) {
+        return res.status(403).json({
+          error: 'Inscription publique désactivée. Contactez l’administration.',
+        });
+      }
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
