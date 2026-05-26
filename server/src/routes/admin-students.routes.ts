@@ -879,6 +879,11 @@ router.delete('/students/:id', async (req, res) => {
       return res.status(404).json({ error: 'Élève non trouvé' });
     }
 
+    const identityDocsToDelete = await prisma.identityDocument.findMany({
+      where: { studentId },
+      select: { fileUrl: true },
+    });
+
     // Utiliser une transaction pour supprimer toutes les relations dans le bon ordre
     await prisma.$transaction(async (tx) => {
       // 1. Supprimer les relations StudentParent
@@ -991,12 +996,6 @@ router.delete('/students/:id', async (req, res) => {
         where: { studentId },
       });
 
-      const identityDocs = await tx.identityDocument.findMany({
-        where: { studentId },
-      });
-      for (const d of identityDocs) {
-        await deleteStoredUploadUrl(d.fileUrl);
-      }
       await tx.identityDocument.deleteMany({
         where: { studentId },
       });
@@ -1036,7 +1035,16 @@ router.delete('/students/:id', async (req, res) => {
           isActive: false,
         },
       });
+    }, {
+      maxWait: 10_000,
+      timeout: 30_000,
     });
+
+    for (const d of identityDocsToDelete) {
+      await deleteStoredUploadUrl(d.fileUrl).catch((error: unknown) => {
+        console.warn('Document identité élève non supprimé du stockage:', error);
+      });
+    }
 
     res.json({ message: 'Élève supprimé avec succès' });
   } catch (error: any) {
