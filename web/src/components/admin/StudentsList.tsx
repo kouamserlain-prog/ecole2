@@ -104,8 +104,17 @@ const StudentsList: React.FC<StudentsListProps> = ({
 
   const deleteStudentMutation = useMutation({
     mutationFn: adminApi.deleteStudent,
-    onSuccess: () => {
+    onSuccess: (_data, deletedStudentId) => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.removeQueries({ queryKey: ['student', deletedStudentId] });
+      if (selectedStudentId === deletedStudentId) {
+        setIsDetailsModalOpen(false);
+        setSelectedStudentId(null);
+      }
+      if (editingStudentId === deletedStudentId) {
+        setIsEditModalOpen(false);
+        setEditingStudentId(null);
+      }
       toast.success('Élève supprimé avec succès');
     },
     onError: (error: any) => {

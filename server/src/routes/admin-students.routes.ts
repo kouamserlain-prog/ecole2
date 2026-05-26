@@ -869,8 +869,9 @@ router.put('/students/:id', async (req, res) => {
 // Supprimer un élève
 router.delete('/students/:id', async (req, res) => {
   try {
+    const studentId = req.params.id;
     const student = await prisma.student.findUnique({
-      where: { id: req.params.id },
+      where: { id: studentId },
       include: { user: true },
     });
 
@@ -882,52 +883,152 @@ router.delete('/students/:id', async (req, res) => {
     await prisma.$transaction(async (tx) => {
       // 1. Supprimer les relations StudentParent
       await tx.studentParent.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       await tx.studentPickupAuthorization.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       await tx.parentConsent.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       // 2. Supprimer les absences associées
       await tx.absence.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       // 3. Supprimer les notes associées
       await tx.grade.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       // 4. Supprimer les assignments associés
       await tx.studentAssignment.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
+      await tx.elearningQuizAttempt.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.elearningLessonProgress.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.parentTeacherAppointment.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.reportCard.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.conduct.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentDisciplinaryRecord.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.extracurricularRegistration.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentOrientationFollowUp.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentOrientationPlacement.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentSubjectOption.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.staffModuleRecord.updateMany({
+        where: { studentId },
+        data: { studentId: null },
+      });
+
+      await tx.healthEmergencyLog.updateMany({
+        where: { studentId },
+        data: { studentId: null },
+      });
+
+      await tx.studentHealthDossier.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentVaccination.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentAllergyRecord.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.studentTreatment.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.infirmaryVisit.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.healthCampaignParticipation.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.payment.deleteMany({
+        where: { studentId },
+      });
+
+      await tx.tuitionFee.deleteMany({
+        where: { studentId },
+      });
+
+      const identityDocs = await tx.identityDocument.findMany({
+        where: { studentId },
+      });
+      for (const d of identityDocs) {
+        await deleteStoredUploadUrl(d.fileUrl);
+      }
       await tx.identityDocument.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       await tx.studentSchoolHistory.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       await tx.studentTransfer.deleteMany({
-        where: { studentId: req.params.id },
+        where: { studentId },
       });
 
       // 5. Supprimer le profil élève
       await tx.student.delete({
-        where: { id: req.params.id },
+        where: { id: studentId },
       });
 
-      // 6. Supprimer l'utilisateur associé
-      await tx.user.delete({
+      // 6. Désactiver/anonymiser l'utilisateur au lieu de le supprimer :
+      // il peut rester référencé par des paiements, logs, messages ou historiques.
+      await tx.passwordResetToken.deleteMany({ where: { userId: student.userId } });
+      await tx.pushSubscription.deleteMany({ where: { userId: student.userId } });
+      await tx.schoolMember.deleteMany({ where: { userId: student.userId } });
+      await tx.user.update({
         where: { id: student.userId },
+        data: {
+          email: `deleted-student-${student.id}-${Date.now()}@deleted.local`,
+          firstName: 'Élève',
+          lastName: 'supprimé',
+          phone: null,
+          avatar: null,
+          isActive: false,
+        },
       });
     });
 
