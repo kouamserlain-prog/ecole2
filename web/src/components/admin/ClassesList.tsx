@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
@@ -20,6 +20,7 @@ import {
   FiTrendingUp,
   FiEdit2,
   FiGrid,
+  FiTrash2,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { useSchool } from '../../contexts/SchoolContext';
@@ -75,6 +76,7 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
 
   const { activeSchoolId, activeSchool } = useSchool();
   const schoolReady = useSchoolReady();
+  const queryClient = useQueryClient();
 
   const { data: classes, isLoading } = useQuery({
     queryKey: schoolQueryKey(['classes'], activeSchoolId),
@@ -87,6 +89,39 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
     queryFn: adminApi.getStudents,
     enabled: schoolReady,
   });
+
+  const deleteClassMutation = useMutation({
+    mutationFn: adminApi.deleteClass,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schoolQueryKey(['classes'], activeSchoolId) });
+      queryClient.invalidateQueries({ queryKey: schoolQueryKey(['students'], activeSchoolId) });
+      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
+      toast.success('Classe supprimée');
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Suppression impossible');
+    },
+  });
+
+  const handleDeleteClass = (classItem: { id: string; name: string; _count?: { students?: number } }) => {
+    const count = classItem._count?.students ?? 0;
+    if (count > 0) {
+      toast.error(
+        `Impossible de supprimer : ${count} élève(s) sont encore inscrits dans cette classe. Réaffectez-les d'abord.`,
+      );
+      return;
+    }
+    const label = classItem.name || 'cette classe';
+    if (
+      !window.confirm(
+        `Supprimer définitivement la classe « ${label} » ?\n\nLes cours, créneaux d'emploi du temps et données liés à cette classe seront supprimés. Cette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
+    deleteClassMutation.mutate(classItem.id);
+  };
 
   const studentsByClassId = useMemo(() => {
     const map = new Map<string, ReturnType<typeof mapApiStudentToRosterRow>[]>();
@@ -536,6 +571,16 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                           title="Groupes"
                         >
                           <FiGrid className="w-4 h-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteClass(classItem)}
+                          disabled={deleteClassMutation.isPending}
+                          className="p-1.5 rounded-lg text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 disabled:opacity-50"
+                          title="Supprimer la classe"
+                          aria-label={`Supprimer la classe ${classItem.name}`}
+                        >
+                          <FiTrash2 className="w-4 h-4" aria-hidden />
                         </button>
                       </div>
                     </div>

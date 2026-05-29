@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
 import type { SchoolContextRequest } from '../utils/school-context.util';
 import { classScopeWhere } from '../utils/school-context.util';
+import { deleteClassWithDependencies } from '../utils/delete-class.util';
 
 const router = express.Router();
 
@@ -140,6 +141,39 @@ router.patch('/classes/:id', async (req, res) => {
       },
     });
     res.json(updated);
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
+
+router.delete('/classes/:id', async (req: SchoolContextRequest, res) => {
+  try {
+    const schoolId = req.schoolId!;
+    const classId = req.params.id;
+
+    const existing = await prisma.class.findFirst({
+      where: {
+        id: classId,
+        ...classScopeWhere(schoolId, req.school?.isDefault),
+      },
+      select: { id: true, name: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Classe introuvable' });
+    }
+
+    const studentCount = await prisma.student.count({
+      where: { classId },
+    });
+    if (studentCount > 0) {
+      return res.status(409).json({
+        error: `Impossible de supprimer « ${existing.name} » : ${studentCount} élève(s) y sont encore inscrits. Réaffectez-les avant de supprimer la classe.`,
+        studentCount,
+      });
+    }
+
+    await deleteClassWithDependencies(prisma, classId);
+    res.json({ ok: true, message: 'Classe supprimée' });
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }

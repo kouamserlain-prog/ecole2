@@ -48,7 +48,13 @@ const DAYS = [
   { value: 6, label: 'Samedi' },
 ];
 
-import { DEFAULT_SCHEDULE_START, SCHEDULE_TIME_SLOTS } from '../../lib/scheduleTimeSlots';
+import {
+  DEFAULT_SCHEDULE_START,
+  SCHEDULE_TIME_SLOTS,
+  isValidScheduleTimeRange,
+  normalizeScheduleTime,
+} from '../../lib/scheduleTimeSlots';
+import ScheduleTimeInput from '../schedule/ScheduleTimeInput';
 
 const getTeacherDisplayName = (teacher?: any) =>
   teacher?.user ? `${teacher.user.firstName ?? ''} ${teacher.user.lastName ?? ''}`.trim() : '';
@@ -226,19 +232,26 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   });
 
   const createAvailabilityMutation = useMutation({
-    mutationFn: () =>
-      adminApi.createTeacherScheduleAvailability(availabilityTeacherId, {
+    mutationFn: () => {
+      const startTime = normalizeScheduleTime(availabilityForm.startTime);
+      const endTime = normalizeScheduleTime(availabilityForm.endTime);
+      if (!isValidScheduleTimeRange(startTime, endTime)) {
+        throw new Error('Créneau invalide : l\'heure de fin doit être après l\'heure de début');
+      }
+      return adminApi.createTeacherScheduleAvailability(availabilityTeacherId, {
         dayOfWeek: parseInt(availabilityForm.dayOfWeek, 10),
-        startTime: availabilityForm.startTime,
-        endTime: availabilityForm.endTime,
+        startTime,
+        endTime,
         label: availabilityForm.label || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teacher-schedule-availability', availabilityTeacherId] });
       setAvailabilityForm({ dayOfWeek: '1', startTime: DEFAULT_SCHEDULE_START, endTime: '09:00', label: '' });
       toast.success('Disponibilité ajoutée');
     },
-    onError: (error: any) => toast.error(error.response?.data?.error || 'Erreur disponibilité'),
+    onError: (error: { message?: string; response?: { data?: { error?: string } } }) =>
+      toast.error(error.response?.data?.error || error.message || 'Erreur disponibilité'),
   });
 
   const deleteAvailabilityMutation = useMutation({
@@ -251,20 +264,27 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   });
 
   const createRoomBlockMutation = useMutation({
-    mutationFn: () =>
-      adminApi.createScheduleRoomBlock({
+    mutationFn: () => {
+      const startTime = normalizeScheduleTime(roomBlockForm.startTime);
+      const endTime = normalizeScheduleTime(roomBlockForm.endTime);
+      if (!isValidScheduleTimeRange(startTime, endTime)) {
+        throw new Error('Créneau invalide : l\'heure de fin doit être après l\'heure de début');
+      }
+      return adminApi.createScheduleRoomBlock({
         room: roomBlockForm.room,
         dayOfWeek: parseInt(roomBlockForm.dayOfWeek, 10),
-        startTime: roomBlockForm.startTime,
-        endTime: roomBlockForm.endTime,
+        startTime,
+        endTime,
         reason: roomBlockForm.reason || undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedule-room-blocks'] });
       setRoomBlockForm({ room: '', dayOfWeek: '1', startTime: DEFAULT_SCHEDULE_START, endTime: '09:00', reason: '' });
       toast.success('Bloc salle ajouté');
     },
-    onError: (error: any) => toast.error(error.response?.data?.error || 'Erreur bloc salle'),
+    onError: (error: { message?: string; response?: { data?: { error?: string } } }) =>
+      toast.error(error.response?.data?.error || error.message || 'Erreur bloc salle'),
   });
 
   const deleteRoomBlockMutation = useMutation({
@@ -295,10 +315,19 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       return;
     }
 
+    const startTime = normalizeScheduleTime(scheduleForm.startTime);
+    const endTime = normalizeScheduleTime(scheduleForm.endTime);
+    if (!isValidScheduleTimeRange(startTime, endTime)) {
+      toast.error('Créneau invalide : vérifiez les heures (format HH:MM, fin après le début)');
+      return;
+    }
+
+    const payload = { ...scheduleForm, startTime, endTime };
+
     if (editingSchedule) {
-      updateScheduleMutation.mutate({ id: editingSchedule.id, data: scheduleForm });
+      updateScheduleMutation.mutate({ id: editingSchedule.id, data: payload });
     } else {
-      createScheduleMutation.mutate(scheduleForm);
+      createScheduleMutation.mutate(payload);
     }
   };
 
@@ -739,19 +768,16 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 onChange={(e) => setAvailabilityForm({ ...availabilityForm, label: e.target.value })}
                 placeholder="Label (optionnel)"
               />
-              <FilterDropdown
-                variant="field"
+              <ScheduleTimeInput
                 label="Début"
                 value={availabilityForm.startTime}
-                onChange={(value) => setAvailabilityForm({ ...availabilityForm, startTime: value })}
-                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                onChange={(startTime) => setAvailabilityForm({ ...availabilityForm, startTime })}
               />
-              <FilterDropdown
-                variant="field"
+              <ScheduleTimeInput
                 label="Fin"
                 value={availabilityForm.endTime}
-                onChange={(value) => setAvailabilityForm({ ...availabilityForm, endTime: value })}
-                options={SCHEDULE_TIME_SLOTS.filter((t) => t > availabilityForm.startTime).map((t) => ({ value: t, label: t }))}
+                min={availabilityForm.startTime}
+                onChange={(endTime) => setAvailabilityForm({ ...availabilityForm, endTime })}
               />
             </div>
             <Button
@@ -805,19 +831,16 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                 onChange={(value) => setRoomBlockForm({ ...roomBlockForm, dayOfWeek: value })}
                 options={DAYS.map((d) => ({ value: String(d.value), label: d.label }))}
               />
-              <FilterDropdown
-                variant="field"
+              <ScheduleTimeInput
                 label="Début"
                 value={roomBlockForm.startTime}
-                onChange={(value) => setRoomBlockForm({ ...roomBlockForm, startTime: value })}
-                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
+                onChange={(startTime) => setRoomBlockForm({ ...roomBlockForm, startTime })}
               />
-              <FilterDropdown
-                variant="field"
+              <ScheduleTimeInput
                 label="Fin"
                 value={roomBlockForm.endTime}
-                onChange={(value) => setRoomBlockForm({ ...roomBlockForm, endTime: value })}
-                options={SCHEDULE_TIME_SLOTS.filter((t) => t > roomBlockForm.startTime).map((t) => ({ value: t, label: t }))}
+                min={roomBlockForm.startTime}
+                onChange={(endTime) => setRoomBlockForm({ ...roomBlockForm, endTime })}
               />
               <div className="col-span-2">
                 <Input
@@ -1264,34 +1287,19 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700">
-                Heure de début <span className="text-red-500">*</span>
-              </label>
-              <FilterDropdown
-                variant="field"
-                label="Heure de début"
-                value={scheduleForm.startTime}
-                onChange={(value) => setScheduleForm({ ...scheduleForm, startTime: value })}
-                options={SCHEDULE_TIME_SLOTS.map((t) => ({ value: t, label: t }))}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700">
-                Heure de fin <span className="text-red-500">*</span>
-              </label>
-              <FilterDropdown
-                variant="field"
-                label="Heure de fin"
-                value={scheduleForm.endTime}
-                onChange={(value) => setScheduleForm({ ...scheduleForm, endTime: value })}
-                options={SCHEDULE_TIME_SLOTS.filter((t) => t > scheduleForm.startTime).map((t) => ({
-                  value: t,
-                  label: t,
-                }))}
-              />
-            </div>
+            <ScheduleTimeInput
+              label="Heure de début"
+              value={scheduleForm.startTime}
+              required
+              onChange={(startTime) => setScheduleForm({ ...scheduleForm, startTime })}
+            />
+            <ScheduleTimeInput
+              label="Heure de fin"
+              value={scheduleForm.endTime}
+              min={scheduleForm.startTime}
+              required
+              onChange={(endTime) => setScheduleForm({ ...scheduleForm, endTime })}
+            />
           </div>
 
           <div className="flex items-center justify-end space-x-3 pt-4">
