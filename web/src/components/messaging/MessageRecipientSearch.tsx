@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Badge from '../ui/Badge';
 import { ROLE_LABELS } from '../../lib/rolePaths';
 import { FiSearch, FiUser, FiX } from 'react-icons/fi';
@@ -34,7 +35,11 @@ type MessageRecipientSearchProps = {
   /** Autorise une valeur vide (ex. administration par défaut pour les parents). */
   allowDefault?: boolean;
   defaultLabel?: string;
+  /** Liste des résultats en portal (modales avec overflow hidden). */
+  inModal?: boolean;
 };
+
+const Z_PANEL = 100_001;
 
 const ACCENT_STYLES: Record<
   MessageRecipientAccent,
@@ -57,7 +62,7 @@ const ACCENT_STYLES: Record<
     userIcon: 'text-pink-600',
     hoverRow: 'hover:bg-pink-50',
     chipActive: 'bg-pink-600',
-    focusRing: 'focus:border-pink-500 focus:ring-pink-500/20',
+    focusRing: 'focus:border-pink-500 focus:ring-4 focus:ring-pink-500/20',
   },
   orange: {
     selectedBorder: 'border-orange-200',
@@ -67,7 +72,7 @@ const ACCENT_STYLES: Record<
     userIcon: 'text-orange-600',
     hoverRow: 'hover:bg-orange-50',
     chipActive: 'bg-orange-600',
-    focusRing: 'focus:border-orange-500 focus:ring-orange-500/20',
+    focusRing: 'focus:border-orange-500 focus:ring-4 focus:ring-orange-500/20',
   },
   stone: {
     selectedBorder: 'border-stone-200',
@@ -77,7 +82,7 @@ const ACCENT_STYLES: Record<
     userIcon: 'text-stone-600',
     hoverRow: 'hover:bg-stone-50',
     chipActive: 'bg-stone-700',
-    focusRing: 'focus:border-stone-400 focus:ring-stone-400/20',
+    focusRing: 'focus:border-stone-400 focus:ring-2 focus:ring-stone-400/20',
   },
   rose: {
     selectedBorder: 'border-rose-200',
@@ -87,7 +92,7 @@ const ACCENT_STYLES: Record<
     userIcon: 'text-rose-600',
     hoverRow: 'hover:bg-rose-50',
     chipActive: 'bg-rose-600',
-    focusRing: 'focus:border-rose-500 focus:ring-rose-500/20',
+    focusRing: 'focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20',
   },
 };
 
@@ -142,12 +147,15 @@ export default function MessageRecipientSearch({
   accent = 'stone',
   allowDefault = false,
   defaultLabel = 'Administration (défaut)',
+  inModal = false,
 }: MessageRecipientSearchProps) {
   const styles = ACCENT_STYLES[accent];
   const [query, setQuery] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [open, setOpen] = useState(false);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 320 });
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(query.trim().toLowerCase()), 200);
@@ -188,6 +196,38 @@ export default function MessageRecipientSearch({
 
   const showResults = open && (debouncedQ.length >= 2 || roleFilter !== 'all');
 
+  const updatePanelPosition = useCallback(() => {
+    const el = inputWrapRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.max(rect.width, 280);
+    const margin = 16;
+    const vh = window.innerHeight;
+    const maxH = Math.min(vh * 0.45, 280);
+    let top = rect.bottom + 6;
+    if (top + maxH > vh - margin) {
+      const above = rect.top - 6 - maxH;
+      if (above >= margin) top = above;
+    }
+    let left = rect.left;
+    if (left + width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - width - margin);
+    }
+    setPanelPos({ top, left, width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showResults || !inModal) return;
+    updatePanelPosition();
+    const onScrollOrResize = () => updatePanelPosition();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [showResults, inModal, updatePanelPosition]);
+
   const pick = (user: MessageRecipientUser) => {
     onChange(user.id);
     setQuery('');
@@ -200,6 +240,74 @@ export default function MessageRecipientSearch({
     setQuery('');
     setOpen(true);
   };
+
+  const inputClasses = inModal
+    ? `w-full rounded-lg border-2 border-gray-200 bg-white pl-10 pr-4 text-sm transition-all focus:outline-none disabled:bg-stone-50 ${styles.focusRing} ${
+        compact ? 'py-2' : 'py-2.5'
+      }`
+    : `w-full rounded-lg border border-gray-200 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 disabled:bg-stone-50 ${styles.focusRing} ${
+        compact ? 'py-1.5' : 'py-2'
+      }`;
+
+  const resultsList = showResults ? (
+    <>
+      {filtered.length === 0 ? (
+        <p className="px-3 py-2 text-xs text-stone-500">Aucun destinataire trouvé.</p>
+      ) : (
+        <ul className="divide-y divide-stone-100 py-1">
+          {filtered.map((user) => (
+            <li key={user.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(user)}
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm ${styles.hoverRow}`}
+              >
+                <FiUser className={`mt-0.5 h-4 w-4 shrink-0 ${styles.userIcon}`} aria-hidden />
+                <span className="min-w-0">
+                  <span className="block font-medium text-stone-900">
+                    {user.firstName} {user.lastName}
+                    <span className="ml-1 text-xs font-normal text-stone-500">
+                      ({ROLE_LABELS[user.role] ?? user.role})
+                    </span>
+                  </span>
+                  <span className="block truncate text-xs text-stone-500">{userSubtitle(user)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {filtered.length === 50 && (
+        <p className="border-t border-stone-100 px-3 py-1.5 text-[10px] text-stone-400">
+          Affichage limité à 50 résultats — affinez la recherche.
+        </p>
+      )}
+    </>
+  ) : null;
+
+  const resultsPanel =
+    showResults && resultsList ? (
+      <div
+        className={`overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg ${
+          compact ? 'max-h-44' : 'max-h-56'
+        }`}
+        style={
+          inModal
+            ? {
+                position: 'fixed',
+                zIndex: Z_PANEL,
+                top: panelPos.top,
+                left: panelPos.left,
+                minWidth: panelPos.width,
+                maxWidth: 'min(100vw - 2rem, 28rem)',
+              }
+            : undefined
+        }
+      >
+        {resultsList}
+      </div>
+    ) : null;
 
   if (selected) {
     return (
@@ -254,9 +362,11 @@ export default function MessageRecipientSearch({
         </button>
       )}
 
-      <div className="relative">
+      <div className="relative" ref={inputWrapRef}>
         <FiSearch
-          className={`absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 ${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}`}
+          className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 ${
+            inModal ? 'h-5 w-5' : compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
+          }`}
           aria-hidden
         />
         <input
@@ -269,12 +379,12 @@ export default function MessageRecipientSearch({
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => {
-            window.setTimeout(() => setOpen(false), 150);
+            if (!inModal) {
+              window.setTimeout(() => setOpen(false), 150);
+            }
           }}
-          placeholder="Nom, prénom, e-mail, matière, classe…"
-          className={`w-full rounded-lg border border-gray-200 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 disabled:bg-stone-50 ${styles.focusRing} ${
-            compact ? 'py-1.5' : 'py-2'
-          }`}
+          placeholder="Rechercher par nom, e-mail, rôle…"
+          className={inputClasses}
           aria-label="Rechercher un destinataire"
           autoComplete="off"
         />
@@ -329,51 +439,23 @@ export default function MessageRecipientSearch({
       )}
 
       {allowDefault && !open && !value && (
-        <p className="text-[11px] text-stone-500">
-          Ou recherchez un contact précis ci-dessus.
-        </p>
+        <p className="text-[11px] text-stone-500">Ou recherchez un contact précis ci-dessus.</p>
       )}
 
-      {showResults && (
-        <div
-          className={`overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-sm ${
-            compact ? 'max-h-44' : 'max-h-56'
-          }`}
-        >
-          {filtered.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-stone-500">Aucun destinataire trouvé.</p>
-          ) : (
-            <ul className="divide-y divide-stone-100 py-1">
-              {filtered.map((user) => (
-                <li key={user.id}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(user)}
-                    className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm ${styles.hoverRow}`}
-                  >
-                    <FiUser className={`mt-0.5 h-4 w-4 shrink-0 ${styles.userIcon}`} aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block font-medium text-stone-900">
-                        {user.firstName} {user.lastName}
-                        <span className="ml-1 text-xs font-normal text-stone-500">
-                          ({ROLE_LABELS[user.role] ?? user.role})
-                        </span>
-                      </span>
-                      <span className="block truncate text-xs text-stone-500">{userSubtitle(user)}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {filtered.length === 50 && (
-            <p className="border-t border-stone-100 px-3 py-1.5 text-[10px] text-stone-400">
-              Affichage limité à 50 résultats — affinez la recherche.
-            </p>
-          )}
-        </div>
-      )}
+      {inModal && resultsPanel && typeof document !== 'undefined'
+        ? createPortal(
+            <>
+              <div
+                className="fixed inset-0"
+                style={{ zIndex: Z_PANEL - 1 }}
+                aria-hidden
+                onMouseDown={() => setOpen(false)}
+              />
+              {resultsPanel}
+            </>,
+            document.body,
+          )
+        : resultsPanel}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
@@ -1497,6 +1499,7 @@ const CommunicationManagement: React.FC<CommunicationManagementProps> = ({
               Destinataire <span className="text-red-500">*</span>
             </label>
             <MessageRecipientSearch
+              inModal
               compact={compact}
               accent="pink"
               users={(Array.isArray(users) ? users : []) as MessageRecipientUser[]}
