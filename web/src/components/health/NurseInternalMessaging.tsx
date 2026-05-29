@@ -10,6 +10,8 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { FiRefreshCw, FiSend, FiUsers } from 'react-icons/fi';
+import MessageRecipientSearch from '../messaging/MessageRecipientSearch';
+import { flattenMessagingContacts } from '../messaging/flattenMessagingContacts';
 
 type ThreadRow = {
   threadKey: string;
@@ -83,6 +85,8 @@ export default function NurseInternalMessaging() {
       label: `${c.name} — ${c.level}`,
     }));
   }, [contacts?.classes]);
+
+  const recipientUsers = useMemo(() => flattenMessagingContacts(contacts), [contacts]);
 
   const parseAttachments = () =>
     attachmentLines
@@ -171,15 +175,6 @@ export default function NurseInternalMessaging() {
       category: 'GENERAL',
     });
   };
-
-  const contactGroups: { label: string; items: { id: string; firstName: string; lastName: string }[] }[] = [
-    { label: 'Administration', items: contacts?.admins ?? [] },
-    { label: 'Enseignants', items: contacts?.teachers ?? [] },
-    { label: 'Éducateurs', items: contacts?.educators ?? [] },
-    { label: 'Personnel', items: contacts?.staff ?? [] },
-    { label: 'Parents', items: contacts?.parents ?? [] },
-    { label: 'Élèves', items: contacts?.students ?? [] },
-  ];
 
   return (
     <div className="space-y-3">
@@ -295,25 +290,12 @@ export default function NurseInternalMessaging() {
               {!broadcastClassId && (
                 <div>
                   <label className="block text-xs font-medium text-stone-600 mb-1">Destinataire</label>
-                  <select
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                  <MessageRecipientSearch
+                    accent="rose"
+                    users={recipientUsers}
                     value={receiverId}
-                    onChange={(e) => setReceiverId(e.target.value)}
-                    aria-label="Destinataire"
-                  >
-                    <option value="">— Choisir —</option>
-                    {contactGroups.map((g) =>
-                      g.items.length > 0 ? (
-                        <optgroup key={g.label} label={g.label}>
-                          {g.items.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.firstName} {u.lastName}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null,
-                    )}
-                  </select>
+                    onChange={setReceiverId}
+                  />
                 </div>
               )}
               <div>

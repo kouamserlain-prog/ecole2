@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { parentApi, studentApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,6 +8,8 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { FiInbox, FiSend, FiEdit3, FiMail, FiRefreshCw } from 'react-icons/fi';
+import MessageRecipientSearch from '../messaging/MessageRecipientSearch';
+import { flattenMessagingContacts } from '../messaging/flattenMessagingContacts';
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: 'GENERAL', label: 'Général' },
@@ -100,6 +102,8 @@ function ParentThreadedMessaging({ contextStudentId }: { contextStudentId?: stri
         educators?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
       }
     | undefined;
+
+  const recipientUsers = useMemo(() => flattenMessagingContacts(contacts), [contacts]);
 
   const parseAttachments = () =>
     attachmentLines
@@ -308,41 +312,14 @@ function ParentThreadedMessaging({ contextStudentId }: { contextStudentId?: stri
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Destinataire</label>
-              <select
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              <MessageRecipientSearch
+                accent="orange"
+                allowDefault
+                defaultLabel="— Administration (défaut) —"
+                users={recipientUsers}
                 value={receiverId}
-                onChange={(e) => setReceiverId(e.target.value)}
-              >
-                <option value="">— Administration (défaut) —</option>
-                <optgroup label="Administration">
-                  {(contacts?.admins ?? []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Enseignants de vos enfants">
-                  {(contacts?.teachers ?? []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName} — {u.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Personnel">
-                  {(contacts?.staff ?? []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Éducateurs">
-                  {(contacts?.educators ?? []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+                onChange={setReceiverId}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Concernant un enfant (optionnel)</label>

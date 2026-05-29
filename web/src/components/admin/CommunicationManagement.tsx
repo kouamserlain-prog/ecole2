@@ -29,6 +29,7 @@ import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import MessageDetailsModal from './MessageDetailsModal';
 import AnnouncementDetailsModal from './AnnouncementDetailsModal';
+import MessageRecipientSearch, { type MessageRecipientUser } from '../messaging/MessageRecipientSearch';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
@@ -1495,20 +1496,12 @@ const CommunicationManagement: React.FC<CommunicationManagementProps> = ({
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Destinataire <span className="text-red-500">*</span>
             </label>
-            <FilterDropdown
+            <MessageRecipientSearch
               compact={compact}
-              label="Destinataire"
-              selected={messageForm.receiverId}
-              onChange={(value) => setMessageForm({ ...messageForm, receiverId: value })}
-              options={[
-                { value: '', label: 'Sélectionner un destinataire' },
-                ...(Array.isArray(users)
-                  ? users.map((u: { id: string; firstName: string; lastName: string; role: string }) => ({
-                      value: u.id,
-                      label: `${u.firstName} ${u.lastName} (${u.role})`,
-                    }))
-                  : []),
-              ]}
+              accent="pink"
+              users={(Array.isArray(users) ? users : []) as MessageRecipientUser[]}
+              value={messageForm.receiverId}
+              onChange={(receiverId) => setMessageForm({ ...messageForm, receiverId })}
             />
           </div>
           <div>

@@ -10,6 +10,8 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { FiRefreshCw, FiSend, FiUsers } from 'react-icons/fi';
+import MessageRecipientSearch from '../messaging/MessageRecipientSearch';
+import { flattenMessagingContacts } from '../messaging/flattenMessagingContacts';
 
 type ThreadRow = {
   threadKey: string;
@@ -74,6 +76,8 @@ const EducatorInternalMessaging: React.FC = () => {
         students?: { id: string; firstName: string; lastName: string; email: string; role: string }[];
       }
     | undefined;
+
+  const recipientUsers = useMemo(() => flattenMessagingContacts(contacts), [contacts]);
 
   const parseAttachments = () =>
     attachmentLines
@@ -277,48 +281,12 @@ const EducatorInternalMessaging: React.FC = () => {
             {!broadcastClassId && (
               <div>
                 <label className="block text-xs font-medium text-stone-600 mb-1">Destinataire</label>
-                <select
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm"
+                <MessageRecipientSearch
+                  accent="stone"
+                  users={recipientUsers}
                   value={receiverId}
-                  onChange={(e) => setReceiverId(e.target.value)}
-                >
-                  <option value="">— Choisir —</option>
-                  <optgroup label="Administration">
-                    {(contacts?.admins ?? []).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Enseignants">
-                    {(contacts?.teachers ?? []).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Éducateurs">
-                    {(contacts?.educators ?? []).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Parents">
-                    {(contacts?.parents ?? []).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Élèves">
-                    {(contacts?.students ?? []).map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
+                  onChange={setReceiverId}
+                />
               </div>
             )}
             <div>
