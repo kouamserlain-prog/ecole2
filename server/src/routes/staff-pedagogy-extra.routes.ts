@@ -7,6 +7,7 @@ import {
   studentScopeWhere,
   type SchoolContextRequest,
 } from '../utils/school-context.util';
+import { schoolMessagingRecipientUsersWhere } from '../utils/school-messaging-recipients.util';
 
 const router = express.Router();
 
@@ -109,9 +110,11 @@ router.get('/notifications', async (req: AuthRequest, res) => {
 router.get('/users', async (req: SchoolContextRequest, res) => {
   try {
     const { role, isActive } = req.query;
+    const schoolId = req.schoolId!;
+    const isDefaultSchool = req.school?.isDefault ?? false;
     const rows = await prisma.user.findMany({
       where: {
-        schoolMemberships: { some: { schoolId: req.schoolId! } },
+        ...schoolMessagingRecipientUsersWhere(schoolId, isDefaultSchool),
         ...(role && typeof role === 'string' ? { role: role as never } : {}),
         ...(isActive !== undefined ? { isActive: isActive === 'true' } : {}),
       },
@@ -125,9 +128,47 @@ router.get('/users', async (req: SchoolContextRequest, res) => {
         role: true,
         isActive: true,
         createdAt: true,
+        teacherProfile: {
+          select: {
+            id: true,
+            employeeId: true,
+            specialization: true,
+          },
+        },
+        studentProfile: {
+          select: {
+            id: true,
+            studentId: true,
+            class: {
+              select: {
+                id: true,
+                name: true,
+                level: true,
+              },
+            },
+          },
+        },
+        parentProfile: {
+          select: {
+            id: true,
+            profession: true,
+          },
+        },
+        educatorProfile: {
+          select: { id: true, employeeId: true, specialization: true },
+        },
+        staffProfile: {
+          select: {
+            id: true,
+            employeeId: true,
+            staffCategory: true,
+            supportKind: true,
+            jobTitle: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
+      orderBy: { lastName: 'asc' },
+      take: 2000,
     });
     res.json(rows);
   } catch (error: unknown) {
