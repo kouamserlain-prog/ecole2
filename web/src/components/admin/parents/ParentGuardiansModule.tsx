@@ -12,7 +12,8 @@ import SearchBar from '../../ui/SearchBar';
 import Input from '../../ui/Input';
 import { ADM } from '../adminModuleLayout';
 import toast from 'react-hot-toast';
-import { FiHeart, FiEye, FiTrash2, FiPlus, FiSave } from 'react-icons/fi';
+import { FiHeart, FiEye, FiTrash2, FiPlus, FiSave, FiUserPlus } from 'react-icons/fi';
+import AddParentModal from './AddParentModal';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 
@@ -81,6 +82,7 @@ const ParentGuardiansModule: React.FC = () => {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [addParentOpen, setAddParentOpen] = useState(false);
 
   const { data: parents, isLoading } = useQuery({
     queryKey: ['admin-parents'],
@@ -395,7 +397,13 @@ const ParentGuardiansModule: React.FC = () => {
       </div>
 
       <Card className="p-3 space-y-3">
-        <SearchBar value={search} onChange={setSearch} placeholder="Rechercher par nom ou e-mail…" className="max-w-md" />
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <SearchBar value={search} onChange={setSearch} placeholder="Rechercher par nom ou e-mail…" className="max-w-md flex-1 min-w-[200px]" />
+          <Button type="button" onClick={() => setAddParentOpen(true)}>
+            <FiUserPlus className="w-4 h-4 mr-1.5" aria-hidden />
+            Nouveau parent
+          </Button>
+        </div>
         {isLoading ? (
           <p className="text-sm text-stone-500">Chargement…</p>
         ) : (
@@ -443,6 +451,12 @@ const ParentGuardiansModule: React.FC = () => {
           </div>
         )}
       </Card>
+
+      <AddParentModal
+        isOpen={addParentOpen}
+        onClose={() => setAddParentOpen(false)}
+        onCreated={(id) => setDetailId(id)}
+      />
 
       <Modal
         isOpen={!!detailId}

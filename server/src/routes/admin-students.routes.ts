@@ -402,12 +402,28 @@ router.get('/students/:id', async (req: SchoolContextRequest, res) => {
 });
 
 // Payload complet pour export PDF du dossier d'inscription élève
-router.get('/students/:id/enrollment-dossier', async (req, res) => {
+router.get('/students/:id/enrollment-dossier', async (req: SchoolContextRequest, res) => {
   try {
     const { id } = req.params;
     if (!/^[a-f\d]{24}$/i.test(id)) {
       return res.status(400).json({ error: 'Identifiant élève invalide' });
     }
+
+    const schoolId = req.schoolId!;
+    const inScope = await prisma.student.findFirst({
+      where: {
+        id,
+        ...studentScopeWhere(schoolId, req.school?.isDefault ?? false),
+      },
+      select: { id: true },
+    });
+    if (!inScope) {
+      return res.status(404).json({
+        error:
+          'Élève introuvable dans cet établissement. Vérifiez l’établissement sélectionné dans le menu.',
+      });
+    }
+
     const payload = await buildStudentEnrollmentDossierPayload(id);
     if (!payload) {
       return res.status(404).json({ error: 'Élève non trouvé' });

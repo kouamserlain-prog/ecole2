@@ -16,10 +16,6 @@ export function isObjectId(value: string): boolean {
   return OBJECT_ID.test(value);
 }
 
-function isUnsetSchoolId(value: string | null | undefined): boolean {
-  return value == null || value === '';
-}
-
 /**
  * Vérifie l’appartenance à l’établissement (logique explicite, fiable MongoDB legacy).
  * Alignée sur studentScopeWhere : schoolId direct, classe rattachée, orphelins → établissement par défaut.
@@ -31,24 +27,14 @@ export async function studentBelongsToSchool(
 ): Promise<boolean> {
   if (!isObjectId(studentId)) return false;
 
-  const student = await prisma.student.findUnique({
-    where: { id: studentId },
-    select: {
-      schoolId: true,
-      classId: true,
-      class: { select: { schoolId: true } },
+  const row = await prisma.student.findFirst({
+    where: {
+      id: studentId,
+      ...studentScopeWhere(schoolId, isDefaultSchool),
     },
+    select: { id: true },
   });
-  if (!student) return false;
-
-  const directSchoolId = student.schoolId;
-  const classSchoolId = student.class?.schoolId ?? null;
-
-  if (directSchoolId === schoolId || classSchoolId === schoolId) return true;
-
-  if (!isDefaultSchool) return false;
-
-  return isUnsetSchoolId(directSchoolId) && isUnsetSchoolId(classSchoolId);
+  return Boolean(row);
 }
 
 export async function assertStudentInSchool(

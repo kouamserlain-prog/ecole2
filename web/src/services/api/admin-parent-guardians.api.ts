@@ -6,6 +6,19 @@ export const adminParentGuardiansApi = {
     const response = await api.get('/admin/parents');
     return response.data;
   },
+  createParent: async (data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    password?: string;
+    phone?: string;
+    profession?: string;
+    studentId: string;
+    relation?: 'father' | 'mother' | 'guardian' | 'other';
+  }) => {
+    const response = await api.post('/admin/parents', data);
+    return response.data;
+  },
   getParent: async (id: string) => {
     const response = await api.get(`/admin/parents/${id}`);
     return response.data;

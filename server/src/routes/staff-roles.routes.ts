@@ -233,6 +233,7 @@ router.post(
         req.user!.id,
         req.body,
         req,
+        (req as SchoolContextRequest).schoolId,
       );
       res.status(201).json(result);
     } catch (error: unknown) {

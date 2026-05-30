@@ -10,6 +10,11 @@ import {
   scopedParentWhere,
   SchoolAccessDeniedError,
 } from '../utils/school-access-guard.util';
+import {
+  inviteNewUserToSetPassword,
+  resolveAdminProvidedOrInvitePassword,
+} from '../utils/admin-user-initial-password.util';
+import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 
 const router = express.Router();
 
@@ -25,6 +30,8 @@ const userPublic = {
   avatar: true,
   isActive: true,
 } satisfies Prisma.UserSelect;
+
+const PARENT_RELATIONS = ['father', 'mother', 'guardian', 'other'] as const;
 
 async function assertParentOwnsStudent(parentId: string, studentId: string): Promise<boolean> {
   const link = await prisma.studentParent.findFirst({
@@ -49,6 +56,185 @@ router.get('/parents', async (req: SchoolContextRequest, res) => {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
+
+router.post(
+  '/parents',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('firstName').trim().notEmpty(),
+    body('lastName').trim().notEmpty(),
+    body('password')
+      .optional({ values: 'falsy' })
+      .trim()
+      .custom(optionalPasswordPolicyValidator)
+      .withMessage(PASSWORD_POLICY_HINT),
+    body('phone').optional({ values: 'falsy' }).trim(),
+    body('profession').optional({ values: 'falsy' }).trim(),
+    body('studentId').isString().notEmpty(),
+    body('relation').optional().isIn(PARENT_RELATIONS),
+  ],
+  async (req: SchoolContextRequest, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const {
+        email: rawEmail,
+        firstName,
+        lastName,
+        password,
+        phone,
+        profession,
+        studentId,
+        relation,
+      } = req.body as {
+        email: string;
+        firstName: string;
+        lastName: string;
+        password?: string;
+        phone?: string;
+        profession?: string;
+        studentId: string;
+        relation?: string;
+      };
+
+      const email = rawEmail.trim().toLowerCase();
+
+      try {
+        await assertStudentInSchool(studentId, req.schoolId, req.school?.isDefault ?? false);
+      } catch (e) {
+        if (e instanceof SchoolAccessDeniedError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
+
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: { user: { select: { email: true } } },
+      });
+      if (!student) {
+        return res.status(404).json({ error: 'Élève introuvable' });
+      }
+
+      const studentEmail = String(student.user?.email ?? '')
+        .trim()
+        .toLowerCase();
+      if (studentEmail && studentEmail === email) {
+        return res.status(400).json({
+          error: "L'e-mail du parent ne peut pas être identique à celui de l'élève.",
+        });
+      }
+
+      const rel =
+        relation && PARENT_RELATIONS.includes(relation as (typeof PARENT_RELATIONS)[number])
+          ? relation
+          : 'guardian';
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        include: { parentProfile: true },
+      });
+
+      if (existingUser && existingUser.role !== 'PARENT') {
+        return res.status(400).json({
+          error: 'Cet e-mail est déjà utilisé par un compte avec un autre rôle.',
+        });
+      }
+
+      let setupEmailSent = false;
+      let parentId: string;
+
+      if (existingUser) {
+        const parent =
+          existingUser.parentProfile ??
+          (await prisma.parent.create({ data: { userId: existingUser.id } }));
+        parentId = parent.id;
+
+        const existingLink = await prisma.studentParent.findFirst({
+          where: { parentId, studentId },
+        });
+        if (existingLink) {
+          return res.status(409).json({
+            error: 'Ce parent est déjà rattaché à cet élève.',
+          });
+        }
+
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            ...(phone?.trim() ? { phone: phone.trim() } : {}),
+          },
+        });
+        if (profession?.trim()) {
+          await prisma.parent.update({
+            where: { id: parentId },
+            data: { profession: profession.trim() },
+          });
+        }
+
+        await prisma.studentParent.create({
+          data: { parentId, studentId, relation: rel },
+        });
+      } else {
+        const { hashedPassword, shouldSendSetupEmail } =
+          await resolveAdminProvidedOrInvitePassword(password);
+
+        const user = await prisma.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            phone: phone?.trim() || undefined,
+            role: 'PARENT',
+            isActive: true,
+            parentProfile: {
+              create: {
+                ...(profession?.trim() ? { profession: profession.trim() } : {}),
+              },
+            },
+          },
+          include: { parentProfile: true },
+        });
+
+        if (!user.parentProfile) {
+          return res.status(500).json({ error: 'Profil parent non créé' });
+        }
+        parentId = user.parentProfile.id;
+
+        await prisma.studentParent.create({
+          data: { parentId, studentId, relation: rel },
+        });
+
+        if (shouldSendSetupEmail) {
+          try {
+            await inviteNewUserToSetPassword(user.id, user.email, user.firstName);
+            setupEmailSent = true;
+          } catch (inviteErr) {
+            console.error('Invitation mot de passe (parent):', inviteErr);
+          }
+        }
+      }
+
+      const parent = await prisma.parent.findUnique({
+        where: { id: parentId },
+        include: {
+          user: { select: userPublic },
+          _count: { select: { students: true, contacts: true } },
+        },
+      });
+
+      res.status(201).json({ parent, setupEmailSent, linkedExistingUser: Boolean(existingUser) });
+    } catch (error: unknown) {
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+    }
+  },
+);
 
 router.get('/parents/:id', async (req, res) => {
   try {
@@ -83,8 +269,6 @@ router.get('/parents/:id', async (req, res) => {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
-
-const PARENT_RELATIONS = ['father', 'mother', 'guardian', 'other'] as const;
 
 router.post(
   '/parents/:id/students',

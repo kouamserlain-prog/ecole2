@@ -259,6 +259,7 @@ router.post(
         req.user!.id,
         req.body,
         req,
+        req.schoolId,
       );
       res.status(201).json(result);
     } catch (error: unknown) {

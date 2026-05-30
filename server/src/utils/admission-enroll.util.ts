@@ -46,6 +46,7 @@ export async function enrollStudentFromAdmission(
   reviewerUserId: string,
   body: EnrollFromAdmissionBody,
   req?: Pick<Request, 'ip' | 'socket' | 'get'>,
+  contextSchoolId?: string,
 ): Promise<EnrollFromAdmissionResult> {
   const admission = await prisma.admission.findUnique({
     where: { id: admissionId },
@@ -89,13 +90,16 @@ export async function enrollStudentFromAdmission(
   }
 
   const classId = body.classId || admission.proposedClassId || undefined;
-  let schoolId = admission.schoolId ?? undefined;
+  let schoolId = admission.schoolId ?? contextSchoolId ?? undefined;
   if (!schoolId && classId) {
     const cls = await prisma.class.findUnique({
       where: { id: classId },
       select: { schoolId: true },
     });
-    schoolId = cls?.schoolId ?? undefined;
+    schoolId = cls?.schoolId ?? contextSchoolId ?? undefined;
+  }
+  if (!schoolId && contextSchoolId) {
+    schoolId = contextSchoolId;
   }
 
   const { hashedPassword, shouldSendSetupEmail } = await resolveAdminProvidedOrInvitePassword(

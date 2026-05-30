@@ -221,6 +221,27 @@ async function main() {
     console.log(`Parcours e-learning orphelins supprimés : ${orphanElearning.length}`);
   }
 
+  const studentsMissingSchool = await prisma.student.findMany({
+    where: {
+      OR: [{ schoolId: null }, { schoolId: '' }],
+      classId: { not: null },
+    },
+    select: { id: true, class: { select: { schoolId: true } } },
+  });
+  let schoolIdAligned = 0;
+  for (const s of studentsMissingSchool) {
+    const fromClass = s.class?.schoolId;
+    if (!fromClass) continue;
+    await prisma.student.update({
+      where: { id: s.id },
+      data: { schoolId: fromClass },
+    });
+    schoolIdAligned += 1;
+  }
+  if (schoolIdAligned > 0) {
+    console.log(`Élèves : schoolId recopié depuis la classe : ${schoolIdAligned}`);
+  }
+
   const seedParentLinks: Array<{ parentEmail: string; studentEmail: string; relation: string }> = [
     { parentEmail: 'parent1@school.com', studentEmail: 'student1@school.com', relation: 'mother' },
     { parentEmail: 'parent2@school.com', studentEmail: 'student2@school.com', relation: 'father' },
