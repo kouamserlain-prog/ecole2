@@ -128,6 +128,7 @@ export async function resolveActiveSchoolForRequest(
   const members = getSchoolMemberDelegate()!;
 
   let schoolId = readSchoolIdFromRequest(req);
+  const explicitSchoolId = schoolId;
   const slug = readSchoolSlugFromRequest(req);
 
   if (!schoolId && slug) {
@@ -167,7 +168,9 @@ export async function resolveActiveSchoolForRequest(
       })) as SchoolSummary | null;
       if (school) return { schoolId: school.id, school };
     }
-    // En-tête X-School-Id obsolète (ex. localStorage) — reprendre l'établissement par défaut
+    if (explicitSchoolId) {
+      return null;
+    }
   }
 
   const preferred = (await members.findFirst({

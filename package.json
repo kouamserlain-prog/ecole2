@@ -16,13 +16,21 @@
     "prisma:push": "cd server && npm run prisma:push",
     "test": "cd server && npm run test:all && cd ../web && npm run test:exports",
     "test:unit": "cd server && npm run test",
-    "test:exports": "cd server && npm run test:import-export"
+    "test:exports": "cd server && npm run test:import-export",
+    "test:e2e": "cd server && npm run test:repair-db && cd .. && playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
-  "keywords": ["school", "management", "education"],
+  "keywords": [
+    "school",
+    "management",
+    "education"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^8.2.2",
+    "dotenv": "^16.6.1"
   }
 }
-

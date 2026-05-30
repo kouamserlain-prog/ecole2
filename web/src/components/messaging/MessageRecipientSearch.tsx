@@ -5,6 +5,11 @@ import { createPortal } from 'react-dom';
 import Badge from '../ui/Badge';
 import { ROLE_LABELS } from '../../lib/rolePaths';
 import { FiSearch, FiUser, FiX } from 'react-icons/fi';
+import {
+  filterMessageRecipients,
+  getActiveMessageRecipients,
+  shouldShowRecipientResults,
+} from './messagingRecipientSearch.util';
 
 export type MessageRecipientUser = {
   id: string;
@@ -37,6 +42,8 @@ type MessageRecipientSearchProps = {
   defaultLabel?: string;
   /** Liste des résultats en portal (modales avec overflow hidden). */
   inModal?: boolean;
+  /** Chargement de la liste de contacts (ex. requête API en cours). */
+  loading?: boolean;
 };
 
 const Z_PANEL = 100_001;
@@ -118,26 +125,6 @@ function userSubtitle(u: MessageRecipientUser): string {
   return u.email;
 }
 
-function matchesQuery(u: MessageRecipientUser, q: string): boolean {
-  const haystack = [
-    u.firstName,
-    u.lastName,
-    u.email,
-    u.role,
-    u.contextLabel ?? '',
-    ROLE_LABELS[u.role] ?? '',
-    u.studentProfile?.studentId ?? '',
-    u.studentProfile?.class?.name ?? '',
-    u.teacherProfile?.employeeId ?? '',
-    u.educatorProfile?.employeeId ?? '',
-    u.staffProfile?.employeeId ?? '',
-    u.staffProfile?.jobTitle ?? '',
-  ]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(q);
-}
-
 export default function MessageRecipientSearch({
   users,
   value,
@@ -148,14 +135,17 @@ export default function MessageRecipientSearch({
   allowDefault = false,
   defaultLabel = 'Administration (défaut)',
   inModal = false,
+  loading = false,
 }: MessageRecipientSearchProps) {
   const styles = ACCENT_STYLES[accent];
   const [query, setQuery] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const inputWrapRef = useRef<HTMLDivElement>(null);
-  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 320 });
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(query.trim().toLowerCase()), 200);
@@ -167,34 +157,28 @@ export default function MessageRecipientSearch({
     [users, value],
   );
 
-  const activeUsers = useMemo(
-    () => users.filter((u) => u.isActive !== false),
-    [users],
-  );
+  const activeUsers = useMemo(() => getActiveMessageRecipients(users), [users]);
 
   const roleOptions = useMemo(() => {
     const roles = [...new Set(activeUsers.map((u) => u.role))].sort();
     return roles;
   }, [activeUsers]);
 
-  const filtered = useMemo(() => {
-    let list = activeUsers;
-    if (roleFilter !== 'all') {
-      list = list.filter((u) => u.role === roleFilter);
-    }
-    if (debouncedQ) {
-      list = list.filter((u) => matchesQuery(u, debouncedQ));
-    } else if (roleFilter === 'all') {
-      return [];
-    }
-    return [...list]
-      .sort((a, b) =>
-        `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'fr'),
-      )
-      .slice(0, 50);
-  }, [activeUsers, debouncedQ, roleFilter]);
+  const filtered = useMemo(
+    () =>
+      filterMessageRecipients(activeUsers, {
+        query: debouncedQ,
+        roleFilter,
+      }),
+    [activeUsers, debouncedQ, roleFilter],
+  );
 
-  const showResults = open && (debouncedQ.length >= 2 || roleFilter !== 'all');
+  const showResults = shouldShowRecipientResults({
+    open,
+    loading,
+    query: debouncedQ,
+    roleFilter,
+  });
 
   const updatePanelPosition = useCallback(() => {
     const el = inputWrapRef.current;
@@ -217,7 +201,10 @@ export default function MessageRecipientSearch({
   }, []);
 
   useLayoutEffect(() => {
-    if (!showResults || !inModal) return;
+    if (!showResults || !inModal) {
+      setPanelPos(null);
+      return;
+    }
     updatePanelPosition();
     const onScrollOrResize = () => updatePanelPosition();
     window.addEventListener('scroll', onScrollOrResize, true);
@@ -226,7 +213,19 @@ export default function MessageRecipientSearch({
       window.removeEventListener('scroll', onScrollOrResize, true);
       window.removeEventListener('resize', onScrollOrResize);
     };
-  }, [showResults, inModal, updatePanelPosition]);
+  }, [showResults, inModal, updatePanelPosition, debouncedQ, roleFilter]);
+
+  useEffect(() => {
+    if (!open || !inModal || !showResults) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open, inModal, showResults]);
 
   const pick = (user: MessageRecipientUser) => {
     onChange(user.id);
@@ -287,13 +286,15 @@ export default function MessageRecipientSearch({
   ) : null;
 
   const resultsPanel =
-    showResults && resultsList ? (
+    showResults && resultsList && (!inModal || panelPos) ? (
       <div
+        ref={panelRef}
+        aria-label="Résultats destinataires"
         className={`overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-lg ${
           compact ? 'max-h-44' : 'max-h-56'
         }`}
         style={
-          inModal
+          inModal && panelPos
             ? {
                 position: 'fixed',
                 zIndex: Z_PANEL,
@@ -346,7 +347,15 @@ export default function MessageRecipientSearch({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" ref={rootRef}>
+      {loading && (
+        <p className="text-[11px] text-stone-500">Chargement des contacts…</p>
+      )}
+
+      {!loading && activeUsers.length === 0 && (
+        <p className="text-[11px] text-amber-700">Aucun contact disponible pour la messagerie.</p>
+      )}
+
       {allowDefault && (
         <button
           type="button"
@@ -377,11 +386,15 @@ export default function MessageRecipientSearch({
             setQuery(e.target.value);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => {
-            if (!inModal) {
-              window.setTimeout(() => setOpen(false), 150);
-            }
+          onFocus={() => {
+            setOpen(true);
+            if (inModal) updatePanelPosition();
+          }}
+          onBlur={(e) => {
+            if (inModal) return;
+            const related = e.relatedTarget as Node | null;
+            if (related && panelRef.current?.contains(related)) return;
+            window.setTimeout(() => setOpen(false), 200);
           }}
           placeholder="Rechercher par nom, e-mail, rôle…"
           className={inputClasses}
@@ -428,11 +441,7 @@ export default function MessageRecipientSearch({
         </div>
       )}
 
-      {open && debouncedQ.length > 0 && debouncedQ.length < 2 && roleFilter === 'all' && (
-        <p className="text-[11px] text-stone-500">Saisissez au moins 2 caractères ou choisissez un rôle.</p>
-      )}
-
-      {open && debouncedQ.length === 0 && roleFilter === 'all' && !allowDefault && (
+      {open && debouncedQ.length === 0 && roleFilter === 'all' && !allowDefault && !loading && (
         <p className="text-[11px] text-stone-500">
           Recherchez par nom ou filtrez par rôle pour afficher les contacts.
         </p>
@@ -443,18 +452,7 @@ export default function MessageRecipientSearch({
       )}
 
       {inModal && resultsPanel && typeof document !== 'undefined'
-        ? createPortal(
-            <>
-              <div
-                className="fixed inset-0"
-                style={{ zIndex: Z_PANEL - 1 }}
-                aria-hidden
-                onMouseDown={() => setOpen(false)}
-              />
-              {resultsPanel}
-            </>,
-            document.body,
-          )
+        ? createPortal(resultsPanel, document.body)
         : resultsPanel}
     </div>
   );

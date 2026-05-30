@@ -63,6 +63,12 @@ export async function protectSensitiveUploads(
     return;
   }
 
+  const pathLower = uploadPath.toLowerCase();
+  if (pathLower.includes('/identity-documents/')) {
+    res.status(401).json({ error: 'Accès au fichier refusé. Connectez-vous ou utilisez un lien valide.' });
+    return;
+  }
+
   const user = await resolveUserFromBearer(req);
   if (user && (await userCanAccessSensitiveUpload(user, uploadPath))) {
     next();

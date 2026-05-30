@@ -305,6 +305,7 @@ router.get('/appointments', requireStaffModule('appointments'), async (req, res)
     if (q && typeof q === 'string' && q.trim()) {
       const needle = q.trim().toLowerCase();
       filtered = rows.filter((r) => {
+        if (!r.student?.user || !r.teacher?.user) return false;
         const student = `${r.student.user.firstName} ${r.student.user.lastName}`.toLowerCase();
         const parent = `${r.parent.user.firstName} ${r.parent.user.lastName}`.toLowerCase();
         const teacher = `${r.teacher.user.firstName} ${r.teacher.user.lastName}`.toLowerCase();

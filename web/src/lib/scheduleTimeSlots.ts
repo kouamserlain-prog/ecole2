@@ -4,7 +4,7 @@ export const DEFAULT_SCHEDULE_START = '07:00';
 /** Normalise une saisie HH:MM (ex. "8:5" → "08:05"). */
 export function normalizeScheduleTime(value: string): string {
   const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})$/);
   if (!match) return trimmed;
   const hours = Math.min(23, Math.max(0, Number.parseInt(match[1], 10)));
   const minutes = Math.min(59, Math.max(0, Number.parseInt(match[2], 10)));

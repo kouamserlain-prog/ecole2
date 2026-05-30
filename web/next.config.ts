@@ -70,6 +70,8 @@ const PRODUCTION_SECURITY_HEADERS =
     : [];
 
 const nextConfig: NextConfig = {
+  /** Playwright et accès via 127.0.0.1 (évite le blocage HMR cross-origin en dev). */
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   turbopack: {
     root: path.resolve(process.cwd()),
   },

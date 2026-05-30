@@ -38,13 +38,14 @@ router.get('/courses', async (req: AuthRequest, res) => {
     if (role === 'STUDENT') {
       const student = await getStudentId(userId);
       if (!student) return res.status(404).json({ error: 'Profil élève introuvable' });
+      const classFilter: { classId: string | null }[] = [{ classId: null }];
+      if (student.classId) {
+        classFilter.unshift({ classId: student.classId });
+      }
       const rows = await prisma.elearningCourse.findMany({
         where: {
           isPublished: true,
-          OR: [
-            { classId: student.classId ?? undefined },
-            { classId: null },
-          ],
+          OR: classFilter,
         },
         include: {
           teacher: { include: { user: { select: { firstName: true, lastName: true } } } },

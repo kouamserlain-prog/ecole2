@@ -240,9 +240,9 @@ async function main() {
     await expectOk('GET /parent/messages', '/parent/messages', parent1Token);
     await expectOk('GET /parent/my-profile', '/parent/my-profile', parent1Token);
 
-    let child1Id = studentId;
+    let child1Id: string | null = null;
     if (Array.isArray(childrenBody) && childrenBody.length > 0) {
-      child1Id = String((childrenBody[0] as Json).id ?? (childrenBody[0] as Json).studentId ?? studentId);
+      child1Id = String((childrenBody[0] as Json).id ?? (childrenBody[0] as Json).studentId ?? '');
     }
     if (child1Id) {
       await expectOk(
@@ -260,6 +260,8 @@ async function main() {
         `/parent/children/${child1Id}/schedule`,
         parent1Token,
       );
+    } else {
+      skip('Parent enfants liés', 'aucun enfant associé à parent1@school.com');
     }
 
     // Isolation parent : parent1 ne doit pas accéder à un autre élève

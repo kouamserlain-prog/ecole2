@@ -1451,8 +1451,8 @@ model ParentTeacherAppointment {
   updatedAt      DateTime                              @updatedAt
 
   parent         Parent                                @relation(fields: [parentId], references: [id])
-  teacher        Teacher                               @relation(fields: [teacherId], references: [id])
-  student        Student                               @relation(fields: [studentId], references: [id])
+  teacher        Teacher?                              @relation(fields: [teacherId], references: [id])
+  student        Student?                              @relation(fields: [studentId], references: [id])
 
   @@index([parentId, scheduledStart])
   @@index([teacherId, scheduledStart])
@@ -2781,7 +2781,7 @@ model ElearningCourse {
   updatedAt   DateTime @updatedAt
 
   teacherId   String   @db.ObjectId
-  teacher     Teacher  @relation(fields: [teacherId], references: [id])
+  teacher     Teacher?  @relation(fields: [teacherId], references: [id])
   classId     String?  @db.ObjectId
   class       Class?   @relation(fields: [classId], references: [id])
   courseId    String?  @db.ObjectId

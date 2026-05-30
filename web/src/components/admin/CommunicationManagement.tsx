@@ -145,10 +145,15 @@ const CommunicationManagement: React.FC<CommunicationManagementProps> = ({
     enabled: notificationStatusFilter === 'all',
   });
 
-  const { data: users } = useQuery({
+  const { data: users, isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => adminApi.getAllUsers(),
   });
+
+  const messageRecipients = useMemo(() => {
+    if (!Array.isArray(users)) return [];
+    return users.filter((u) => u.isActive !== false) as MessageRecipientUser[];
+  }, [users]);
 
   const { data: classes } = useQuery({
     queryKey: ['classes'],
@@ -1502,7 +1507,8 @@ const CommunicationManagement: React.FC<CommunicationManagementProps> = ({
               inModal
               compact={compact}
               accent="pink"
-              users={(Array.isArray(users) ? users : []) as MessageRecipientUser[]}
+              loading={usersLoading}
+              users={messageRecipients}
               value={messageForm.receiverId}
               onChange={(receiverId) => setMessageForm({ ...messageForm, receiverId })}
             />

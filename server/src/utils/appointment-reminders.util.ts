@@ -33,6 +33,7 @@ export async function runAppointmentReminders(): Promise<{
 
   let reminded24h = 0;
   for (const apt of rows24) {
+    if (!apt.teacher?.user || !apt.student?.user) continue;
     const parentUid = apt.parent.user.id;
     const teacherUid = apt.teacher.user.id;
     const st = [apt.student.user.firstName, apt.student.user.lastName].filter(Boolean).join(' ').trim();
@@ -64,6 +65,7 @@ export async function runAppointmentReminders(): Promise<{
 
   let reminded1h = 0;
   for (const apt of rows1) {
+    if (!apt.teacher?.user || !apt.student?.user) continue;
     const parentUid = apt.parent.user.id;
     const teacherUid = apt.teacher.user.id;
     const st = [apt.student.user.firstName, apt.student.user.lastName].filter(Boolean).join(' ').trim();

@@ -374,7 +374,7 @@ router.post('/appointments', async (req: AuthRequest, res) => {
       select: { userId: true },
     });
 
-    if (teacherUser?.userId) {
+    if (teacherUser?.userId && created.student?.user) {
       const stName = [created.student.user.firstName, created.student.user.lastName]
         .filter(Boolean)
         .join(' ')

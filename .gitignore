@@ -22,3 +22,10 @@ web/.next/
 
 # Sauvegardes MongoDB locales (mongodump)
 server/backups/
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/test-results/
+e2e/.e2e-ready.json
