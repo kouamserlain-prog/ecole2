@@ -147,6 +147,24 @@ function normalizeMethod(method: string): HttpMethod {
   return method.toUpperCase() as HttpMethod;
 }
 
+/**
+ * Suppression définitive d’un élève ou d’une classe : réservée aux administrateurs,
+ * pas aux comptes secrétaire (STAFF / supportKind SECRETARY).
+ */
+export function staffSecretaryBlocksDestructiveDelete(
+  path: string,
+  method: string,
+  supportKind: string | null | undefined,
+): boolean {
+  if (supportKind !== 'SECRETARY') return false;
+  const m = normalizeMethod(method);
+  if (m !== 'DELETE') return false;
+  const parts = normalizePath(path).split('/').filter(Boolean);
+  if (parts[0] === 'students' && parts.length === 2) return true;
+  if (parts[0] === 'classes' && parts.length === 2) return true;
+  return false;
+}
+
 function pathMatchesPrefix(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
@@ -278,11 +296,14 @@ export function staffModuleAdminPathAllowed(
   visibleModules: StaffModuleId[],
   path: string,
   method: string,
+  supportKind?: string | null,
 ): boolean {
   const p = normalizePath(path);
   const m = normalizeMethod(method);
 
   if (isStaffAdminForbidden(p, m, visibleModules)) return false;
+
+  if (staffSecretaryBlocksDestructiveDelete(p, m, supportKind)) return false;
 
   if (m === 'DELETE' && (p === '/students' || p.startsWith('/students/'))) {
     return staffModuleGrantsWriteAccess('students_mgmt', visibleModules);

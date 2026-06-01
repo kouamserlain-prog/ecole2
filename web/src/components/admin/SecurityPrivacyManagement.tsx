@@ -1362,6 +1362,10 @@ const SecurityPrivacyManagement = () => {
                 ? `${dataProtection.lastBackupEvent.type} (${format(new Date(dataProtection.lastBackupEvent.createdAt), 'dd/MM/yyyy HH:mm', { locale: fr })})`
                 : 'Aucun'}
             </p>
+            <p className="mt-2 text-xs text-gray-500">
+              La sauvegarde manuelle et la restauration complète sont réservées aux comptes ADMIN /
+              SUPER_ADMIN (Paramètres → Système).
+            </p>
           </Card>
           <GdprUserRightsPanel />
           </div>

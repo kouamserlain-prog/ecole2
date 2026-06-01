@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isStaffModuleAdminPath,
   staffModuleAdminPathAllowed,
+  staffSecretaryBlocksDestructiveDelete,
 } from './staff-module-admin-access.util';
 import type { StaffModuleId } from './staff-visible-modules.util';
 
@@ -18,10 +19,25 @@ describe('staff-module-admin-access', () => {
     assert.equal(isStaffModuleAdminPath('/students', 'DELETE'), true);
   });
 
-  it('secrétaire avec students_mgmt peut DELETE /students', () => {
+  it('secrétaire avec students_mgmt ne peut pas DELETE un élève', () => {
+    assert.equal(staffSecretaryBlocksDestructiveDelete('/students/abc', 'DELETE', 'SECRETARY'), true);
     assert.equal(
-      staffModuleAdminPathAllowed(secretaryLike, '/students', 'DELETE'),
+      staffModuleAdminPathAllowed(secretaryLike, '/students/abc', 'DELETE', 'SECRETARY'),
+      false,
+    );
+  });
+
+  it('autre métier STAFF avec students_mgmt peut DELETE un élève', () => {
+    assert.equal(
+      staffModuleAdminPathAllowed(secretaryLike, '/students/abc', 'DELETE', 'BURSAR'),
       true,
+    );
+  });
+
+  it('secrétaire ne peut pas DELETE une classe', () => {
+    assert.equal(
+      staffModuleAdminPathAllowed(secretaryLike, '/classes/cls1', 'DELETE', 'SECRETARY'),
+      false,
     );
   });
 

@@ -390,15 +390,15 @@ async function main() {
       secretaryToken,
       schoolId || undefined,
     );
-    const deleteStudents = await req('/admin/students', {
+    const deleteStudentForbidden = await req('/admin/students/000000000000000000000000', {
       token: secretaryToken,
       schoolId: schoolId || undefined,
       method: 'DELETE',
     });
     assert(
-      'Secrétaire DELETE /admin/students autorisé avec students_mgmt',
-      deleteStudents.status !== 403 && deleteStudents.status !== 401,
-      String(deleteStudents.status),
+      'Secrétaire DELETE /admin/students/:id refusé (réservé admin)',
+      deleteStudentForbidden.status === 403,
+      String(deleteStudentForbidden.status),
     );
   }
 

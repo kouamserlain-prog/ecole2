@@ -5,7 +5,11 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import prisma from '../utils/prisma';
 import { hashPassword, assertPasswordPolicy, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { getAppBrandingDelegate, APP_BRANDING_ID } from '../utils/app-branding-prisma.util';
-import { runMongoBackup } from '../utils/mongodb-backup.util';
+import {
+  isMongoBackupFilesystemWritable,
+  runMongoBackup,
+  SERVERLESS_MONGODB_BACKUP_MESSAGE,
+} from '../utils/mongodb-backup.util';
 import { getMetricsSummary } from '../utils/performance-metrics.util';
 
 const router = express.Router();
@@ -276,6 +280,9 @@ router.patch(
 
 router.post('/backup', async (_req, res) => {
   try {
+    if (!isMongoBackupFilesystemWritable()) {
+      return res.status(503).json({ ok: false, error: SERVERLESS_MONGODB_BACKUP_MESSAGE });
+    }
     const result = await runMongoBackup();
     res.json(result);
   } catch (error: unknown) {

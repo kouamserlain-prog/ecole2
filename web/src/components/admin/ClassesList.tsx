@@ -23,6 +23,8 @@ import {
   FiTrash2,
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../contexts/AuthContext';
+import { canDeleteStudentsOrClasses } from '@/lib/staffDeletionPolicy';
 import { useSchool } from '../../contexts/SchoolContext';
 import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
 import { format } from 'date-fns';
@@ -77,6 +79,8 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
   const { activeSchoolId, activeSchool } = useSchool();
   const schoolReady = useSchoolReady();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const allowClassDelete = canDeleteStudentsOrClasses(user);
 
   const { data: classes, isLoading } = useQuery({
     queryKey: schoolQueryKey(['classes'], activeSchoolId),
@@ -609,16 +613,18 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                         >
                           <FiGrid className="w-4 h-4" aria-hidden />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteClass(classItem)}
-                          disabled={deleteClassMutation.isPending}
-                          className="p-1.5 rounded-lg text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 disabled:opacity-50"
-                          title="Supprimer la classe"
-                          aria-label={`Supprimer la classe ${classItem.name}`}
-                        >
-                          <FiTrash2 className="w-4 h-4" aria-hidden />
-                        </button>
+                        {allowClassDelete ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteClass(classItem)}
+                            disabled={deleteClassMutation.isPending}
+                            className="p-1.5 rounded-lg text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 disabled:opacity-50"
+                            title="Supprimer la classe"
+                            aria-label={`Supprimer la classe ${classItem.name}`}
+                          >
+                            <FiTrash2 className="w-4 h-4" aria-hidden />
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -668,22 +674,24 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                     </div>
                   )}
                   <div className="pt-3 border-t border-gray-100 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="!text-xs text-red-700 border-red-200 hover:bg-red-50 min-w-[7rem]"
-                      onClick={() => handleDeleteClass(classItem)}
-                      disabled={deleteClassMutation.isPending}
-                      title={
-                        count > 0
-                          ? 'Supprimer la classe (les élèves seront retirés de la classe)'
-                          : 'Supprimer la classe'
-                      }
-                    >
-                      <FiTrash2 className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
-                      Supprimer
-                    </Button>
+                    {allowClassDelete ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="!text-xs text-red-700 border-red-200 hover:bg-red-50 min-w-[7rem]"
+                        onClick={() => handleDeleteClass(classItem)}
+                        disabled={deleteClassMutation.isPending}
+                        title={
+                          count > 0
+                            ? 'Supprimer la classe (les élèves seront retirés de la classe)'
+                            : 'Supprimer la classe'
+                        }
+                      >
+                        <FiTrash2 className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
+                        Supprimer
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -724,7 +732,7 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
         classItem={editClass}
         studentCount={editClass ? getClassStudentCount(editClass) : 0}
         onDelete={
-          editClass
+          editClass && allowClassDelete
             ? () =>
                 handleDeleteClass({
                   id: editClass.id,

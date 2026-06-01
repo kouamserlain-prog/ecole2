@@ -29,6 +29,7 @@ import { buildGdprDataExport } from '../utils/gdpr-data-export.util';
 import QRCode from 'qrcode';
 import { generateTwoFactorSecret, verifyTwoFactorToken } from '../utils/two-factor.util';
 import { prismaConnectionErrorMessage } from '../utils/production-env-diagnostics.util';
+import { mergeUserUiPreferences } from '../utils/user-ui-preferences.util';
 
 const router = express.Router();
 
@@ -295,7 +296,16 @@ router.post(
 // Mettre à jour le profil de l'utilisateur
 router.put('/me', authenticate, async (req: any, res) => {
   try {
-    const { firstName, lastName, phone, avatar } = req.body;
+    const { firstName, lastName, phone, avatar, uiPreferences } = req.body;
+
+    let uiPreferencesUpdate: ReturnType<typeof mergeUserUiPreferences> | undefined;
+    if (uiPreferences !== undefined) {
+      const current = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { uiPreferences: true },
+      });
+      uiPreferencesUpdate = mergeUserUiPreferences(current?.uiPreferences, uiPreferences);
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user!.id },
@@ -304,6 +314,7 @@ router.put('/me', authenticate, async (req: any, res) => {
         ...(lastName && { lastName }),
         ...(phone !== undefined && { phone }),
         ...(avatar !== undefined && { avatar }),
+        ...(uiPreferencesUpdate !== undefined && { uiPreferences: uiPreferencesUpdate }),
       },
       select: {
         id: true,
@@ -314,6 +325,7 @@ router.put('/me', authenticate, async (req: any, res) => {
         role: true,
         avatar: true,
         isActive: true,
+        uiPreferences: true,
         teacherProfile: true,
         studentProfile: {
           include: {
@@ -348,6 +360,7 @@ router.get('/me', authenticate, async (req: any, res) => {
         role: true,
         avatar: true,
         isActive: true,
+        uiPreferences: true,
         teacherProfile: {
           select: {
             id: true,

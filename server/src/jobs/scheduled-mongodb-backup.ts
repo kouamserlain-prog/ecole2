@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { runMongoBackup } from '../utils/mongodb-backup.util';
+import { isMongoBackupFilesystemWritable, runMongoBackup } from '../utils/mongodb-backup.util';
 
 function isScheduledBackupsEnabled(): boolean {
   const v = process.env.ENABLE_SCHEDULED_MONGODB_BACKUPS?.trim().toLowerCase();
@@ -17,7 +17,7 @@ function getCronExpression(): string {
  * Désactivé sur Vercel (pas de système de fichiers persistant).
  */
 export function startScheduledMongoBackups(): void {
-  if (process.env.VERCEL === '1') return;
+  if (!isMongoBackupFilesystemWritable()) return;
   if (!isScheduledBackupsEnabled()) return;
 
   const expression = getCronExpression();

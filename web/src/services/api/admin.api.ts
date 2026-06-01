@@ -1169,7 +1169,27 @@ export const adminApi = {
   },
   runMongoBackupNow: async () => {
     const response = await api.post('/admin/security/backups/run');
-    return response.data;
+    return response.data as { ok: boolean; filename?: string; archivePath?: string; error?: string };
+  },
+  listMongoBackups: async () => {
+    const response = await api.get('/admin/security/backups');
+    return response.data as {
+      backups: Array<{ filename: string; size: number; createdAt: string }>;
+    };
+  },
+  downloadMongoBackup: async (filename: string) => {
+    const response = await api.get(`/admin/security/backups/${encodeURIComponent(filename)}/download`, {
+      responseType: 'blob',
+    });
+    return response.data as Blob;
+  },
+  restoreMongoBackup: async (payload: { filename?: string; confirmPhrase: string; file?: File }) => {
+    const form = new FormData();
+    form.append('confirmPhrase', payload.confirmPhrase);
+    if (payload.filename) form.append('filename', payload.filename);
+    if (payload.file) form.append('archive', payload.file);
+    const response = await api.post('/admin/security/backups/restore', form);
+    return response.data as { ok: boolean; message?: string; error?: string };
   },
   changeUserPassword: async (userId: string, newPassword: string) => {
     const response = await api.put(`/admin/security/users/${userId}/password`, { newPassword });

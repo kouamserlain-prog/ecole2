@@ -13,6 +13,7 @@ import { attachSchoolContext } from '../middleware/school-context.middleware';
 import { getStaffMemberModuleContext } from '../utils/staff-visible-modules.util';
 import {
   staffModuleAdminPathAllowed,
+  staffSecretaryBlocksDestructiveDelete,
   staffTuitionRatesReadAllowed,
 } from '../utils/staff-module-admin-access.util';
 import {
@@ -136,7 +137,13 @@ async function requireStaffPedagogyPathAccess(
       return res.status(403).json({ error: 'Profil personnel introuvable.' });
     }
     const adminPath = pedagogyPathToAdminPath(req.path || '/');
-    if (!staffModuleAdminPathAllowed(ctx.visibleModules, adminPath, req.method)) {
+    if (staffSecretaryBlocksDestructiveDelete(adminPath, req.method, ctx.staff.supportKind)) {
+      return res.status(403).json({
+        error:
+          'La suppression d’élèves ou de classes est réservée aux administrateurs. Contactez un administrateur si nécessaire.',
+      });
+    }
+    if (!staffModuleAdminPathAllowed(ctx.visibleModules, adminPath, req.method, ctx.staff.supportKind)) {
       return res.status(403).json({
         error: 'Ces données ne sont pas activées pour votre métier. Contactez l’administration.',
       });

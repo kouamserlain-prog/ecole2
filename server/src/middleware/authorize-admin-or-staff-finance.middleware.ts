@@ -4,6 +4,7 @@ import { getStaffMemberModuleContext } from '../utils/staff-visible-modules.util
 import {
   isStaffModuleAdminPath,
   staffModuleAdminPathAllowed,
+  staffSecretaryBlocksDestructiveDelete,
 } from '../utils/staff-module-admin-access.util';
 
 /**
@@ -46,7 +47,15 @@ export async function authorizeAdminOrStaffFinance(
       return;
     }
 
-    if (staffModuleAdminPathAllowed(ctx.visibleModules, path, method)) {
+    if (staffSecretaryBlocksDestructiveDelete(path, method, ctx.staff.supportKind)) {
+      res.status(403).json({
+        error:
+          'La suppression d’élèves ou de classes est réservée aux administrateurs. Contactez un administrateur si nécessaire.',
+      });
+      return;
+    }
+
+    if (staffModuleAdminPathAllowed(ctx.visibleModules, path, method, ctx.staff.supportKind)) {
       next();
       return;
     }

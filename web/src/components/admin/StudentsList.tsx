@@ -47,6 +47,8 @@ import {
   type ClassRosterMeta,
 } from '../../lib/classRosterExport';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../contexts/AuthContext';
+import { canDeleteStudentsOrClasses } from '@/lib/staffDeletionPolicy';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import 'jspdf-autotable';
@@ -71,6 +73,8 @@ const StudentsList: React.FC<StudentsListProps> = ({
   compact = false,
 }) => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const allowStudentDelete = canDeleteStudentsOrClasses(user);
   const [searchTerm, setSearchTerm] = useState(searchQuery);
   const [statusFilter, setStatusFilter] = useState('all');
   const [stateAssignmentFilter, setStateAssignmentFilter] = useState('all');
@@ -491,21 +495,23 @@ const StudentsList: React.FC<StudentsListProps> = ({
           >
             <FiEdit className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() =>
-              handleDeleteStudent(
-                student.id,
-                `${student.user?.firstName || ''} ${student.user?.lastName || ''}`
-              )
-            }
-            disabled={deleteStudentMutation.isPending}
-            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-            title="Supprimer"
-            aria-label="Supprimer"
-          >
-            <FiTrash2 className="w-4 h-4" />
-          </button>
+          {allowStudentDelete ? (
+            <button
+              type="button"
+              onClick={() =>
+                handleDeleteStudent(
+                  student.id,
+                  `${student.user?.firstName || ''} ${student.user?.lastName || ''}`
+                )
+              }
+              disabled={deleteStudentMutation.isPending}
+              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+              title="Supprimer"
+              aria-label="Supprimer"
+            >
+              <FiTrash2 className="w-4 h-4" />
+            </button>
+          ) : null}
         </div>
       ),
     },

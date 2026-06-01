@@ -1,6 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAppBranding } from '../../contexts/AppBrandingContext';
 import { authApi, adminApi } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  applyDocumentTheme,
+  parseUserUiPreferences,
+  type UserUiPreferences,
+} from '@/lib/userUiPreferences';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -50,6 +57,7 @@ interface TabOption {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialTab = 'school' }) => {
+  const { user, refreshUser, uiPreferences: savedUiPreferences } = useAuth();
   const {
     refreshBranding,
     branding,
@@ -73,6 +81,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
   const [twoFactorQr, setTwoFactorQr] = useState<string | null>(null);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+  const [selectedBackupFilename, setSelectedBackupFilename] = useState('');
+  const [restoreConfirmPhrase, setRestoreConfirmPhrase] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+
+  const { data: backupsData, isLoading: backupsLoading } = useQuery({
+    queryKey: ['mongo-backups'],
+    queryFn: () => adminApi.listMongoBackups(),
+    enabled: isOpen && activeTab === 'system',
+  });
+
+  const backupMutation = useMutation({
+    mutationFn: () => adminApi.runMongoBackupNow(),
+    onSuccess: async (data) => {
+      if (data?.ok && data.filename) {
+        toast.success(`Sauvegarde créée : ${data.filename}`);
+        queryClient.invalidateQueries({ queryKey: ['mongo-backups'] });
+        setSelectedBackupFilename(data.filename);
+        try {
+          const blob = await adminApi.downloadMongoBackup(data.filename);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = data.filename;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch {
+          toast('Archive enregistrée sur le serveur (téléchargement manuel possible).', {
+            icon: 'ℹ️',
+          });
+        }
+      } else {
+        toast.error(data?.error || 'Échec de la sauvegarde');
+      }
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Échec de la sauvegarde');
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () =>
+      adminApi.restoreMongoBackup({
+        confirmPhrase: restoreConfirmPhrase.trim(),
+        filename: restoreFile ? undefined : selectedBackupFilename || undefined,
+        file: restoreFile ?? undefined,
+      }),
+    onSuccess: (data) => {
+      if (data?.ok) {
+        toast.success(data.message || 'Base restaurée');
+        setRestoreConfirmPhrase('');
+        setRestoreFile(null);
+        queryClient.invalidateQueries();
+      } else {
+        toast.error(data?.error || 'Échec de la restauration');
+      }
+    },
+    onError: (error: { response?: { data?: { error?: string } } }) => {
+      toast.error(error.response?.data?.error || 'Échec de la restauration');
+    },
+  });
 
   // School settings (persistés via AppBranding côté serveur)
   const [schoolSettings, setSchoolSettings] = useState({
@@ -116,14 +186,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
     ipWhitelist: false,
   });
 
-  // User settings
-  const [userSettings, setUserSettings] = useState({
-    language: 'fr',
-    theme: 'light',
-    timezone: 'Europe/Paris',
-    dateFormat: 'DD/MM/YYYY',
-    timeFormat: '24h',
-  });
+  const [userSettings, setUserSettings] = useState<UserUiPreferences>(() =>
+    parseUserUiPreferences(null)
+  );
 
   // Password change
   const [passwordData, setPasswordData] = useState({
@@ -145,6 +210,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
     if (!isOpen) return;
     setActiveTab(initialTab);
   }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setUserSettings(savedUiPreferences);
+  }, [isOpen, savedUiPreferences]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -270,6 +340,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
         schoolWebsite: schoolSettings.website.trim() || null,
         schoolPrincipal: schoolSettings.principal.trim() || null,
       });
+      if (user) {
+        await authApi.updateMe({ uiPreferences: userSettings });
+        await refreshUser();
+        applyDocumentTheme(userSettings.theme);
+      }
       await refreshBranding();
       await new Promise((resolve) => setTimeout(resolve, 400));
       
@@ -313,11 +388,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
   };
 
   const handleBackup = () => {
-    toast.success('Sauvegarde de la base de données lancée...');
+    backupMutation.mutate();
+  };
+
+  const handleDownloadBackup = async () => {
+    if (!selectedBackupFilename) {
+      toast.error('Sélectionnez une archive à télécharger');
+      return;
+    }
+    try {
+      const blob = await adminApi.downloadMongoBackup(selectedBackupFilename);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = selectedBackupFilename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Téléchargement lancé');
+    } catch {
+      toast.error('Impossible de télécharger cette archive');
+    }
   };
 
   const handleRestore = () => {
-    toast('Fonctionnalité de restauration à venir', { icon: 'ℹ️' });
+    if (!restoreFile && !selectedBackupFilename) {
+      toast.error('Choisissez une archive sur le serveur ou importez un fichier');
+      return;
+    }
+    if (restoreConfirmPhrase.trim() !== 'RESTAURER') {
+      toast.error('Tapez RESTAURER pour confirmer la restauration');
+      return;
+    }
+    const label = restoreFile?.name || selectedBackupFilename;
+    if (
+      !window.confirm(
+        `ATTENTION : toutes les données actuelles seront remplacées par l’archive « ${label} ».\n\nContinuer ?`
+      )
+    ) {
+      return;
+    }
+    restoreMutation.mutate();
+  };
+
+  const formatBackupSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} o`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
   };
 
   const handleSetup2FA = async () => {
@@ -1095,7 +1211,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                       </label>
                       <select
                         value={userSettings.theme}
-                        onChange={(e) => setUserSettings({ ...userSettings, theme: e.target.value })}
+                        onChange={(e) => {
+                          const theme = e.target.value as UserUiPreferences['theme'];
+                          setUserSettings({ ...userSettings, theme });
+                          applyDocumentTheme(theme);
+                        }}
                         aria-label="Thème"
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
                       >
@@ -1151,7 +1271,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                           name="timeFormat"
                           value="24h"
                           checked={userSettings.timeFormat === '24h'}
-                          onChange={(e) => setUserSettings({ ...userSettings, timeFormat: e.target.value })}
+                          onChange={() =>
+                            setUserSettings({ ...userSettings, timeFormat: '24h' })
+                          }
                           className="w-4 h-4 text-purple-600"
                         />
                         <span className="text-gray-700">24 heures</span>
@@ -1162,7 +1284,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                           name="timeFormat"
                           value="12h"
                           checked={userSettings.timeFormat === '12h'}
-                          onChange={(e) => setUserSettings({ ...userSettings, timeFormat: e.target.value })}
+                          onChange={() =>
+                            setUserSettings({ ...userSettings, timeFormat: '12h' })
+                          }
                           className="w-4 h-4 text-purple-600"
                         />
                         <span className="text-gray-700">12 heures (AM/PM)</span>
@@ -1181,30 +1305,126 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                 <h3 className="text-lg font-bold text-gray-900 mb-4">Paramètres système</h3>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                    <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 md:col-span-2">
                       <div className="flex items-center space-x-3 mb-2">
-                        <FiDatabase className="w-6 h-6 text-blue-600" />
-                        <h4 className="font-semibold text-gray-900">Base de données</h4>
+                        <FiDatabase className="w-6 h-6 text-blue-600 shrink-0" />
+                        <h4 className="font-semibold text-gray-900">Base de données MongoDB</h4>
                       </div>
-                      <p className="text-sm text-gray-600 mb-4">Sauvegarder ou restaurer la base de données</p>
-                      <div className="flex space-x-2">
+                      <p className="text-sm text-gray-600 mb-3">
+                        Sauvegarde complète via <code className="text-xs">mongodump</code> (fichier
+                        .archive.gz). La restauration remplace toutes les données — réservée aux
+                        administrateurs.
+                      </p>
+                      <div className="flex flex-wrap gap-2 mb-4">
                         <Button
                           variant="secondary"
                           size="sm"
                           onClick={handleBackup}
-                          className="flex-1"
+                          disabled={backupMutation.isPending || restoreMutation.isPending}
                         >
-                          <FiDownload className="w-4 h-4 mr-2 inline" />
+                          {backupMutation.isPending ? (
+                            <FiLoader className="w-4 h-4 mr-2 inline animate-spin" />
+                          ) : (
+                            <FiDownload className="w-4 h-4 mr-2 inline" />
+                          )}
                           Sauvegarder
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={handleRestore}
-                          className="flex-1"
+                          onClick={handleDownloadBackup}
+                          disabled={!selectedBackupFilename || backupMutation.isPending}
                         >
-                          <FiUpload className="w-4 h-4 mr-2 inline" />
-                          Restaurer
+                          <FiDownload className="w-4 h-4 mr-2 inline" />
+                          Télécharger
+                        </Button>
+                      </div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Archives sur le serveur
+                      </label>
+                      <select
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm mb-3"
+                        value={selectedBackupFilename}
+                        onChange={(e) => setSelectedBackupFilename(e.target.value)}
+                        disabled={backupsLoading}
+                      >
+                        <option value="">
+                          {backupsLoading
+                            ? 'Chargement…'
+                            : (backupsData?.backups?.length ?? 0) === 0
+                              ? 'Aucune archive — lancez une sauvegarde'
+                              : 'Choisir une archive…'}
+                        </option>
+                        {(backupsData?.backups ?? []).map((b) => (
+                          <option key={b.filename} value={b.filename}>
+                            {b.filename} ({formatBackupSize(b.size)})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 space-y-3">
+                        <p className="text-xs text-amber-900 font-medium">Restauration (destructive)</p>
+                        <input
+                          ref={restoreFileInputRef}
+                          type="file"
+                          accept=".archive.gz,application/gzip"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            setRestoreFile(file);
+                            if (file) setSelectedBackupFilename('');
+                          }}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => restoreFileInputRef.current?.click()}
+                          >
+                            <FiUpload className="w-4 h-4 mr-2 inline" />
+                            {restoreFile ? restoreFile.name : 'Importer une archive'}
+                          </Button>
+                          {restoreFile ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                setRestoreFile(null);
+                                if (restoreFileInputRef.current) {
+                                  restoreFileInputRef.current.value = '';
+                                }
+                              }}
+                            >
+                              <FiX className="w-4 h-4" />
+                            </Button>
+                          ) : null}
+                        </div>
+                        <Input
+                          label='Confirmation (tapez « RESTAURER »)'
+                          value={restoreConfirmPhrase}
+                          onChange={(e) => setRestoreConfirmPhrase(e.target.value)}
+                          placeholder="RESTAURER"
+                          autoComplete="off"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleRestore}
+                          disabled={
+                            restoreMutation.isPending ||
+                            backupMutation.isPending ||
+                            restoreConfirmPhrase.trim() !== 'RESTAURER' ||
+                            (!restoreFile && !selectedBackupFilename)
+                          }
+                          className="w-full bg-red-600 hover:bg-red-700 text-white border-red-700"
+                        >
+                          {restoreMutation.isPending ? (
+                            <FiLoader className="w-4 h-4 mr-2 inline animate-spin" />
+                          ) : (
+                            <FiUpload className="w-4 h-4 mr-2 inline" />
+                          )}
+                          Restaurer la base
                         </Button>
                       </div>
                     </div>

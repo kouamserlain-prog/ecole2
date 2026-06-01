@@ -297,6 +297,8 @@ model User {
   phone     String?
   avatar    String?
   isActive  Boolean  @default(true)
+  /// Préférences interface (langue, thème, fuseau horaire, formats date/heure)
+  uiPreferences Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

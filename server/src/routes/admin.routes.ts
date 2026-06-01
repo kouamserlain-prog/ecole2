@@ -93,7 +93,15 @@ import {
   notifyTuitionFeeChanged,
   runAutomaticTuitionReminders,
 } from '../utils/tuition-financial-automation.util';
-import { runMongoBackup } from '../utils/mongodb-backup.util';
+import {
+  isMongoBackupFilesystemWritable,
+  listMongoBackups,
+  resolveBackupArchivePath,
+  runMongoBackup,
+  runMongoRestore,
+  SERVERLESS_MONGODB_BACKUP_MESSAGE,
+} from '../utils/mongodb-backup.util';
+import { mongoBackupUpload } from '../middleware/mongodb-backup-upload.middleware';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { EVALUATION_TYPE_VALUES } from '../utils/evaluation-type.util';
@@ -4290,38 +4298,154 @@ router.get('/security/performance/slow-endpoints', async (req, res) => {
   }
 });
 
-router.post('/security/backups/run', async (req, res) => {
+const logBackupSecurityEvent = async (
+  req: { user?: { id: string }; ip?: string; get: (name: string) => string | undefined },
+  type: 'backup_success' | 'backup_failure' | 'restore_success' | 'restore_failure',
+  description: string,
+  severity: 'info' | 'warning' | 'critical' = 'info'
+) => {
+  await prisma.securityEvent.create({
+    data: {
+      userId: req.user?.id || null,
+      type,
+      description,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+      severity,
+    },
+  });
+};
+
+router.get('/security/backups', authorize('ADMIN', 'SUPER_ADMIN'), async (_req, res) => {
   try {
-    const result = await runMongoBackup();
-    if (result.ok) {
-      await prisma.securityEvent.create({
-        data: {
-          userId: req.user?.id || null,
-          type: 'backup_success',
-          description: `Sauvegarde MongoDB réussie: ${result.archivePath}`,
-          ipAddress: req.ip,
-          userAgent: req.get('user-agent'),
-          severity: 'info',
-        },
-      });
-      return res.json(result);
-    }
-    await prisma.securityEvent.create({
-      data: {
-        userId: req.user?.id || null,
-        type: 'backup_failure',
-        description: `Échec sauvegarde MongoDB: ${result.error}`,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-        severity: 'warning',
-      },
-    });
-    return res.status(500).json(result);
-  } catch (error: any) {
-    console.error('POST /security/backups/run:', error);
-    res.status(500).json({ error: error.message || 'Erreur serveur' });
+    const backups = await listMongoBackups();
+    res.json({ backups });
+  } catch (error: unknown) {
+    console.error('GET /security/backups:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }
 });
+
+router.get(
+  '/security/backups/:filename/download',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  async (req, res) => {
+    try {
+      const archivePath = resolveBackupArchivePath(req.params.filename);
+      if (!archivePath) {
+        return res.status(400).json({ error: 'Nom de fichier invalide' });
+      }
+      await fs.access(archivePath);
+      res.download(archivePath, req.params.filename);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        return res.status(404).json({ error: 'Archive introuvable' });
+      }
+      console.error('GET /security/backups/download:', error);
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+    }
+  }
+);
+
+router.post('/security/backups/run', authorize('ADMIN', 'SUPER_ADMIN'), async (req, res) => {
+  try {
+    if (!isMongoBackupFilesystemWritable()) {
+      return res.status(503).json({
+        ok: false,
+        error: SERVERLESS_MONGODB_BACKUP_MESSAGE,
+      });
+    }
+    const result = await runMongoBackup();
+    if (result.ok) {
+      await logBackupSecurityEvent(
+        req,
+        'backup_success',
+        `Sauvegarde MongoDB réussie: ${result.filename}`
+      );
+      return res.json({
+        ok: true,
+        archivePath: result.archivePath,
+        filename: result.filename,
+      });
+    }
+    await logBackupSecurityEvent(req, 'backup_failure', `Échec sauvegarde MongoDB: ${result.error}`, 'warning');
+    return res.status(500).json(result);
+  } catch (error: unknown) {
+    console.error('POST /security/backups/run:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
+
+router.post(
+  '/security/backups/restore',
+  authorize('ADMIN', 'SUPER_ADMIN'),
+  (req, res, next) => {
+    if (!isMongoBackupFilesystemWritable()) {
+      return res.status(503).json({ ok: false, error: SERVERLESS_MONGODB_BACKUP_MESSAGE });
+    }
+    next();
+  },
+  (req, res, next) => {
+    mongoBackupUpload.single('archive')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || 'Fichier invalide' });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const confirmPhrase = String(req.body?.confirmPhrase ?? '').trim();
+      if (confirmPhrase !== 'RESTAURER') {
+        if (req.file?.path) {
+          await fs.unlink(req.file.path).catch(() => {});
+        }
+        return res.status(400).json({
+          error: 'Confirmation requise : saisissez RESTAURER pour lancer la restauration.',
+        });
+      }
+
+      let archivePath: string | null = null;
+      if (req.file?.path) {
+        archivePath = req.file.path;
+      } else if (req.body?.filename) {
+        archivePath = resolveBackupArchivePath(String(req.body.filename));
+      }
+
+      if (!archivePath) {
+        return res.status(400).json({
+          error: 'Choisissez une archive sur le serveur ou importez un fichier .archive.gz',
+        });
+      }
+
+      const result = await runMongoRestore(archivePath);
+      if (result.ok) {
+        await logBackupSecurityEvent(
+          req,
+          'restore_success',
+          `Restauration MongoDB depuis ${path.basename(archivePath)}`,
+          'critical'
+        );
+        return res.json({
+          ok: true,
+          message:
+            'Base restaurée. Redémarrez le serveur API et reconnectez les utilisateurs pour éviter tout cache obsolète.',
+        });
+      }
+
+      await logBackupSecurityEvent(
+        req,
+        'restore_failure',
+        `Échec restauration MongoDB: ${result.error}`,
+        'critical'
+      );
+      return res.status(500).json(result);
+    } catch (error: unknown) {
+      console.error('POST /security/backups/restore:', error);
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+    }
+  }
+);
 
 // Changer le mot de passe d'un utilisateur
 router.put('/security/users/:id/password', async (req, res) => {

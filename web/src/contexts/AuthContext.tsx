@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { authApi } from '../services/api';
 import {
   clearAllOfflineCaches,
@@ -8,6 +8,11 @@ import {
   saveUserSnapshot,
 } from '../lib/offline-storage';
 import toast from 'react-hot-toast';
+import {
+  applyDocumentTheme,
+  parseUserUiPreferences,
+  type UserUiPreferences,
+} from '@/lib/userUiPreferences';
 
 interface User {
   id: string;
@@ -18,6 +23,7 @@ interface User {
   phone?: string | null;
   avatar?: string | null;
   isActive?: boolean;
+  uiPreferences?: UserUiPreferences | null;
   studentProfile?: {
     enrollmentStatus?: 'ACTIVE' | 'SUSPENDED' | 'GRADUATED';
     [key: string]: unknown;
@@ -29,6 +35,7 @@ export type ProfileUpdatePayload = {
   lastName?: string;
   phone?: string | null;
   avatar?: string | null;
+  uiPreferences?: UserUiPreferences;
 };
 
 interface AuthContextType {
@@ -45,6 +52,8 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   /** Met à jour le profil via PUT /auth/me puis recharge l’utilisateur. */
   updateProfile: (data: ProfileUpdatePayload) => Promise<void>;
+  /** Préférences interface (thème, fuseau horaire, etc.). */
+  uiPreferences: UserUiPreferences;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,6 +75,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     initAuth();
   }, []);
+
+  const uiPreferences = useMemo(
+    () => parseUserUiPreferences(user?.uiPreferences),
+    [user?.uiPreferences]
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    applyDocumentTheme(uiPreferences.theme);
+    document.documentElement.lang = uiPreferences.language;
+  }, [user, uiPreferences.theme, uiPreferences.language]);
 
   const fetchUser = async () => {
     try {
@@ -199,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, token, login, logout, loading, refreshUser, updateProfile }}
+      value={{ user, token, login, logout, loading, refreshUser, updateProfile, uiPreferences }}
     >
       {children}
     </AuthContext.Provider>
