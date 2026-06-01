@@ -63,7 +63,7 @@ const GradeAveragesPanel: React.FC<GradeAveragesPanelProps> = ({ compact = false
   };
 
   return (
-    <div className={compact ? 'space-y-4 text-sm' : 'space-y-6'}>
+    <div className={`min-w-0 max-w-full overflow-x-hidden ${compact ? 'space-y-4 text-sm' : 'space-y-6'}`}>
       <div>
         <h2 className={compact ? 'text-base font-semibold text-gray-900' : 'text-lg font-semibold text-gray-900'}>
           Calcul des moyennes
@@ -78,10 +78,11 @@ const GradeAveragesPanel: React.FC<GradeAveragesPanelProps> = ({ compact = false
         </p>
       </div>
 
-      <Card className="p-3 sm:p-4 border border-gray-200 flex flex-col sm:flex-row sm:items-end gap-3">
-        <div className="min-w-[220px]">
+      <Card className="p-3 sm:p-4 border border-gray-200 flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 min-w-0 overflow-hidden">
+        <div className="w-full min-w-0 sm:flex-1 sm:max-w-sm">
           <FilterDropdown
             compact={compact}
+            className="w-full"
             label="Classe"
             selected={classId}
             onChange={setClassId}

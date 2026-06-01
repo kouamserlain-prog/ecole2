@@ -60,7 +60,7 @@ const GradingEvaluationManagement: React.FC = () => {
         </p>
       </div>
 
-      <div className={ADM.tabRow}>
+      <div className={`${ADM.tabRow} max-w-full`}>
         {subTabs.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;

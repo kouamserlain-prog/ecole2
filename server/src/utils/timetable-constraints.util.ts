@@ -1,4 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
+import {
+  formatScheduleMinutesLabel,
+  scheduleDurationMinutes,
+  weeklyHoursToTargetMinutes,
+} from './course-fields.util';
 
 type SlotLike = { dayOfWeek: number; startTime: string; endTime: string };
 
@@ -119,6 +124,64 @@ const addMinutes = (time: string, delta: number): string => {
   return `${hh}:${mm}`;
 };
 
+export type ClassScheduleVolumeRow = {
+  courseId: string;
+  courseName: string;
+  weeklyHours: number | null;
+  targetMinutes: number;
+  scheduledMinutes: number;
+  missingMinutes: number;
+  excessMinutes: number;
+  /** Compatibilité affichage (≈ heures pleines) */
+  targetSlots: number;
+  scheduledSlots: number;
+  missingSlots: number;
+  excessSlots: number;
+};
+
+export async function getClassScheduleVolumeSummary(
+  prisma: PrismaClient,
+  classId: string
+): Promise<{ classId: string; courses: ClassScheduleVolumeRow[] }> {
+  const courses = await prisma.course.findMany({
+    where: { classId },
+    select: { id: true, name: true, weeklyHours: true },
+    orderBy: { name: 'asc' },
+  });
+
+  const scheduleRows = await prisma.schedule.findMany({
+    where: { classId },
+    select: { courseId: true, startTime: true, endTime: true },
+  });
+  const minutesByCourse = new Map<string, number>();
+  for (const row of scheduleRows) {
+    const dur = scheduleDurationMinutes(row.startTime, row.endTime);
+    minutesByCourse.set(row.courseId, (minutesByCourse.get(row.courseId) ?? 0) + dur);
+  }
+
+  const rows: ClassScheduleVolumeRow[] = courses.map((course) => {
+    const targetMinutes = weeklyHoursToTargetMinutes(course.weeklyHours);
+    const scheduledMinutes = minutesByCourse.get(course.id) ?? 0;
+    const missingMinutes = Math.max(0, targetMinutes - scheduledMinutes);
+    const excessMinutes = Math.max(0, scheduledMinutes - targetMinutes);
+    return {
+      courseId: course.id,
+      courseName: course.name,
+      weeklyHours: course.weeklyHours,
+      targetMinutes,
+      scheduledMinutes,
+      missingMinutes,
+      excessMinutes,
+      targetSlots: Math.max(1, Math.ceil(targetMinutes / 60)),
+      scheduledSlots: Math.ceil(scheduledMinutes / 60),
+      missingSlots: Math.ceil(missingMinutes / 60),
+      excessSlots: Math.ceil(excessMinutes / 60),
+    };
+  });
+
+  return { classId, courses: rows };
+}
+
 export async function autoGenerateTimetableForClass(
   prisma: PrismaClient,
   opts: {
@@ -126,18 +189,29 @@ export async function autoGenerateTimetableForClass(
     clearExisting?: boolean;
     days?: number[];
     slotDurationMinutes?: number;
+    /** Pas entre deux débuts de créneau candidats (défaut 1 minute). */
+    slotStepMinutes?: number;
     morningStart?: string;
     morningEnd?: string;
     afternoonStart?: string;
     afternoonEnd?: string;
   }
-): Promise<{ created: number; errors: string[]; skippedCourses: string[] }> {
+): Promise<{
+  created: number;
+  errors: string[];
+  skippedCourses: string[];
+  mode: 'replace' | 'reconcile';
+  slotDurationMinutes: number;
+  slotStepMinutes: number;
+}> {
   const days = opts.days?.length ? opts.days : [1, 2, 3, 4, 5];
-  const slotDuration = Math.max(30, Math.min(180, opts.slotDurationMinutes ?? 60));
+  const slotDuration = Math.max(1, Math.min(180, opts.slotDurationMinutes ?? 60));
+  const slotStep = Math.max(1, Math.min(60, opts.slotStepMinutes ?? 1));
   const morningStart = opts.morningStart ?? '07:00';
   const morningEnd = opts.morningEnd ?? '12:00';
   const afternoonStart = opts.afternoonStart ?? '14:00';
   const afternoonEnd = opts.afternoonEnd ?? '18:00';
+  const mode = opts.clearExisting ? 'replace' : 'reconcile';
 
   if (opts.clearExisting) {
     await prisma.schedule.deleteMany({ where: { classId: opts.classId } });
@@ -149,19 +223,34 @@ export async function autoGenerateTimetableForClass(
     orderBy: { name: 'asc' },
   });
 
+  const existingScheduleRows = opts.clearExisting
+    ? []
+    : await prisma.schedule.findMany({
+        where: { classId: opts.classId },
+        select: { courseId: true, startTime: true, endTime: true },
+      });
+  const existingMinutesByCourse = new Map<string, number>();
+  for (const row of existingScheduleRows) {
+    const dur = scheduleDurationMinutes(row.startTime, row.endTime);
+    existingMinutesByCourse.set(
+      row.courseId,
+      (existingMinutesByCourse.get(row.courseId) ?? 0) + dur
+    );
+  }
+
   const slots: Array<{ dayOfWeek: number; startTime: string; endTime: string }> = [];
   for (const day of days) {
     let cursor = morningStart;
     while (toMinutes(cursor) + slotDuration <= toMinutes(morningEnd)) {
       const end = addMinutes(cursor, slotDuration);
       slots.push({ dayOfWeek: day, startTime: cursor, endTime: end });
-      cursor = end;
+      cursor = addMinutes(cursor, slotStep);
     }
     cursor = afternoonStart;
     while (toMinutes(cursor) + slotDuration <= toMinutes(afternoonEnd)) {
       const end = addMinutes(cursor, slotDuration);
       slots.push({ dayOfWeek: day, startTime: cursor, endTime: end });
-      cursor = end;
+      cursor = addMinutes(cursor, slotStep);
     }
   }
 
@@ -170,11 +259,20 @@ export async function autoGenerateTimetableForClass(
   const skippedCourses: string[] = [];
 
   for (const course of courses) {
-    let toPlace = Math.max(1, Math.ceil(course.weeklyHours ?? 1));
-    let placedForCourse = 0;
+    const targetMinutes = weeklyHoursToTargetMinutes(course.weeklyHours);
+    const alreadyMinutes = existingMinutesByCourse.get(course.id) ?? 0;
+    let minutesToPlace =
+      mode === 'replace' ? targetMinutes : Math.max(0, targetMinutes - alreadyMinutes);
+    let placedMinutes = 0;
+
+    if (mode === 'reconcile' && minutesToPlace === 0) {
+      continue;
+    }
 
     for (const slot of slots) {
-      if (toPlace <= 0) break;
+      if (minutesToPlace <= 0) break;
+      const slotMinutes = scheduleDurationMinutes(slot.startTime, slot.endTime);
+      if (slotMinutes <= 0) continue;
       try {
         await assertScheduleConstraints(prisma, {
           classId: opts.classId,
@@ -196,17 +294,24 @@ export async function autoGenerateTimetableForClass(
           },
         });
         created += 1;
-        placedForCourse += 1;
-        toPlace -= 1;
+        placedMinutes += slotMinutes;
+        minutesToPlace -= slotMinutes;
       } catch {
         // créneau non compatible, on continue
       }
     }
 
-    if (placedForCourse === 0) skippedCourses.push(course.name);
-    if (toPlace > 0) errors.push(`Placement partiel pour ${course.name} (${placedForCourse}/${placedForCourse + toPlace})`);
+    if (placedMinutes === 0 && minutesToPlace > 0) skippedCourses.push(course.name);
+    if (minutesToPlace > 0) {
+      const target = targetMinutes;
+      const done =
+        mode === 'replace' ? placedMinutes : alreadyMinutes + placedMinutes;
+      errors.push(
+        `Placement partiel pour ${course.name} (${formatScheduleMinutesLabel(done)} / ${formatScheduleMinutesLabel(target)})`
+      );
+    }
   }
 
-  return { created, errors, skippedCourses };
+  return { created, errors, skippedCourses, mode, slotDurationMinutes: slotDuration, slotStepMinutes: slotStep };
 }
 

@@ -47,7 +47,9 @@ export default function ScheduleTimeInput({
         className={inputClassName}
         aria-label={label}
       />
-      <p className="mt-1 text-[11px] text-gray-500">Saisie libre au format 24 h (ex. 08:15, 10:45)</p>
+      <p className="mt-1 text-[11px] text-gray-500">
+        Précision à la minute (ex. 08:07, 10:45, 14:23)
+      </p>
     </div>
   );
 }

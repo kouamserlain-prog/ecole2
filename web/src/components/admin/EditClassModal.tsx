@@ -13,6 +13,7 @@ import {
   FiAlertCircle,
   FiSave,
   FiLoader,
+  FiTrash2,
 } from 'react-icons/fi';
 
 export interface AdminClassRow {
@@ -27,17 +28,28 @@ export interface AdminClassRow {
   academicYear: string;
   teacherId?: string | null;
   trackId?: string | null;
+  _count?: { students?: number };
 }
 
 interface EditClassModalProps {
   isOpen: boolean;
   onClose: () => void;
   classItem: AdminClassRow | null;
+  studentCount?: number;
+  onDelete?: () => void;
+  deletePending?: boolean;
 }
 
 const LEVELS = ['6ème', '5ème', '4ème', '3ème', '2nde', '1ère', 'Terminale'];
 
-const EditClassModal: React.FC<EditClassModalProps> = ({ isOpen, onClose, classItem }) => {
+const EditClassModal: React.FC<EditClassModalProps> = ({
+  isOpen,
+  onClose,
+  classItem,
+  studentCount = 0,
+  onDelete,
+  deletePending = false,
+}) => {
   const queryClient = useQueryClient();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
@@ -331,11 +343,32 @@ const EditClassModal: React.FC<EditClassModalProps> = ({ isOpen, onClose, classI
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-3 border-t border-stone-200/80">
-          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={mutation.isPending}>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-200/80">
+          {onDelete ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onDelete}
+              disabled={mutation.isPending || deletePending}
+              className="text-red-700 border-red-200 hover:bg-red-50"
+              title={
+                studentCount > 0
+                  ? `${studentCount} élève(s) : ils seront retirés de la classe avant suppression`
+                  : 'Supprimer cette classe'
+              }
+            >
+              <FiTrash2 className="w-4 h-4 mr-1 inline" aria-hidden />
+              Supprimer
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2 ml-auto">
+          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={mutation.isPending || deletePending}>
             Annuler
           </Button>
-          <Button type="submit" size="sm" disabled={mutation.isPending} className="min-w-[120px]">
+          <Button type="submit" size="sm" disabled={mutation.isPending || deletePending} className="min-w-[120px]">
             {mutation.isPending ? (
               <>
                 <FiLoader className="w-4 h-4 mr-1 animate-spin inline" />
@@ -348,6 +381,7 @@ const EditClassModal: React.FC<EditClassModalProps> = ({ isOpen, onClose, classI
               </>
             )}
           </Button>
+          </div>
         </div>
       </form>
     </Modal>

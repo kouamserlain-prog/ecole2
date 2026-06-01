@@ -12,8 +12,13 @@ import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
 import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
 import { computeClassBulletinRanks, enrichReportCardsWithTermHistory } from '../utils/report-card.util';
 import {
+  parseGradingCoefficient,
+  parseWeeklyHours,
+} from '../utils/course-fields.util';
+import {
   assertScheduleConstraints,
   autoGenerateTimetableForClass,
+  getClassScheduleVolumeSummary,
   normalizeRoomKey,
 } from '../utils/timetable-constraints.util';
 import {
@@ -182,6 +187,7 @@ router.get('/grades', async (req, res) => {
             },
             class: {
               select: {
+                id: true,
                 name: true,
                 level: true,
               },
@@ -534,7 +540,8 @@ router.post(
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { name, code, description, classId, teacherId, weeklyHours } = req.body;
+      const { name, code, description, classId, teacherId, weeklyHours, gradingCoefficient } =
+        req.body;
 
       const [cls, teacher, codeTaken] = await Promise.all([
         prisma.class.findUnique({ where: { id: classId } }),
@@ -545,15 +552,20 @@ router.post(
       if (!teacher) return res.status(400).json({ error: 'Enseignant introuvable' });
       if (codeTaken) return res.status(400).json({ error: 'Ce code matière existe déjà' });
 
+      const parsedCoef = parseGradingCoefficient(gradingCoefficient);
+      if (gradingCoefficient !== undefined && parsedCoef === null) {
+        return res.status(400).json({
+          error: 'Coefficient invalide (nombre entre 0 et 100, ex. 1 ou 2)',
+        });
+      }
+
       const course = await prisma.course.create({
         data: {
           name: String(name).trim(),
           code: String(code).trim(),
           description: description != null ? String(description) : undefined,
-          weeklyHours:
-            weeklyHours !== undefined && weeklyHours !== null && weeklyHours !== ''
-              ? Number(weeklyHours)
-              : undefined,
+          weeklyHours: parseWeeklyHours(weeklyHours) ?? undefined,
+          gradingCoefficient: parsedCoef ?? 1,
           classId,
           teacherId,
         },
@@ -589,7 +601,8 @@ router.put(
         return res.status(400).json({ errors: errors.array() });
       }
       const { courseId } = req.params;
-      const { name, code, description, classId, teacherId, weeklyHours } = req.body;
+      const { name, code, description, classId, teacherId, weeklyHours, gradingCoefficient } =
+        req.body;
 
       const existing = await prisma.course.findUnique({ where: { id: courseId } });
       if (!existing) return res.status(404).json({ error: 'Cours non trouvé' });
@@ -607,6 +620,15 @@ router.put(
         if (!teacher) return res.status(400).json({ error: 'Enseignant introuvable' });
       }
 
+      if (gradingCoefficient !== undefined) {
+        const parsedCoef = parseGradingCoefficient(gradingCoefficient);
+        if (parsedCoef === null) {
+          return res.status(400).json({
+            error: 'Coefficient invalide (nombre entre 0 et 100, ex. 1 ou 2)',
+          });
+        }
+      }
+
       const course = await prisma.course.update({
         where: { id: courseId },
         data: {
@@ -617,11 +639,9 @@ router.put(
           }),
           ...(classId != null && { classId }),
           ...(teacherId != null && { teacherId }),
-          ...(weeklyHours !== undefined && {
-            weeklyHours:
-              weeklyHours === null || weeklyHours === ''
-                ? null
-                : Number(weeklyHours),
+          ...(weeklyHours !== undefined && { weeklyHours: parseWeeklyHours(weeklyHours) }),
+          ...(gradingCoefficient !== undefined && {
+            gradingCoefficient: parseGradingCoefficient(gradingCoefficient),
           }),
         },
         include: {
@@ -988,11 +1008,8 @@ router.post(
         comments,
       } = req.body;
 
-      const request = await createGradeChangeRequest({
-        kind: 'CREATE',
-        requestedByUserId: req.user!.id,
-        studentId,
-        payload: {
+      const grade = await prisma.grade.create({
+        data: {
           studentId,
           courseId,
           teacherId,
@@ -1004,16 +1021,25 @@ router.post(
           date: date ? new Date(date) : new Date(),
           comments: comments ?? null,
         },
-      });
-
-      res.status(202).json({
-        message:
-          'Demande enregistrée. Validation requise : professeur principal, éducateur, directeur des études.',
-        request: {
-          ...request,
-          statusLabel: workflowStatusLabel(request.status),
+        include: {
+          student: {
+            include: {
+              user: {
+                select: { firstName: true, lastName: true, email: true },
+              },
+              class: { select: { name: true, level: true } },
+            },
+          },
+          course: { select: { name: true, code: true } },
+          teacher: {
+            include: {
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
         },
       });
+
+      res.status(201).json(grade);
     } catch (error: any) {
       const statusCode = error.statusCode ?? 500;
       console.error('Erreur lors de la création de la note:', error);
@@ -3577,6 +3603,18 @@ router.get('/schedules', async (req, res) => {
   }
 });
 
+router.get('/classes/:classId/schedule-volume-summary', async (req, res) => {
+  try {
+    const cls = await prisma.class.findUnique({ where: { id: req.params.classId } });
+    if (!cls) return res.status(404).json({ error: 'Classe introuvable' });
+    const summary = await getClassScheduleVolumeSummary(prisma, req.params.classId);
+    res.json(summary);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erreur serveur';
+    res.status(500).json({ error: message });
+  }
+});
+
 router.post('/schedules/auto-generate', async (req, res) => {
   try {
     const result = await autoGenerateTimetableForClass(prisma, {
@@ -3589,6 +3627,10 @@ router.post('/schedules/auto-generate', async (req, res) => {
         req.body.slotDurationMinutes != null
           ? parseInt(String(req.body.slotDurationMinutes), 10)
           : undefined,
+      slotStepMinutes:
+        req.body.slotStepMinutes != null
+          ? parseInt(String(req.body.slotStepMinutes), 10)
+          : 1,
       morningStart: req.body.morningStart,
       morningEnd: req.body.morningEnd,
       afternoonStart: req.body.afternoonStart,

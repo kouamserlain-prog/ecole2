@@ -298,11 +298,8 @@ router.post(
         return res.status(403).json({ error: 'Vous n\'enseignez pas ce cours' });
       }
 
-      const grade = await createGradeChangeRequest({
-        kind: 'CREATE',
-        requestedByUserId: req.user!.id,
-        studentId,
-        payload: {
+      const grade = await prisma.grade.create({
+        data: {
           studentId,
           courseId,
           teacherId,
@@ -314,16 +311,17 @@ router.post(
           date: date ? new Date(date) : new Date(),
           comments: comments ?? null,
         },
-      });
-
-      res.status(202).json({
-        message:
-          'Demande enregistrée. Validation requise : professeur principal, éducateur, directeur des études.',
-        request: {
-          ...grade,
-          statusLabel: workflowStatusLabel(grade.status),
+        include: {
+          student: {
+            include: {
+              user: { select: { firstName: true, lastName: true } },
+            },
+          },
+          course: { select: { name: true, code: true } },
         },
       });
+
+      res.status(201).json(grade);
     } catch (error: any) {
       const statusCode = error.statusCode ?? 500;
       res.status(statusCode).json({ error: error.message });

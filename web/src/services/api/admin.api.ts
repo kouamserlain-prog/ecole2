@@ -88,8 +88,10 @@ export const adminApi = {
     const response = await api.patch(`/admin/classes/${id}`, data);
     return response.data;
   },
-  deleteClass: async (id: string) => {
-    const response = await api.delete(`/admin/classes/${id}`);
+  deleteClass: async (id: string, options?: { unassignStudents?: boolean }) => {
+    const response = await api.delete(`/admin/classes/${id}`, {
+      params: options?.unassignStudents ? { unassignStudents: 'true' } : undefined,
+    });
     return response.data;
   },
   createClassGroup: async (classId: string, data: { name: string; sortOrder?: number }) => {
@@ -1012,18 +1014,43 @@ export const adminApi = {
     const response = await api.post('/admin/schedules', data);
     return response.data;
   },
+  getClassScheduleVolumeSummary: async (classId: string) => {
+    const response = await api.get(`/admin/classes/${classId}/schedule-volume-summary`);
+    return response.data as {
+      classId: string;
+      courses: Array<{
+        courseId: string;
+        courseName: string;
+        weeklyHours: number | null;
+        targetMinutes: number;
+        scheduledMinutes: number;
+        missingMinutes: number;
+        excessMinutes: number;
+        targetSlots: number;
+        scheduledSlots: number;
+        missingSlots: number;
+        excessSlots: number;
+      }>;
+    };
+  },
   autoGenerateSchedules: async (data: {
     classId: string;
     clearExisting?: boolean;
     days?: number[];
     slotDurationMinutes?: number;
+    slotStepMinutes?: number;
     morningStart?: string;
     morningEnd?: string;
     afternoonStart?: string;
     afternoonEnd?: string;
   }) => {
     const response = await api.post('/admin/schedules/auto-generate', data);
-    return response.data;
+    return response.data as {
+      created: number;
+      errors: string[];
+      skippedCourses: string[];
+      mode: 'replace' | 'reconcile';
+    };
   },
   importSchedules: async (data: {
     csv: string;

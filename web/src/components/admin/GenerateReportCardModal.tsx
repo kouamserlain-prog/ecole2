@@ -5,6 +5,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import FilterDropdown from '../ui/FilterDropdown';
 import toast from 'react-hot-toast';
+import { ACADEMIC_CHANGE_VALIDATION_MESSAGE } from '@/lib/academicValidationMessages';
 import { useAppBranding } from '@/contexts/AppBrandingContext';
 import {
   generateTranlefetReportCardPdf,
@@ -110,8 +111,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         );
       }
 
-      // Save report cards to database
-      await adminApi.saveReportCards({
+      const saveResult = await adminApi.saveReportCards({
         classId: selectedClass,
         period: selectedPeriod,
         academicYear: selectedAcademicYear,
@@ -120,11 +120,13 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
 
       queryClient.invalidateQueries({ queryKey: ['report-cards'] });
       queryClient.invalidateQueries({ queryKey: ['admin-report-cards-tab'] });
-      return reportCardData.length;
+      return { count: reportCardData.length, saveResult };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ count, saveResult }: { count: number; saveResult?: { message?: string } }) => {
+      const validationMsg = saveResult?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE;
       toast.success(
-        `${count} bulletin(s) généré(s) et synchronisé(s)${publishAfterSave ? ', publiés pour les familles' : ''} !`
+        `${count} PDF généré(s). ${validationMsg}`,
+        { duration: 8000 }
       );
       handleClose();
     },
@@ -176,7 +178,9 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
                 Sélectionnez une classe, une période et une année scolaire. Le PDF reprend le modèle officiel
                 Tranlefet (colonnes Trim. 1–3, bilans lettres/sciences, résumé, distinctions, signatures).
                 Pour le <strong>3e trimestre</strong>, les moyennes et rangs des trimestres précédents sont
-                inclus automatiquement. Cochez « Publier » pour l’espace élève et parent.
+                inclus automatiquement. L’enregistrement des moyennes en base passe par le{' '}
+                <strong>circuit de validation</strong> (prof. principal → éducateur → directeur des
+                études). La publication aux familles intervient après approbation.
               </p>
             </div>
           </div>

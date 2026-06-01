@@ -9,11 +9,32 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FiDownload, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import { adminApi } from '../../services/api';
+import { useSchool } from '../../contexts/SchoolContext';
+import { useSchoolReady, schoolQueryKey } from '../../hooks/useSchoolReady';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import FilterDropdown from '../ui/FilterDropdown';
 import Input from '../ui/Input';
+
+function BulletinFilterField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-xs font-medium text-stone-700 mb-1">{label}</span>
+      <FilterDropdown variant="field" label={label} value={value} onChange={onChange} options={options} />
+    </div>
+  );
+}
 
 declare module 'jspdf' {
   interface jsPDF {
@@ -94,6 +115,8 @@ function applyServerTemplateToState(
 
 const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const queryClient = useQueryClient();
+  const { activeSchoolId } = useSchool();
+  const schoolReady = useSchoolReady();
   const [classId, setClassId] = useState('');
   const [period, setPeriod] = useState('trim1');
   const [academicYear, setAcademicYear] = useState('2025-2026');
@@ -122,9 +145,10 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
     recommendations: '',
   });
 
-  const { data: classes } = useQuery({
-    queryKey: ['classes'],
+  const { data: classes, isLoading: classesLoading } = useQuery({
+    queryKey: schoolQueryKey(['classes'], activeSchoolId),
     queryFn: adminApi.getClasses,
+    enabled: schoolReady,
   });
 
   const { data: rankings } = useQuery({
@@ -357,9 +381,9 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
   );
 
   return (
-    <div className={compact ? 'space-y-4 text-sm' : 'space-y-5'}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-3 border border-violet-100 bg-violet-50/30">
+    <div className={`min-w-0 max-w-full overflow-x-hidden ${compact ? 'space-y-4 text-sm' : 'space-y-5'}`}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+        <Card className="min-w-0 overflow-hidden p-3 border border-violet-100 bg-violet-50/30">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-800 mb-2">
             Étape 1 — Contexte bulletin
           </p>
@@ -367,8 +391,8 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
             Ces trois filtres définissent la <strong>période officielle</strong> pour le classement, les conseils
             de classe et la cohérence avec les bulletins PDF.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <FilterDropdown
+          <div className="grid grid-cols-1 gap-3">
+            <BulletinFilterField
               label="Classe"
               value={classId}
               onChange={(id) => {
@@ -376,12 +400,19 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
                 setStudentId('');
               }}
               options={[
-                { value: '', label: 'Choisir une classe…' },
+                {
+                  value: '',
+                  label: classesLoading
+                    ? 'Chargement des classes…'
+                    : (classes?.length ?? 0) === 0
+                      ? 'Aucune classe disponible'
+                      : 'Choisir une classe…',
+                },
                 ...(classes || []).map((c: any) => ({ value: c.id, label: `${c.name} (${c.level})` })),
               ]}
             />
-            <FilterDropdown label="Période" value={period} onChange={setPeriod} options={PERIODS} />
-            <FilterDropdown
+            <BulletinFilterField label="Période" value={period} onChange={setPeriod} options={PERIODS} />
+            <BulletinFilterField
               label="Année scolaire"
               value={academicYear}
               onChange={setAcademicYear}
@@ -390,7 +421,7 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
           </div>
         </Card>
 
-        <Card className="p-3 border border-amber-100 bg-amber-50/25">
+        <Card className="min-w-0 overflow-hidden p-3 border border-amber-100 bg-amber-50/25">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900 mb-2">
             Étape 2 — Progression par élève
           </p>
@@ -398,12 +429,19 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
             La liste des élèves provient du <strong>classement</strong> de la classe sélectionnée (même période).
             Choisissez un élève pour afficher le graphique d’historique.
           </p>
-          <FilterDropdown
+          <BulletinFilterField
             label="Élève (graphique progression)"
             value={studentId}
             onChange={setStudentId}
             options={[
-              { value: '', label: classId ? 'Choisir un élève…' : 'D’abord choisir une classe' },
+              {
+                value: '',
+                label: !classId
+                  ? 'D’abord choisir une classe (étape 1)'
+                  : rankingRows.length === 0
+                    ? 'Aucun élève classé sur cette période'
+                    : 'Choisir un élève…',
+              },
               ...rankingRows.map((r: any) => ({
                 value: r.studentId,
                 label:
@@ -415,9 +453,9 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-3 border border-gray-200">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+        <Card className="min-w-0 overflow-hidden p-3 border border-gray-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 min-w-0">
             <h3 className="font-semibold text-gray-900">Classements et rangs</h3>
             <div className="flex flex-wrap items-center gap-2">
               <Badge>{rankingRows.length} élèves</Badge>
@@ -470,7 +508,7 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
               Aucune moyenne calculable sur cette période (pas assez de notes ou classe vide).
             </p>
           ) : (
-            <div className="max-h-56 overflow-y-auto rounded border border-gray-100">
+            <div className="max-h-56 overflow-x-auto overflow-y-auto rounded border border-gray-100">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50 text-left text-gray-600 sticky top-0">
                   <tr>
@@ -497,7 +535,7 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
           )}
         </Card>
 
-        <Card className="p-3 border border-gray-200">
+        <Card className="min-w-0 overflow-hidden p-3 border border-gray-200">
           <h3 className="font-semibold text-gray-900 mb-2">Progression élève</h3>
           {progressionData.length === 0 ? (
             <p className="text-xs text-gray-500 leading-relaxed">
@@ -519,7 +557,7 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
         </Card>
       </div>
 
-      <Card className="p-3 border border-gray-200">
+      <Card className="min-w-0 overflow-hidden p-3 border border-gray-200">
         <h3 className="font-semibold text-gray-900 mb-1">Template bulletin</h3>
         <p className="text-xs text-gray-500 mb-3 leading-relaxed">
           Options visibles pour les familles sur le bulletin : cochez ou décochez sans toucher au JSON. Le bloc
@@ -591,7 +629,7 @@ const GradingAdvancedPanel: React.FC<{ compact?: boolean }> = ({ compact = false
         </div>
       </Card>
 
-      <Card className="p-3 border border-gray-200">
+      <Card className="min-w-0 overflow-hidden p-3 border border-gray-200">
         <h3 className="font-semibold text-gray-900 mb-2">Conseils de classe</h3>
         <p className="text-xs text-gray-500 mb-3">
           Liés à la classe et à la période choisies en haut de page. La date est obligatoire pour créer un

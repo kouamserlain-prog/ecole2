@@ -150,6 +150,7 @@ router.delete('/classes/:id', async (req: SchoolContextRequest, res) => {
   try {
     const schoolId = req.schoolId!;
     const classId = req.params.id;
+    const unassignStudents = req.query.unassignStudents === 'true';
 
     const existing = await prisma.class.findFirst({
       where: {
@@ -166,14 +167,27 @@ router.delete('/classes/:id', async (req: SchoolContextRequest, res) => {
       where: { classId },
     });
     if (studentCount > 0) {
-      return res.status(409).json({
-        error: `Impossible de supprimer « ${existing.name} » : ${studentCount} élève(s) y sont encore inscrits. Réaffectez-les avant de supprimer la classe.`,
-        studentCount,
+      if (!unassignStudents) {
+        return res.status(409).json({
+          error: `Impossible de supprimer « ${existing.name} » : ${studentCount} élève(s) y sont encore inscrits. Réaffectez-les ou confirmez leur retrait de la classe.`,
+          studentCount,
+        });
+      }
+      await prisma.student.updateMany({
+        where: { classId },
+        data: { classId: null, classGroupId: null },
       });
     }
 
     await deleteClassWithDependencies(prisma, classId);
-    res.json({ ok: true, message: 'Classe supprimée' });
+    res.json({
+      ok: true,
+      message:
+        studentCount > 0
+          ? `Classe supprimée (${studentCount} élève(s) retiré(s) de la classe)`
+          : 'Classe supprimée',
+      unassignedStudents: studentCount > 0 ? studentCount : 0,
+    });
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }

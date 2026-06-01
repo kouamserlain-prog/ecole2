@@ -84,6 +84,7 @@ export async function deleteClassWithDependencies(
       where: { classId },
       data: { classId: null },
     });
+    await tx.educatorClassAssignment.deleteMany({ where: { classId } });
 
     await tx.class.delete({ where: { id: classId } });
   });

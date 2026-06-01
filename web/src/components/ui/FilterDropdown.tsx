@@ -138,22 +138,29 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
       </>
     ) : null;
 
+  const compactFilterStack = triggerCompact && !isField;
+
   return (
-    <div className={`relative ${isField ? 'w-full' : ''} ${className}`}>
+    <div
+      className={`relative min-w-0 max-w-full ${isField ? 'w-full' : ''} ${className}`}
+    >
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen ? 'true' : 'false'}
         aria-haspopup="listbox"
-        className={`flex items-center rounded-xl transition-all shadow-sm ${
-          isField ? 'w-full justify-between gap-2 px-3 py-2.5 border text-left' : ''
+        aria-label={isField ? label : undefined}
+        className={`flex min-w-0 max-w-full overflow-hidden rounded-xl transition-all shadow-sm ${
+          isField ? 'w-full items-center justify-between gap-2 px-3 py-2.5 border text-left' : ''
         } ${
-          triggerCompact
-            ? 'space-x-1.5 px-2.5 py-2 border text-left'
-            : isField
-              ? ''
-              : 'space-x-2 px-4 py-3 border-2'
+          compactFilterStack
+            ? 'flex-col items-stretch gap-1 px-2.5 py-2 border text-left'
+            : triggerCompact
+              ? 'items-center gap-1.5 px-2.5 py-2 border text-left'
+              : isField
+                ? ''
+                : 'items-center gap-2 px-4 py-3 border-2'
         } ${
           isOpen
             ? 'border-indigo-300/90 bg-gradient-to-r from-indigo-50/95 via-violet-50/90 to-indigo-50/95 ring-2 ring-violet-300/40'
@@ -161,33 +168,48 @@ const FilterDropdown: React.FC<FilterDropdownProps> = ({
         }`}
       >
         {!isField ? (
-          <FiFilter
-            className={`shrink-0 ${triggerCompact ? 'h-4 w-4' : 'h-5 w-5'} ${
-              isOpen ? 'text-indigo-500' : 'text-indigo-400/80'
-            }`}
-          />
-        ) : null}
-        {!isField ? (
           <span
-            className={`font-medium shrink-0 ${triggerCompact ? 'text-xs' : 'text-sm'} ${
-              isOpen ? 'text-indigo-900' : 'text-stone-800'
+            className={`flex min-w-0 items-center gap-1.5 ${
+              compactFilterStack ? 'w-full justify-between' : 'shrink-0'
             }`}
           >
-            {label}
+            <FiFilter
+              className={`shrink-0 ${triggerCompact ? 'h-4 w-4' : 'h-5 w-5'} ${
+                isOpen ? 'text-indigo-500' : 'text-indigo-400/80'
+              }`}
+            />
+            <span
+              className={`font-medium truncate ${triggerCompact ? 'text-xs' : 'text-sm'} ${
+                isOpen ? 'text-indigo-900' : 'text-stone-800'
+              }`}
+            >
+              {label}
+            </span>
+            {compactFilterStack ? (
+              <FiChevronDown
+                className={`shrink-0 h-4 w-4 transition-transform ${
+                  isOpen ? 'rotate-180 text-indigo-600' : 'text-indigo-400/70'
+                }`}
+              />
+            ) : null}
           </span>
         ) : null}
         <span
-          className={`truncate min-w-0 flex-1 ${triggerCompact || isField ? 'text-sm' : 'text-sm'} ${
+          className={`truncate min-w-0 ${
+            compactFilterStack || isField ? 'w-full flex-1' : 'flex-1'
+          } ${triggerCompact || isField ? 'text-sm' : 'text-sm'} ${
             isOpen ? 'text-violet-800' : isField ? 'text-stone-800' : 'text-stone-600'
           }`}
         >
           {selectedOption?.label || (current ? current : isField ? 'Choisir…' : 'Choisir…')}
         </span>
-        <FiChevronDown
-          className={`transition-transform shrink-0 ${triggerCompact || isField ? 'h-4 w-4' : 'h-4 w-4'} ${
-            isOpen ? 'rotate-180 text-indigo-600' : 'text-indigo-400/70'
-          }`}
-        />
+        {!compactFilterStack ? (
+          <FiChevronDown
+            className={`shrink-0 transition-transform ${triggerCompact || isField ? 'h-4 w-4' : 'h-4 w-4'} ${
+              isOpen ? 'rotate-180 text-indigo-600' : 'text-indigo-400/70'
+            }`}
+          />
+        ) : null}
       </button>
 
       {panel ? createPortal(panel, document.body) : null}

@@ -10,6 +10,10 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import toast from 'react-hot-toast';
+import {
+  ACADEMIC_CHANGE_VALIDATION_MESSAGE,
+  GRADE_CREATE_SUCCESS_MESSAGE,
+} from '@/lib/academicValidationMessages';
 import { 
   FiUser, 
   FiBook, 
@@ -137,10 +141,16 @@ const AddGradeModal: React.FC<AddGradeModalProps> = ({ isOpen, onClose, gradeId 
       }
       return adminApi.createGrade(data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-grades'] });
+    onSuccess: (data: { message?: string }) => {
+      if (!isEditMode) {
+        queryClient.invalidateQueries({ queryKey: ['admin-grades'] });
+      }
       queryClient.invalidateQueries({ queryKey: ['grade', gradeId] });
-      toast.success(isEditMode ? 'Note modifiée avec succès !' : 'Note créée avec succès !');
+      if (isEditMode) {
+        toast.success(data?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE, { duration: 7000 });
+      } else {
+        toast.success(GRADE_CREATE_SUCCESS_MESSAGE);
+      }
       handleClose();
     },
     onError: (error: any) => {
@@ -291,6 +301,12 @@ const AddGradeModal: React.FC<AddGradeModalProps> = ({ isOpen, onClose, gradeId 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title={isEditMode ? "Modifier une Note" : "Ajouter une Note"} size="lg" compact>
       <form onSubmit={handleSubmit} className="space-y-2">
+        {isEditMode ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            Toute modification de note est soumise au circuit de validation (professeur principal,
+            éducateur, directeur des études) avant d’être visible dans les moyennes et bulletins.
+          </p>
+        ) : null}
         {/* Student Selection */}
         <div>
           <label className="block text-xs font-semibold text-stone-700 mb-1">

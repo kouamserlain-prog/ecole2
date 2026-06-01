@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { getEvaluationTypeLabel } from '@/lib/evaluationTypes';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
@@ -26,6 +26,7 @@ import {
   FiXCircle,
   FiClock,
   FiUser,
+  FiUsers,
   FiBook,
   FiAward,
   FiAlertCircle,
@@ -50,6 +51,10 @@ const BULLETIN_PERIOD_OPTIONS = [
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import toast from 'react-hot-toast';
+import {
+  ACADEMIC_CHANGE_VALIDATION_MESSAGE,
+  GRADE_DELETE_VALIDATION_MESSAGE,
+} from '@/lib/academicValidationMessages';
 import jsPDF from 'jspdf';
 // Import both default and side-effect to ensure plugin is loaded
 import autoTable from 'jspdf-autotable';
@@ -178,9 +183,9 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
         academicYear: bulletinSyncYear,
         publish,
       }),
-    onSuccess: (data: { message?: string; published?: boolean }) => {
+    onSuccess: (data: { message?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['admin-report-cards-tab'] });
-      toast.success(data?.message || 'Bulletins synchronisés');
+      toast.success(data?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE, { duration: 7000 });
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Erreur lors de la synchronisation');
@@ -210,9 +215,9 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
   // Delete mutations
   const deleteGradeMutation = useMutation({
     mutationFn: adminApi.deleteGrade,
-    onSuccess: () => {
+    onSuccess: (data: { message?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['admin-grades'] });
-      toast.success('Note supprimée avec succès');
+      toast.success(data?.message ?? GRADE_DELETE_VALIDATION_MESSAGE, { duration: 7000 });
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || 'Erreur lors de la suppression');
@@ -1004,10 +1009,30 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
     return (
       grade.student.user.firstName.toLowerCase().includes(searchLower) ||
       grade.student.user.lastName.toLowerCase().includes(searchLower) ||
+      (grade.student.class?.name || '').toLowerCase().includes(searchLower) ||
       grade.course.name.toLowerCase().includes(searchLower) ||
       grade.title.toLowerCase().includes(searchLower)
     );
   }) || [];
+
+  const gradesByClass = useMemo(() => {
+    const groups = new Map<
+      string,
+      { classId: string; className: string; level?: string; grades: any[] }
+    >();
+    for (const grade of filteredGrades) {
+      const classId = grade.student?.class?.id ?? grade.student?.classId ?? 'unknown';
+      const className = grade.student?.class?.name ?? 'Sans classe';
+      const level = grade.student?.class?.level;
+      if (!groups.has(classId)) {
+        groups.set(classId, { classId, className, level, grades: [] });
+      }
+      groups.get(classId)!.grades.push(grade);
+    }
+    return Array.from(groups.values()).sort((a, b) =>
+      a.className.localeCompare(b.className, 'fr', { sensitivity: 'base' })
+    );
+  }, [filteredGrades]);
 
   const filteredAbsences = absences?.filter((absence: any) => {
     const searchLower = searchQuery.toLowerCase();
@@ -1060,6 +1085,91 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
     return 'text-red-600 bg-red-100';
   };
 
+  const renderGradeRow = useCallback(
+    (grade: any) => (
+      <tr key={grade.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+        <td className={gradeTd}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <FiUser className={gradeIcon} />
+            <span className={`font-medium truncate ${tightTable ? '' : 'text-sm'}`}>
+              {grade.student.user.firstName} {grade.student.user.lastName}
+            </span>
+          </div>
+        </td>
+        <td className={gradeTd}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <FiBook className={gradeIcon} />
+            <span className="truncate">{grade.course.name}</span>
+          </div>
+        </td>
+        <td className={gradeTd}>
+          <span
+            className={
+              tightTable ? 'text-[11px] leading-snug text-gray-700' : 'text-xs text-gray-800'
+            }
+          >
+            {grade.title}
+          </span>
+        </td>
+        <td className={gradeTd}>
+          <Badge
+            className={`${getGradeColor(grade.score, grade.maxScore)} ${
+              tightTable ? 'text-[10px] px-1.5 py-0 tabular-nums' : 'tabular-nums'
+            }`}
+          >
+            {grade.score.toFixed(2)} / {grade.maxScore}
+          </Badge>
+        </td>
+        <td className={`${gradeTd} text-gray-600 ${tightTable ? 'text-[11px]' : 'text-xs'}`}>
+          {format(new Date(grade.date), 'dd/MM/yyyy', { locale: fr })}
+        </td>
+        <td className={`${gradeTd} text-gray-600 ${tightTable ? 'text-[11px]' : 'text-xs'}`}>
+          {grade.teacher.user.firstName} {grade.teacher.user.lastName}
+        </td>
+        <td className={gradeTd}>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleViewGrade(grade.id)}
+              className={`text-blue-600 hover:bg-blue-50 rounded-lg transition-colors ${
+                tightTable ? 'p-1' : 'p-2'
+              }`}
+              title="Voir les détails"
+            >
+              <FiEye className={tightTable ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            </button>
+            <button
+              onClick={() => {
+                setSelectedGradeId(grade.id);
+                setIsAddGradeModalOpen(true);
+              }}
+              className={`text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors ${
+                tightTable ? 'p-1' : 'p-2'
+              }`}
+              title="Modifier"
+            >
+              <FiEdit className={tightTable ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            </button>
+          </div>
+        </td>
+      </tr>
+    ),
+    [gradeTd, gradeIcon, tightTable, getGradeColor, handleViewGrade]
+  );
+
+  const gradesTableHead = (
+    <thead>
+      <tr className="border-b border-gray-200">
+        <th className={gradeTh}>Élève</th>
+        <th className={gradeTh}>Matière</th>
+        <th className={gradeTh}>Évaluation</th>
+        <th className={gradeTh}>Note</th>
+        <th className={gradeTh}>Date</th>
+        <th className={gradeTh}>Enseignant</th>
+        <th className={gradeTh}>Actions</th>
+      </tr>
+    </thead>
+  );
+
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { label: string; color: string }> = {
       PRESENT: { label: 'Présent', color: 'bg-green-100 text-green-800' },
@@ -1072,7 +1182,7 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
   };
 
   return (
-    <div className={`space-y-6 ${compact ? 'text-sm' : ''}`}>
+    <div className={`space-y-6 min-w-0 max-w-full overflow-x-hidden ${compact ? 'text-sm' : ''}`}>
       {/* Header */}
       <Card
         className={`${
@@ -1199,8 +1309,8 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
 
       {/* Filters — z-index au-dessus du bloc « animate-slide-up » (transform = stacking context) pour les menus */}
       <Card className={`relative z-30 ${filterCardClass}`}>
-        <div className={`flex flex-col md:flex-row md:items-end ${filterRowGap}`}>
-          <div className="flex-1 min-w-0">
+        <div className={`flex flex-col md:flex-row md:flex-wrap md:items-end ${filterRowGap}`}>
+          <div className="flex-1 min-w-0 w-full">
             <SearchBar
               compact={compact}
               value={searchQuery}
@@ -1208,36 +1318,42 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
               placeholder="Rechercher..."
             />
           </div>
-          <FilterDropdown
-            compact={compact}
-            label="Classe"
-            value={selectedClass}
-            onChange={setSelectedClass}
-            options={[
-              { value: 'all', label: 'Toutes les classes' },
-              ...(classes?.map((c: any) => ({ value: c.id, label: c.name })) || []),
-            ]}
-          />
-          <FilterDropdown
-            compact={compact}
-            label="Matière"
-            value={selectedCourse}
-            onChange={setSelectedCourse}
-            options={[
-              { value: 'all', label: 'Toutes les matières' },
-              ...(courses?.map((c: any) => ({ value: c.id, label: c.name })) || []),
-            ]}
-          />
+          <div className="w-full min-w-0 sm:w-auto sm:min-w-[11rem] sm:max-w-[16rem]">
+            <FilterDropdown
+              compact={compact}
+              className="w-full"
+              label="Classe"
+              value={selectedClass}
+              onChange={setSelectedClass}
+              options={[
+                { value: 'all', label: 'Toutes les classes' },
+                ...(classes?.map((c: any) => ({ value: c.id, label: c.name })) || []),
+              ]}
+            />
+          </div>
+          <div className="w-full min-w-0 sm:w-auto sm:min-w-[11rem] sm:max-w-[16rem]">
+            <FilterDropdown
+              compact={compact}
+              className="w-full"
+              label="Matière"
+              value={selectedCourse}
+              onChange={setSelectedCourse}
+              options={[
+                { value: 'all', label: 'Toutes les matières' },
+                ...(courses?.map((c: any) => ({ value: c.id, label: c.name })) || []),
+              ]}
+            />
+          </div>
         </div>
       </Card>
 
       {/* Content */}
-      <div className="animate-slide-up">
+      <div className="animate-slide-up min-w-0 max-w-full">
         {activeTab === 'grades' && (
-          <Card>
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-800">Gestion des Notes</h3>
-              <div className="flex items-center space-x-2">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6 min-w-0">
+              <h3 className="text-xl font-bold text-gray-800 min-w-0">Gestion des Notes</h3>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <Button onClick={() => setIsAddGradeModalOpen(true)}>
                   <FiPlus className="w-4 h-4 mr-2" />
                   Ajouter une note
@@ -1286,97 +1402,32 @@ const CompleteManagement: React.FC<CompleteManagementProps> = ({
                 <p className="text-gray-600">Aucune note trouvée</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className={`w-full ${gradeTableText}`}>
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className={gradeTh}>Élève</th>
-                      <th className={gradeTh}>Classe</th>
-                      <th className={gradeTh}>Matière</th>
-                      <th className={gradeTh}>Évaluation</th>
-                      <th className={gradeTh}>Note</th>
-                      <th className={gradeTh}>Date</th>
-                      <th className={gradeTh}>Enseignant</th>
-                      <th className={gradeTh}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredGrades.map((grade: any) => (
-                      <tr key={grade.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                        <td className={gradeTd}>
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <FiUser className={gradeIcon} />
-                            <span className={`font-medium truncate ${tightTable ? '' : 'text-sm'}`}>
-                              {grade.student.user.firstName} {grade.student.user.lastName}
-                            </span>
-                          </div>
-                        </td>
-                        <td className={gradeTd}>
-                          <Badge
-                            className={`bg-blue-100 text-blue-800 ${tightTable ? 'text-[10px] px-1.5 py-0' : ''}`}
-                          >
-                            {grade.student.class.name}
-                          </Badge>
-                        </td>
-                        <td className={gradeTd}>
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <FiBook className={gradeIcon} />
-                            <span className="truncate">{grade.course.name}</span>
-                          </div>
-                        </td>
-                        <td className={gradeTd}>
-                          <span
-                            className={
-                              tightTable ? 'text-[11px] leading-snug text-gray-700' : 'text-xs text-gray-800'
-                            }
-                          >
-                            {grade.title}
-                          </span>
-                        </td>
-                        <td className={gradeTd}>
-                          <Badge
-                            className={`${getGradeColor(grade.score, grade.maxScore)} ${
-                              tightTable ? 'text-[10px] px-1.5 py-0 tabular-nums' : 'tabular-nums'
-                            }`}
-                          >
-                            {grade.score.toFixed(2)} / {grade.maxScore}
-                          </Badge>
-                        </td>
-                        <td className={`${gradeTd} text-gray-600 ${tightTable ? 'text-[11px]' : 'text-xs'}`}>
-                          {format(new Date(grade.date), 'dd/MM/yyyy', { locale: fr })}
-                        </td>
-                        <td className={`${gradeTd} text-gray-600 ${tightTable ? 'text-[11px]' : 'text-xs'}`}>
-                          {grade.teacher.user.firstName} {grade.teacher.user.lastName}
-                        </td>
-                        <td className={gradeTd}>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleViewGrade(grade.id)}
-                              className={`text-blue-600 hover:bg-blue-50 rounded-lg transition-colors ${
-                                tightTable ? 'p-1' : 'p-2'
-                              }`}
-                              title="Voir les détails"
-                            >
-                              <FiEye className={tightTable ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedGradeId(grade.id);
-                                setIsAddGradeModalOpen(true);
-                              }}
-                              className={`text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors ${
-                                tightTable ? 'p-1' : 'p-2'
-                              }`}
-                              title="Modifier"
-                            >
-                              <FiEdit className={tightTable ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-5 min-w-0">
+                {gradesByClass.map((group) => (
+                  <div
+                    key={group.classId}
+                    className="min-w-0 border border-gray-200 rounded-xl overflow-hidden"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-gradient-to-r from-slate-50 to-indigo-50 border-b border-gray-200">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FiUsers className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <h4 className="font-semibold text-gray-800 truncate">{group.className}</h4>
+                        {group.level ? (
+                          <span className="text-xs text-gray-500 shrink-0">({group.level})</span>
+                        ) : null}
+                      </div>
+                      <Badge className="bg-indigo-100 text-indigo-800 shrink-0">
+                        {group.grades.length} note{group.grades.length > 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                    <div className="overflow-x-auto -mx-px">
+                      <table className={`min-w-full w-full ${gradeTableText}`}>
+                        {gradesTableHead}
+                        <tbody>{group.grades.map((grade) => renderGradeRow(grade))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </Card>

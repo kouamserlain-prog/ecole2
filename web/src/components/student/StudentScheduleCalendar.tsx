@@ -42,9 +42,11 @@ const DAYS = [
   { value: 6, label: 'Samedi', short: 'Sam' },
 ];
 
-import { SCHEDULE_TIME_SLOTS } from '../../lib/scheduleTimeSlots';
-
-const TIME_SLOTS = SCHEDULE_TIME_SLOTS;
+import {
+  SCHEDULE_TIME_SLOTS,
+  formatScheduleGridTimeLabel,
+  planScheduleGridCell,
+} from '../../lib/scheduleTimeSlots';
 
 const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ schedule }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -307,8 +309,8 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
               Planning Hebdomadaire
             </h3>
 
-            {/* Weekly Schedule Grid */}
-            <div className="overflow-x-auto">
+            {/* Weekly Schedule Grid — précision minute */}
+            <div className="max-h-[min(70vh,720px)] overflow-auto">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr>
@@ -336,28 +338,47 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
                   </tr>
                 </thead>
                 <tbody>
-                  {TIME_SLOTS.map((time, idx) => {
-                    if (idx % 2 !== 0) return null; // Afficher seulement les heures pleines
-                    return (
-                      <tr key={time}>
+                  {(() => {
+                    const weekDays = DAYS.slice(1, 6);
+                    const occupiedByDay: Record<number, number> = {};
+                    return SCHEDULE_TIME_SLOTS.map((time) => {
+                      const dayCells = weekDays.map((day) => {
+                        const daySlots = weeklySchedule[day.value] ?? [];
+                        const occupied = occupiedByDay[day.value] ?? 0;
+                        const { plan, nextOccupiedUntil } = planScheduleGridCell(
+                          daySlots,
+                          time,
+                          occupied
+                        );
+                        occupiedByDay[day.value] = nextOccupiedUntil;
+                        return { day, plan };
+                      });
+
+                      if (!dayCells.some((c) => c.plan.type !== 'skip')) return null;
+
+                      return (
+                      <tr key={time} className="h-4">
                         <td 
-                          className="relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 p-1.5 text-xs font-medium text-gray-600"
+                          className="relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 px-1 py-0 text-[10px] font-medium text-gray-600 tabular-nums whitespace-nowrap"
                           style={{
                             boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)',
                           }}
                         >
-                          {time}
+                          {formatScheduleGridTimeLabel(time)}
                         </td>
-                        {DAYS.slice(1, 6).map((day) => {
-                          const scheduleForSlot = weeklySchedule[day.value]?.find((s: ScheduleItem) => {
-                            const start = s.startTime;
-                            const end = s.endTime;
-                            return start <= time && end > time;
-                          });
+                        {dayCells.map(({ day, plan }) => {
+                          if (plan.type === 'skip') return null;
+                          if (plan.type === 'empty') {
+                            return (
+                              <td key={day.value} className="border border-gray-200 p-0 h-4" />
+                            );
+                          }
+                          const scheduleForSlot = plan.slot as ScheduleItem;
 
                           return (
                             <td
                               key={day.value}
+                              rowSpan={plan.rowSpan}
                               className="border border-gray-200 p-1 align-top sm:p-1.5"
                             >
                               {scheduleForSlot ? (
@@ -421,20 +442,14 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
                                     </div>
                                   </div>
                                 </div>
-                              ) : (
-                                <div 
-                                  className="h-14 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/50 opacity-50 sm:h-16"
-                                  style={{
-                                    boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.05)',
-                                  }}
-                                ></div>
-                              )}
+                              ) : null}
                             </td>
                           );
                         })}
                       </tr>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>

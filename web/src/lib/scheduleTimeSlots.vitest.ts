@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_SCHEDULE_END,
   DEFAULT_SCHEDULE_START,
+  buildScheduleTimeSlots,
   isValidScheduleTimeRange,
+  minutesToScheduleTime,
   normalizeScheduleTime,
+  planScheduleGridCell,
   SCHEDULE_TIME_SLOTS,
+  scheduleDurationMinutes,
   scheduleTimeToMinutes,
 } from './scheduleTimeSlots';
 
@@ -46,6 +51,7 @@ describe('isValidScheduleTimeRange', () => {
   it('accepte un créneau où la fin est après le début', () => {
     expect(isValidScheduleTimeRange('08:00', '09:30')).toBe(true);
     expect(isValidScheduleTimeRange('08:15', '08:45')).toBe(true);
+    expect(isValidScheduleTimeRange('08:07', '09:22')).toBe(true);
   });
 
   it('refuse un créneau où la fin est égale ou avant le début', () => {
@@ -59,17 +65,65 @@ describe('isValidScheduleTimeRange', () => {
   });
 });
 
+describe('buildScheduleTimeSlots', () => {
+  it('commence et termine aux bornes demandées', () => {
+    const slots = buildScheduleTimeSlots('08:00', '08:02', 1);
+    expect(slots).toEqual(['08:00', '08:01', '08:02']);
+  });
+
+  it('utilise un pas d’une minute par défaut', () => {
+    const slots = buildScheduleTimeSlots('10:00', '10:02');
+    expect(slots.length).toBe(3);
+    expect(slots[1]).toBe('10:01');
+  });
+});
+
 describe('SCHEDULE_TIME_SLOTS', () => {
   it('commence à l’heure par défaut', () => {
     expect(SCHEDULE_TIME_SLOTS[0]).toBe(DEFAULT_SCHEDULE_START);
   });
 
-  it('contient des créneaux demi-heure consécutifs', () => {
+  it('se termine à la fin de journée par défaut', () => {
+    expect(SCHEDULE_TIME_SLOTS[SCHEDULE_TIME_SLOTS.length - 1]).toBe(DEFAULT_SCHEDULE_END);
+  });
+
+  it('contient des créneaux d’une minute consécutifs', () => {
     expect(SCHEDULE_TIME_SLOTS.length).toBeGreaterThan(1);
     for (let i = 1; i < SCHEDULE_TIME_SLOTS.length; i += 1) {
       const prev = scheduleTimeToMinutes(SCHEDULE_TIME_SLOTS[i - 1]);
       const curr = scheduleTimeToMinutes(SCHEDULE_TIME_SLOTS[i]);
-      expect(curr! - prev!).toBe(30);
+      expect(curr! - prev!).toBe(1);
     }
+  });
+});
+
+describe('scheduleDurationMinutes', () => {
+  it('calcule la durée en minutes', () => {
+    expect(scheduleDurationMinutes('08:07', '09:22')).toBe(75);
+    expect(scheduleDurationMinutes('08:00', '08:01')).toBe(1);
+  });
+});
+
+describe('planScheduleGridCell', () => {
+  const slots = [{ id: '1', startTime: '08:07', endTime: '09:00' }];
+
+  it('place le cours sur la ligne de début avec rowspan', () => {
+    const { plan, nextOccupiedUntil } = planScheduleGridCell(slots, '08:07', 0);
+    expect(plan.type).toBe('slot');
+    if (plan.type === 'slot') {
+      expect(plan.rowSpan).toBe(53);
+    }
+    expect(nextOccupiedUntil).toBe(scheduleTimeToMinutes('09:00'));
+  });
+
+  it('ignore les lignes couvertes par rowspan', () => {
+    const { plan } = planScheduleGridCell(slots, '08:08', scheduleTimeToMinutes('09:00')!);
+    expect(plan.type).toBe('skip');
+  });
+});
+
+describe('minutesToScheduleTime', () => {
+  it('reconvertit les minutes en HH:MM', () => {
+    expect(minutesToScheduleTime(8 * 60 + 7)).toBe('08:07');
   });
 });

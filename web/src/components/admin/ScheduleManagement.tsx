@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/api';
 import Card from '../ui/Card';
@@ -51,13 +51,29 @@ const DAYS = [
 import {
   DEFAULT_SCHEDULE_START,
   SCHEDULE_TIME_SLOTS,
+  formatScheduleGridTimeLabel,
   isValidScheduleTimeRange,
   normalizeScheduleTime,
+  planScheduleGridCell,
 } from '../../lib/scheduleTimeSlots';
 import ScheduleTimeInput from '../schedule/ScheduleTimeInput';
+import { formatScheduleMinutesLabel } from '../../lib/scheduleVolume';
 
 const getTeacherDisplayName = (teacher?: any) =>
   teacher?.user ? `${teacher.user.firstName ?? ''} ${teacher.user.lastName ?? ''}`.trim() : '';
+
+/** Créneau affiché dans la grille hebdomadaire (API emploi du temps). */
+type ScheduleGridEntry = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  room?: string | null;
+  course?: {
+    name?: string;
+    teacher?: { user?: { firstName?: string; lastName?: string } };
+  };
+  substituteTeacher?: { user?: { firstName?: string; lastName?: string } };
+};
 
 type ScheduleManagementProps = {
   compact?: boolean;
@@ -69,6 +85,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAutoGenerateModalOpen, setIsAutoGenerateModalOpen] = useState(false);
+  const [autoGenerateClearExisting, setAutoGenerateClearExisting] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importClearExisting, setImportClearExisting] = useState(false);
@@ -140,11 +158,38 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     queryFn: adminApi.getScheduleRoomBlocks,
   });
 
+  const { data: volumeSummary } = useQuery({
+    queryKey: ['class-schedule-volume', selectedClass],
+    queryFn: () => adminApi.getClassScheduleVolumeSummary(selectedClass),
+    enabled: selectedClass !== 'all',
+  });
+
+  const volumeTotals = useMemo(() => {
+    if (!volumeSummary?.courses?.length) {
+      return { missing: 0, excess: 0, aligned: 0 };
+    }
+    return volumeSummary.courses.reduce(
+      (acc, row) => {
+        const missing = row.missingMinutes ?? row.missingSlots * 60;
+        const excess = row.excessMinutes ?? row.excessSlots * 60;
+        return {
+          missing: acc.missing + missing,
+          excess: acc.excess + excess,
+          aligned: acc.aligned + (missing === 0 && excess === 0 ? 1 : 0),
+        };
+      },
+      { missing: 0, excess: 0, aligned: 0 }
+    );
+  }, [volumeSummary]);
+
   // Mutations
   const createScheduleMutation = useMutation({
     mutationFn: adminApi.createSchedule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      if (scheduleForm.classId) {
+        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', scheduleForm.classId] });
+      }
       toast.success('Emploi du temps créé avec succès');
       setIsModalOpen(false);
       resetForm();
@@ -156,8 +201,12 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
 
   const updateScheduleMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => adminApi.updateSchedule(id, data),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      const classId = variables.data?.classId ?? editingSchedule?.classId ?? selectedClass;
+      if (classId && classId !== 'all') {
+        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', classId] });
+      }
       toast.success('Emploi du temps mis à jour avec succès');
       setIsModalOpen(false);
       setEditingSchedule(null);
@@ -172,6 +221,9 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
     mutationFn: adminApi.deleteSchedule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      if (selectedClass !== 'all') {
+        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', selectedClass] });
+      }
       toast.success('Emploi du temps supprimé avec succès');
     },
     onError: (error: any) => {
@@ -208,17 +260,25 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   });
 
   const autoGenerateMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (clearExisting: boolean) =>
       adminApi.autoGenerateSchedules({
         classId: selectedClass,
-        clearExisting: false,
+        clearExisting,
+        slotStepMinutes: 1,
       }),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', selectedClass] });
+      setIsAutoGenerateModalOpen(false);
+      setAutoGenerateClearExisting(false);
       const created = result?.created ?? 0;
       const errors = Array.isArray(result?.errors) ? result.errors : [];
+      const modeLabel =
+        result?.mode === 'replace' ? 'emploi du temps regénéré' : 'créneaux complétés';
       if (created > 0) {
-        toast.success(`Génération automatique terminée (${created} créneaux créés)`);
+        toast.success(`${modeLabel} : ${created} créneau(x) ajouté(s)`);
+      } else if (result?.mode === 'reconcile') {
+        toast.success('Emploi du temps déjà aligné sur les volumes horaires des matières');
       } else {
         toast('Aucun créneau créé automatiquement');
       }
@@ -667,13 +727,14 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                   toast.error('Sélectionnez une classe pour la génération automatique');
                   return;
                 }
-                autoGenerateMutation.mutate();
+                setAutoGenerateClearExisting(false);
+                setIsAutoGenerateModalOpen(true);
               }}
               disabled={autoGenerateMutation.isPending}
               className="bg-white/20 hover:bg-white/30 text-white border-white/30"
             >
               <FiRefreshCw className={`w-4 h-4 mr-2 ${autoGenerateMutation.isPending ? 'animate-spin' : ''}`} />
-              Auto
+              Générer
             </Button>
             <Button
               size={compact ? 'sm' : 'md'}
@@ -690,6 +751,76 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
           </div>
         </div>
       </Card>
+
+      {selectedClass !== 'all' && volumeSummary?.courses?.length ? (
+        <Card className="relative z-40 border border-amber-200 bg-amber-50/80">
+          <div className="space-y-3">
+            <p className={compact ? 'text-xs font-semibold text-amber-950' : 'text-sm font-semibold text-amber-950'}>
+              Volume horaire ↔ emploi du temps
+            </p>
+            <p className={compact ? 'text-[11px] text-amber-900/90' : 'text-xs text-amber-900/90'}>
+              Chaque matière a un volume horaire (module Matières). La génération place des créneaux
+              d’<strong>1 h</strong> en avançant <strong>minute par minute</strong> (ex. 08:07–09:07)
+              jusqu’au total hebdomadaire. <strong>Compléter</strong> ajoute le temps manquant ;{' '}
+              <strong>Tout regénérer</strong> efface puis recrée l’emploi du temps de la classe.
+            </p>
+            {volumeTotals.missing > 0 || volumeTotals.excess > 0 ? (
+              <ul className={`space-y-1 ${compact ? 'text-[11px]' : 'text-xs'} text-amber-950`}>
+                {volumeSummary.courses
+                  .filter(
+                    (r) =>
+                      (r.missingMinutes ?? 0) > 0 ||
+                      (r.excessMinutes ?? 0) > 0
+                  )
+                  .map((row) => {
+                    const target = row.targetMinutes ?? row.targetSlots * 60;
+                    const scheduled = row.scheduledMinutes ?? row.scheduledSlots * 60;
+                    const missing = row.missingMinutes ?? 0;
+                    const excess = row.excessMinutes ?? 0;
+                    return (
+                    <li key={row.courseId}>
+                      <span className="font-medium">{row.courseName}</span>
+                      {' — '}
+                      {row.weeklyHours != null ? `${row.weeklyHours} h` : 'volume non défini'}
+                      {', '}
+                      {formatScheduleMinutesLabel(scheduled)} / {formatScheduleMinutesLabel(target)}
+                      {missing > 0 ? ` · ${formatScheduleMinutesLabel(missing)} manquant(s)` : ''}
+                      {excess > 0 ? ` · ${formatScheduleMinutesLabel(excess)} en trop` : ''}
+                    </li>
+                    );
+                  })}
+              </ul>
+            ) : (
+              <p className={compact ? 'text-[11px] text-emerald-800' : 'text-xs text-emerald-800'}>
+                Toutes les matières sont alignées sur leur volume horaire.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size={compact ? 'sm' : 'md'}
+                onClick={() => {
+                  setAutoGenerateClearExisting(false);
+                  autoGenerateMutation.mutate(false);
+                }}
+                disabled={autoGenerateMutation.isPending || volumeTotals.missing === 0}
+              >
+                Compléter les créneaux manquants
+              </Button>
+              <Button
+                variant="outline"
+                size={compact ? 'sm' : 'md'}
+                onClick={() => {
+                  setAutoGenerateClearExisting(true);
+                  setIsAutoGenerateModalOpen(true);
+                }}
+                disabled={autoGenerateMutation.isPending}
+              >
+                Tout regénérer…
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Filters — z-40 pour que les déroulants passent au-dessus du tableau (cartes suivantes en z-10) */}
       <Card className="relative z-40">
@@ -966,8 +1097,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                   </Badge>
                 </div>
 
-              {/* Weekly Schedule Grid */}
-              <div className="overflow-x-auto">
+              {/* Weekly Schedule Grid — précision minute */}
+              <div className="max-h-[min(70vh,720px)] overflow-auto">
                 <table className={compact ? 'w-full border-collapse text-[11px]' : 'w-full border-collapse text-xs'}>
                   <thead>
                     <tr>
@@ -995,32 +1126,53 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {SCHEDULE_TIME_SLOTS.map((time, idx) => {
-                      if (idx % 2 !== 0) return null; // Afficher seulement les heures pleines
-                      return (
-                        <tr key={time}>
+                    {(() => {
+                      const occupiedByDay: Record<number, number> = {};
+                      return SCHEDULE_TIME_SLOTS.map((time) => {
+                        const dayCells = DAYS.map((day) => {
+                          const daySlots = (days[day.value] ?? []) as ScheduleGridEntry[];
+                          const occupied = occupiedByDay[day.value] ?? 0;
+                          const { plan, nextOccupiedUntil } = planScheduleGridCell<ScheduleGridEntry>(
+                            daySlots,
+                            time,
+                            occupied
+                          );
+                          occupiedByDay[day.value] = nextOccupiedUntil;
+                          return { day, plan };
+                        });
+
+                        if (!dayCells.some((c) => c.plan.type !== 'skip')) return null;
+
+                        return (
+                        <tr key={time} className="h-4">
                           <td 
                             className={
                               compact
-                                ? 'relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 p-1.5 text-[11px] font-medium text-gray-600'
-                                : 'relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 p-1.5 text-xs font-medium text-gray-600'
+                                ? 'relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 px-1 py-0 text-[10px] font-medium text-gray-600 tabular-nums whitespace-nowrap'
+                                : 'relative border border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100 px-1 py-0 text-[10px] font-medium text-gray-600 tabular-nums whitespace-nowrap'
                             }
                             style={{
                               boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.05)',
                             }}
                           >
-                            {time}
+                            {formatScheduleGridTimeLabel(time)}
                           </td>
-                          {DAYS.map((day) => {
-                            const scheduleForSlot = days[day.value]?.find((s: any) => {
-                              const start = s.startTime;
-                              const end = s.endTime;
-                              return start <= time && end > time;
-                            });
+                          {dayCells.map(({ day, plan }) => {
+                            if (plan.type === 'skip') return null;
+                            if (plan.type === 'empty') {
+                              return (
+                                <td
+                                  key={day.value}
+                                  className="border border-gray-200 p-0 h-4"
+                                />
+                              );
+                            }
+                            const scheduleForSlot = plan.slot;
 
                             return (
                               <td
                                 key={day.value}
+                                rowSpan={plan.rowSpan}
                                 className="border border-gray-200 p-1 align-top sm:p-1.5"
                               >
                                 {scheduleForSlot ? (
@@ -1141,20 +1293,14 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                                       </div>
                                     </div>
                                   </div>
-                                ) : (
-                                  <div 
-                                    className="h-12 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/50 opacity-50 sm:h-14"
-                                    style={{
-                                      boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.05)',
-                                    }}
-                                  ></div>
-                                )}
+                                ) : null}
                               </td>
                             );
                           })}
                         </tr>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -1331,6 +1477,56 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                   {editingSchedule ? 'Modifier' : 'Créer'}
                 </>
               )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isAutoGenerateModalOpen}
+        onClose={() => {
+          setIsAutoGenerateModalOpen(false);
+          setAutoGenerateClearExisting(false);
+        }}
+        title="Génération de l’emploi du temps"
+        size="md"
+        compact
+      >
+        <div className="space-y-4 text-sm">
+          {autoGenerateClearExisting ? (
+            <>
+              <p className="text-gray-700">
+                Tous les créneaux actuels de cette classe seront <strong>supprimés</strong>, puis un
+                nouvel emploi du temps sera généré à partir du volume horaire de chaque matière (créneaux
+                d’1 h, débuts possibles à chaque minute).
+              </p>
+              <p className="text-amber-800 text-xs">
+                Les horaires saisis manuellement ou importés seront perdus. Cette action est irréversible.
+              </p>
+            </>
+          ) : (
+            <p className="text-gray-700">
+              Seul le <strong>temps manquant</strong> sera ajouté (en créneaux d’1 h, précision à la
+              minute) pour atteindre le volume horaire de chaque matière. Les créneaux déjà posés sont
+              conservés.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAutoGenerateModalOpen(false);
+                setAutoGenerateClearExisting(false);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={() => autoGenerateMutation.mutate(autoGenerateClearExisting)}
+              disabled={autoGenerateMutation.isPending}
+              className={autoGenerateClearExisting ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'}
+            >
+              {autoGenerateClearExisting ? 'Tout regénérer' : 'Compléter'}
             </Button>
           </div>
         </div>

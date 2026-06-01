@@ -91,37 +91,26 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
   });
 
   const deleteClassMutation = useMutation({
-    mutationFn: adminApi.deleteClass,
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      unassignStudents,
+    }: {
+      id: string;
+      unassignStudents?: boolean;
+    }) => adminApi.deleteClass(id, { unassignStudents }),
+    onSuccess: (data: { message?: string }) => {
       queryClient.invalidateQueries({ queryKey: schoolQueryKey(['classes'], activeSchoolId) });
       queryClient.invalidateQueries({ queryKey: schoolQueryKey(['students'], activeSchoolId) });
+      queryClient.invalidateQueries({ queryKey: ['classes'] });
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
-      toast.success('Classe supprimée');
+      setEditClass(null);
+      toast.success(data?.message || 'Classe supprimée');
     },
     onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error.response?.data?.error || 'Suppression impossible');
     },
   });
-
-  const handleDeleteClass = (classItem: { id: string; name: string; _count?: { students?: number } }) => {
-    const count = classItem._count?.students ?? 0;
-    if (count > 0) {
-      toast.error(
-        `Impossible de supprimer : ${count} élève(s) sont encore inscrits dans cette classe. Réaffectez-les d'abord.`,
-      );
-      return;
-    }
-    const label = classItem.name || 'cette classe';
-    if (
-      !window.confirm(
-        `Supprimer définitivement la classe « ${label} » ?\n\nLes cours, créneaux d'emploi du temps et données liés à cette classe seront supprimés. Cette action est irréversible.`,
-      )
-    ) {
-      return;
-    }
-    deleteClassMutation.mutate(classItem.id);
-  };
 
   const studentsByClassId = useMemo(() => {
     const map = new Map<string, ReturnType<typeof mapApiStudentToRosterRow>[]>();
@@ -135,6 +124,53 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
     }
     return map;
   }, [allStudents]);
+
+  const getClassStudentCount = (classItem: {
+    id: string;
+    _count?: { students?: number };
+    students?: unknown[];
+  }) => {
+    if (typeof classItem._count?.students === 'number') return classItem._count.students;
+    if (Array.isArray(classItem.students)) return classItem.students.length;
+    return studentsByClassId.get(classItem.id)?.length ?? 0;
+  };
+
+  const handleDeleteClass = (classItem: {
+    id: string;
+    name: string;
+    _count?: { students?: number };
+    students?: unknown[];
+  }) => {
+    const count = getClassStudentCount(classItem);
+    const label = classItem.name || 'cette classe';
+    let unassignStudents = false;
+
+    if (count > 0) {
+      if (
+        !window.confirm(
+          `La classe « ${label} » contient encore ${count} élève(s).\n\nPour la supprimer, les élèves seront retirés de cette classe (leurs comptes ne seront pas supprimés). Continuer ?`,
+        )
+      ) {
+        return;
+      }
+      if (
+        !window.confirm(
+          `Confirmez la suppression de « ${label} » et le retrait des ${count} élève(s).\n\nLes matières, notes, créneaux d'emploi du temps et autres données liées à cette classe seront supprimés. Action irréversible.`,
+        )
+      ) {
+        return;
+      }
+      unassignStudents = true;
+    } else if (
+      !window.confirm(
+        `Supprimer définitivement la classe « ${label} » ?\n\nLes cours, créneaux d'emploi du temps et données liés à cette classe seront supprimés. Cette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
+
+    deleteClassMutation.mutate({ id: classItem.id, unassignStudents });
+  };
 
   const downloadRosterForClass = (classItem: {
     id: string;
@@ -482,7 +518,7 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredClasses.map((classItem: any) => {
             const levelStyle = levelColors[classItem.level] || 'bg-gray-100 text-gray-700';
-            const count = classItem._count?.students || 0;
+            const count = getClassStudentCount(classItem);
             const cap = classItem.capacity || 1;
             const fillPct = Math.min((count / cap) * 100, 100);
             const barColor =
@@ -549,6 +585,7 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                               materialRoomId:
                                 classItem.materialRoomId ?? classItem.materialRoom?.id ?? null,
                               materialRoom: classItem.materialRoom ?? null,
+                              _count: { students: getClassStudentCount(classItem) },
                             })
                           }
                           className="p-1.5 rounded-lg text-amber-800 hover:bg-amber-50 border border-transparent hover:border-amber-100"
@@ -635,6 +672,22 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
                       type="button"
                       size="sm"
                       variant="secondary"
+                      className="!text-xs text-red-700 border-red-200 hover:bg-red-50 min-w-[7rem]"
+                      onClick={() => handleDeleteClass(classItem)}
+                      disabled={deleteClassMutation.isPending}
+                      title={
+                        count > 0
+                          ? 'Supprimer la classe (les élèves seront retirés de la classe)'
+                          : 'Supprimer la classe'
+                      }
+                    >
+                      <FiTrash2 className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
+                      Supprimer
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
                       className="!text-xs flex-1 min-w-[7rem]"
                       onClick={() => downloadRosterForClass(classItem, 'pdf')}
                     >
@@ -669,6 +722,18 @@ const ClassesList: React.FC<ClassesListProps> = ({ searchQuery = '', compact = f
         isOpen={!!editClass}
         onClose={() => setEditClass(null)}
         classItem={editClass}
+        studentCount={editClass ? getClassStudentCount(editClass) : 0}
+        onDelete={
+          editClass
+            ? () =>
+                handleDeleteClass({
+                  id: editClass.id,
+                  name: editClass.name,
+                  _count: editClass._count,
+                })
+            : undefined
+        }
+        deletePending={deleteClassMutation.isPending}
       />
       <ClassGroupsModal
         isOpen={!!groupsForClass}

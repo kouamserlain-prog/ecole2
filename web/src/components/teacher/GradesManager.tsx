@@ -6,6 +6,11 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
 import toast from 'react-hot-toast';
+import {
+  ACADEMIC_CHANGE_VALIDATION_MESSAGE,
+  GRADE_CREATE_SUCCESS_MESSAGE,
+  GRADE_DELETE_VALIDATION_MESSAGE,
+} from '@/lib/academicValidationMessages';
 import { 
   FiClipboard, 
   FiPlus, 
@@ -90,7 +95,7 @@ const GradesManager = ({ searchQuery = '' }: GradesManagerProps) => {
     mutationFn: (id: string) => teacherApi.deleteGrade(id),
     onSuccess: (data: { message?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['teacher-course-grades'] });
-      toast.success(data?.message ?? 'Demande de suppression soumise au circuit de validation.');
+      toast.success(data?.message ?? GRADE_DELETE_VALIDATION_MESSAGE, { duration: 7000 });
       setShowDeleteConfirm(null);
     },
     onError: (error: any) => {
@@ -408,11 +413,15 @@ const AddGradeModal = ({ isOpen, onClose, courseId, courseData, grade }: AddGrad
       return teacherApi.createGrade(data);
     },
     onSuccess: (data: { message?: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['teacher-course-grades'] });
-      toast.success(
-        data?.message ??
-          'Demande soumise au circuit de validation (prof principal, éducateur, directeur des études).'
-      );
+      if (!isEditMode) {
+        queryClient.invalidateQueries({ queryKey: ['teacher-course-grades'] });
+      }
+      if (isEditMode) {
+        toast.success(data?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE, { duration: 7000 });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['teacher-course-grades'] });
+        toast.success(GRADE_CREATE_SUCCESS_MESSAGE);
+      }
       onClose();
     },
     onError: (error: any) => {
@@ -452,6 +461,12 @@ const AddGradeModal = ({ isOpen, onClose, courseId, courseData, grade }: AddGrad
       title={isEditMode ? 'Modifier la note' : 'Ajouter une note'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {isEditMode ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            La modification sera soumise au circuit de validation avant d’être prise en compte dans
+            les moyennes.
+          </p>
+        ) : null}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Élève *

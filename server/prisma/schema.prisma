@@ -1494,13 +1494,14 @@ model Class {
 }
 
 model Course {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  code        String   @unique
-  description String?
-  weeklyHours Float?   // Volume horaire hebdomadaire (programme)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  name               String
+  code               String   @unique
+  description        String?
+  weeklyHours        Float?   // Volume horaire hebdomadaire (programme)
+  gradingCoefficient Float?   // Coefficient par défaut pour les notes de ce cours
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   classId     String   @db.ObjectId
   class       Class    @relation(fields: [classId], references: [id])

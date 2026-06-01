@@ -22,6 +22,7 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
   const [classFilter, setClassFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editWeeklyHoursSnapshot, setEditWeeklyHoursSnapshot] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: '',
     code: '',
@@ -63,9 +64,12 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
 
   const createMutation = useMutation({
     mutationFn: adminApi.createCourse,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
       queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      if (variables?.classId) {
+        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', variables.classId] });
+      }
       toast.success('Matière créée');
       closeModal();
     },
@@ -74,9 +78,28 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => adminApi.updateCourse(id, data),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] });
-      toast.success('Matière mise à jour');
+      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      if (variables.data?.classId) {
+        queryClient.invalidateQueries({
+          queryKey: ['class-schedule-volume', variables.data.classId],
+        });
+      }
+      const prevWeekly = editWeeklyHoursSnapshot ?? '';
+      const nextWeekly =
+        variables.data?.weeklyHours === undefined || variables.data?.weeklyHours === null
+          ? ''
+          : String(variables.data.weeklyHours);
+      const weeklyChanged = Boolean(editingId) && prevWeekly !== nextWeekly;
+      if (weeklyChanged) {
+        toast.success(
+          'Matière mise à jour. Le volume horaire sert à la génération de l’emploi du temps : ouvrez Emploi du temps, sélectionnez la classe, puis « Compléter » ou « Tout regénérer ».',
+          { duration: 7000 }
+        );
+      } else {
+        toast.success('Matière mise à jour');
+      }
       closeModal();
     },
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur à la mise à jour'),
@@ -94,6 +117,7 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
 
   const openCreate = () => {
     setEditingId(null);
+    setEditWeeklyHoursSnapshot(null);
     setForm({
       name: '',
       code: '',
@@ -108,6 +132,7 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
 
   const openEdit = (c: any) => {
     setEditingId(c.id);
+    setEditWeeklyHoursSnapshot(c.weeklyHours != null ? String(c.weeklyHours) : '');
     setForm({
       name: c.name || '',
       code: c.code || '',
@@ -124,6 +149,7 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
   const closeModal = () => {
     setModalOpen(false);
     setEditingId(null);
+    setEditWeeklyHoursSnapshot(null);
   };
 
   const submit = () => {
@@ -167,21 +193,21 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
   ];
 
   return (
-    <div className={`space-y-6 ${compact ? 'text-sm' : ''}`}>
+    <div className={`space-y-6 min-w-0 max-w-full overflow-x-hidden ${compact ? 'text-sm' : ''}`}>
       <div>
         <h2 className={compact ? 'text-base font-semibold text-gray-900' : 'text-lg font-semibold text-gray-900'}>
           Matières et programme
         </h2>
         <p className={compact ? 'text-xs text-gray-500 mt-0.5' : 'text-sm text-gray-500 mt-0.5'}>
-          Définissez les cours par classe, le code, le volume horaire et le{' '}
-          <strong>coefficient</strong> servant de défaut à la saisie des notes (modifiable pour
-          chaque évaluation). Les créneaux de l’emploi du temps s’appuient sur ces matières.
+          Définissez les cours par classe, le code, le <strong>volume horaire</strong> (nombre de
+          créneaux visés à la génération automatique de l’emploi du temps) et le{' '}
+          <strong>coefficient</strong> par défaut pour les notes (modifiable par évaluation).
         </p>
       </div>
 
-      <Card className="p-4 border border-gray-200">
-        <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
-          <div className="flex-1 min-w-0">
+      <Card className="p-4 border border-gray-200 min-w-0 overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:flex-wrap gap-4 lg:items-end">
+          <div className="flex-1 min-w-0 w-full">
             <SearchBar
               compact={compact}
               value={search}
@@ -189,14 +215,17 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
               placeholder="Rechercher par nom, code ou classe..."
             />
           </div>
-          <FilterDropdown
-            compact={compact}
-            options={classOptions}
-            selected={classFilter}
-            onChange={setClassFilter}
-            label="Classe"
-          />
-          <Button onClick={openCreate}>
+          <div className="w-full min-w-0 sm:w-auto sm:min-w-[11rem] sm:max-w-[16rem]">
+            <FilterDropdown
+              compact={compact}
+              className="w-full"
+              options={classOptions}
+              selected={classFilter}
+              onChange={setClassFilter}
+              label="Classe"
+            />
+          </div>
+          <Button onClick={openCreate} className="w-full sm:w-auto shrink-0">
             <FiPlus className="w-5 h-5 mr-2 inline" />
             Nouvelle matière
           </Button>
@@ -376,6 +405,10 @@ const CoursesProgramManagement: React.FC<CoursesProgramManagementProps> = ({ com
             onChange={(e) => setForm((f) => ({ ...f, weeklyHours: e.target.value }))}
             placeholder="ex. 4"
           />
+          <p className="text-xs text-gray-500 -mt-2">
+            Cible en minutes pour l’emploi du temps (ex. 4 h = 240 min). La génération automatique
+            place des créneaux d’1 h avec des horaires à la minute (08:07, 14:15…).
+          </p>
           <Input
             label="Coefficient (notes) — défaut pour les nouvelles évaluations"
             type="text"

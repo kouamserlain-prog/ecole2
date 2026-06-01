@@ -3,7 +3,7 @@
  * Style aligné sur le design system dashboard/premium.
  */
 export const ADM = {
-  root: 'space-y-6 text-sm',
+  root: 'space-y-6 text-sm min-w-0 max-w-full',
   section: 'space-y-5',
   h2: 'font-display text-base font-bold tracking-tight text-stone-900 sm:text-lg',
   intro: 'text-xs font-medium text-stone-500 mt-1 leading-relaxed',
@@ -32,7 +32,7 @@ export const ADM = {
   helpTitle: 'font-display text-sm font-bold text-stone-900 mb-2',
   helpOl: 'text-xs text-stone-700 space-y-1.5 list-decimal list-inside leading-relaxed',
   helpUl: 'text-xs text-stone-600 space-y-1.5 list-disc list-inside leading-relaxed',
-  pageRoot: 'space-y-6 text-sm',
+  pageRoot: 'space-y-6 text-sm min-w-0 max-w-full',
   heroTitle: 'font-display text-xl sm:text-2xl font-bold tracking-tight leading-tight',
   heroSub: 'text-sm font-medium text-stone-500 leading-relaxed mt-1',
   heroStatNum: 'font-display text-xl font-bold tabular-nums tracking-tight',
