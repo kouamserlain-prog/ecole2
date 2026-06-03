@@ -19,6 +19,7 @@
     "test:spaces": "tsx scripts/test-all-spaces-modules.ts",
     "test:repair-db": "tsx scripts/repair-orphan-academic-records.ts",
     "clear:schedules": "tsx scripts/clear-all-schedules.ts",
+    "clear:courses": "tsx scripts/clear-all-courses.ts",
     "test:import-export": "tsx scripts/test-import-export-documents.ts",
     "test:staff-modules": "tsx scripts/test-staff-module-display.ts",
     "test:staff-admissions": "tsx scripts/test-staff-admissions-api.ts",
