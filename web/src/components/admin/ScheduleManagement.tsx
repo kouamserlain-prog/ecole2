@@ -26,6 +26,7 @@ import {
   FiUpload,
 } from 'react-icons/fi';
 import { downloadScheduleImportTemplate, readCsvFile } from '@/lib/scheduleImport';
+import { invalidateAllScheduleQueries } from '@/lib/schedule-query-invalidation';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import jsPDF from 'jspdf';
@@ -185,11 +186,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
   // Mutations
   const createScheduleMutation = useMutation({
     mutationFn: adminApi.createSchedule,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
-      if (scheduleForm.classId) {
-        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', scheduleForm.classId] });
-      }
+    onSuccess: async () => {
+      await invalidateAllScheduleQueries(queryClient);
       toast.success('Emploi du temps créé avec succès');
       setIsModalOpen(false);
       resetForm();
@@ -201,12 +199,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
 
   const updateScheduleMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => adminApi.updateSchedule(id, data),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
-      const classId = variables.data?.classId ?? editingSchedule?.classId ?? selectedClass;
-      if (classId && classId !== 'all') {
-        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', classId] });
-      }
+    onSuccess: async () => {
+      await invalidateAllScheduleQueries(queryClient);
       toast.success('Emploi du temps mis à jour avec succès');
       setIsModalOpen(false);
       setEditingSchedule(null);
@@ -219,11 +213,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
 
   const deleteScheduleMutation = useMutation({
     mutationFn: adminApi.deleteSchedule,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
-      if (selectedClass !== 'all') {
-        queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', selectedClass] });
-      }
+    onSuccess: async () => {
+      await invalidateAllScheduleQueries(queryClient);
       toast.success('Emploi du temps supprimé avec succès');
     },
     onError: (error: any) => {
@@ -242,9 +233,9 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
         skipConstraintErrors: true,
       });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setImportResult(result);
-      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
+      await invalidateAllScheduleQueries(queryClient);
       if (result.created > 0) {
         toast.success(`${result.created} créneau(x) importé(s)`);
       } else {
@@ -266,9 +257,8 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
         clearExisting,
         slotStepMinutes: 1,
       }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-schedules'] });
-      queryClient.invalidateQueries({ queryKey: ['class-schedule-volume', selectedClass] });
+    onSuccess: async (result) => {
+      await invalidateAllScheduleQueries(queryClient);
       setIsAutoGenerateModalOpen(false);
       setAutoGenerateClearExisting(false);
       const created = result?.created ?? 0;
@@ -872,6 +862,11 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 relative z-40">
         <Card>
           <h3 className="mb-3 font-semibold text-gray-800">Disponibilités enseignants</h3>
+          <p className="mb-3 text-xs text-gray-600">
+            Créneaux pour les rendez-vous parents (module RDV). Ce n&apos;est{' '}
+            <strong>pas</strong> l&apos;emploi du temps de classe visible par le professeur — supprimez
+            les cours dans la grille ci-dessus pour retirer un horaire de l&apos;emploi du temps.
+          </p>
           <div className="space-y-3">
             <FilterDropdown
               variant="field"
@@ -1140,8 +1135,6 @@ const ScheduleManagement = ({ compact = false }: ScheduleManagementProps) => {
                           occupiedByDay[day.value] = nextOccupiedUntil;
                           return { day, plan };
                         });
-
-                        if (!dayCells.some((c) => c.plan.type !== 'skip')) return null;
 
                         return (
                         <tr key={time} className="h-4">

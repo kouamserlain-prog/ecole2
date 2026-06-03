@@ -6,6 +6,8 @@ import {
   saveApiCacheEntry,
 } from './offline-storage';
 
+export { apiCacheKey };
+
 /** Réponses GET mises en cache pour relecture hors ligne (pathname après résolution URL complète). */
 const CACHEABLE_PATH_REGEX: RegExp[] = [
   /^\/api\/auth\/me$/,
@@ -51,6 +53,14 @@ function pathnameFromConfig(config: InternalAxiosRequestConfig): string {
 
 export function shouldCacheGet(pathnameWithSearch: string): boolean {
   return CACHEABLE_PATH_REGEX.some((re) => re.test(pathnameWithSearch));
+}
+
+/** Supprime les réponses GET mises en cache (ex. après modification de l’emploi du temps). */
+export async function clearOfflineApiCachePaths(pathnames: string[]): Promise<void> {
+  const { clearApiCacheEntry } = await import('./offline-storage');
+  await Promise.all(
+    pathnames.map((path) => clearApiCacheEntry(apiCacheKey('GET', path))),
+  );
 }
 
 export async function persistSuccessfulGet(

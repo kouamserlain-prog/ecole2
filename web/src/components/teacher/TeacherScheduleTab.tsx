@@ -9,6 +9,9 @@ const TeacherScheduleTab = () => {
   const { data, isLoading } = useQuery({
     queryKey: ['teacher-schedule'],
     queryFn: teacherApi.getSchedule,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
   if (isLoading) {
@@ -29,7 +32,8 @@ const TeacherScheduleTab = () => {
       <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/30 to-teal-50/20 px-5 py-6 shadow-sm">
         <h1 className="text-2xl font-bold text-gray-900">Emploi du temps</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Créneaux issus des cours qui vous sont assignés (emploi du temps des classes).
+          Créneaux issus des cours qui vous sont assignés (emploi du temps des classes). Les horaires se
+          mettent à jour automatiquement après modification par l&apos;administration.
         </p>
       </div>
 
@@ -53,8 +57,8 @@ const TeacherScheduleTab = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {slots.map((s: any, i: number) => (
-                  <tr key={`${s.courseId}-${s.dayOfWeek}-${s.startTime}-${i}`} className="hover:bg-emerald-50/40">
+                {slots.map((s: any) => (
+                  <tr key={s.id} className="hover:bg-emerald-50/40">
                     <td className="py-3 px-4 font-medium text-gray-900">{s.dayLabel}</td>
                     <td className="py-3 px-4">
                       <span className="inline-flex items-center gap-1 text-gray-800">

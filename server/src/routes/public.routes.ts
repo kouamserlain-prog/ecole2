@@ -8,6 +8,24 @@ import {
 } from '../utils/school-context.util';
 import { ensureDefaultSchool } from '../utils/ensure-default-school.util';
 import { toPublicBrandingShape } from '../utils/branding-assets.util';
+import { prismaConnectionErrorMessage } from '../utils/production-env-diagnostics.util';
+
+const EMPTY_PUBLIC_BRANDING = {
+  navigationLogoUrl: null,
+  loginLogoUrl: null,
+  faviconUrl: null,
+  appTitle: null,
+  appTagline: null,
+  currentAcademicYear: null,
+  schoolDisplayName: null,
+  schoolAddress: null,
+  schoolPhone: null,
+  schoolEmail: null,
+  schoolWebsite: null,
+  schoolPrincipal: null,
+  studiesDirectorPhotoUrl: null,
+  homePageImages: {} as Record<string, unknown>,
+};
 
 const router = express.Router();
 
@@ -34,22 +52,7 @@ router.get('/app-branding', async (req, res) => {
       console.error(
         '[app-branding] Client Prisma sans modèle AppBranding — cd server && npx prisma generate && npx prisma db push'
       );
-      return res.json({
-        navigationLogoUrl: null,
-        loginLogoUrl: null,
-        faviconUrl: null,
-        appTitle: null,
-        appTagline: null,
-        currentAcademicYear: null,
-        schoolDisplayName: null,
-        schoolAddress: null,
-        schoolPhone: null,
-        schoolEmail: null,
-        schoolWebsite: null,
-        schoolPrincipal: null,
-        studiesDirectorPhotoUrl: null,
-        homePageImages: {},
-      });
+      return res.json(EMPTY_PUBLIC_BRANDING);
     }
 
     let brandingId = APP_BRANDING_ID;
@@ -64,22 +67,7 @@ router.get('/app-branding', async (req, res) => {
 
     const row = await appBranding.findUnique({ where: { id: brandingId } });
     if (!row) {
-      return res.json({
-        navigationLogoUrl: null,
-        loginLogoUrl: null,
-        faviconUrl: null,
-        appTitle: null,
-        appTagline: null,
-        currentAcademicYear: null,
-        schoolDisplayName: null,
-        schoolAddress: null,
-        schoolPhone: null,
-        schoolEmail: null,
-        schoolWebsite: null,
-        schoolPrincipal: null,
-        studiesDirectorPhotoUrl: null,
-        homePageImages: {},
-      });
+      return res.json(EMPTY_PUBLIC_BRANDING);
     }
     res.json(
       toPublicBrandingShape({
@@ -102,6 +90,11 @@ router.get('/app-branding', async (req, res) => {
       }),
     );
   } catch (error: unknown) {
+    const dbMsg = prismaConnectionErrorMessage(error);
+    if (dbMsg) {
+      console.error('GET /public/app-branding: base de données injoignable');
+      return res.status(503).json({ error: dbMsg });
+    }
     const message = error instanceof Error ? error.message : 'Erreur serveur';
     console.error('GET /public/app-branding:', error);
     res.status(500).json({ error: message });

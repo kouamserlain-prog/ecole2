@@ -100,6 +100,10 @@ export async function loadApiCacheEntry<T>(key: string): Promise<{ savedAt: numb
   return raw ?? null;
 }
 
+export async function clearApiCacheEntry(key: string): Promise<void> {
+  await idbDelete(`api:${key}`);
+}
+
 export async function clearAllOfflineCaches(): Promise<void> {
   try {
     const db = await openDb();

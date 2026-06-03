@@ -33,25 +33,17 @@ type ScheduleWeeklyGridProps = {
 };
 
 export default function ScheduleWeeklyGrid({ slots, title }: ScheduleWeeklyGridProps) {
-  const activeDays = useMemo(() => {
-    const used = new Set(slots.map((s) => s.dayOfWeek));
-    const days = WEEK_DAYS.filter((d) => used.has(d.value));
-    return days.length > 0 ? days : WEEK_DAYS.slice(0, 5);
-  }, [slots]);
-
   const byDay = useMemo(() => {
     const map: Record<number, ScheduleGridSlot[]> = {};
-    for (const day of activeDays) {
+    for (const day of WEEK_DAYS) {
       map[day.value] = slots
         .filter((s) => s.dayOfWeek === day.value)
         .sort((a, b) => a.startTime.localeCompare(b.startTime));
     }
     return map;
-  }, [slots, activeDays]);
+  }, [slots]);
 
   if (slots.length === 0) return null;
-
-  const occupiedByDay: Record<number, number> = {};
 
   return (
     <div className="space-y-2">
@@ -63,7 +55,7 @@ export default function ScheduleWeeklyGrid({ slots, title }: ScheduleWeeklyGridP
               <th className="border border-stone-200 bg-stone-50 px-2 py-2 font-semibold text-stone-700 w-14">
                 Heure
               </th>
-              {activeDays.map((day) => (
+              {WEEK_DAYS.map((day) => (
                 <th
                   key={day.value}
                   className="border border-stone-200 bg-stone-50 px-2 py-2 font-semibold text-stone-700 min-w-[120px]"
@@ -74,53 +66,53 @@ export default function ScheduleWeeklyGrid({ slots, title }: ScheduleWeeklyGridP
             </tr>
           </thead>
           <tbody>
-            {SCHEDULE_TIME_SLOTS.map((time) => {
-              const dayCells = activeDays.map((day) => {
-                const daySlots = byDay[day.value] ?? [];
-                const occupied = occupiedByDay[day.value] ?? 0;
-                const { plan, nextOccupiedUntil } = planScheduleGridCell(daySlots, time, occupied);
-                occupiedByDay[day.value] = nextOccupiedUntil;
-                return { day, plan };
-              });
+            {(() => {
+              const occupiedByDay: Record<number, number> = {};
+              return SCHEDULE_TIME_SLOTS.map((time) => {
+                const dayCells = WEEK_DAYS.map((day) => {
+                  const daySlots = byDay[day.value] ?? [];
+                  const occupied = occupiedByDay[day.value] ?? 0;
+                  const { plan, nextOccupiedUntil } = planScheduleGridCell(daySlots, time, occupied);
+                  occupiedByDay[day.value] = nextOccupiedUntil;
+                  return { day, plan };
+                });
 
-              const showTimeLabel = dayCells.some((c) => c.plan.type !== 'skip');
-              if (!showTimeLabel) return null;
-
-              return (
-                <tr key={time} className="h-4">
-                  <td className="border border-stone-200 bg-stone-50/80 px-1 py-0 font-medium text-stone-600 text-[10px] tabular-nums whitespace-nowrap">
-                    {formatScheduleGridTimeLabel(time)}
-                  </td>
-                  {dayCells.map(({ day, plan }) => {
-                    if (plan.type === 'skip') return null;
-                    if (plan.type === 'empty') {
+                return (
+                  <tr key={time} className="h-4">
+                    <td className="border border-stone-200 bg-stone-50/80 px-1 py-0 font-medium text-stone-600 text-[10px] tabular-nums whitespace-nowrap">
+                      {formatScheduleGridTimeLabel(time)}
+                    </td>
+                    {dayCells.map(({ day, plan }) => {
+                      if (plan.type === 'skip') return null;
+                      if (plan.type === 'empty') {
+                        return (
+                          <td key={day.value} className="border border-stone-200 p-0 h-4" />
+                        );
+                      }
+                      const cellSlot = plan.slot;
                       return (
-                        <td key={day.value} className="border border-stone-200 p-0 h-4" />
+                        <td
+                          key={day.value}
+                          rowSpan={plan.rowSpan}
+                          className="border border-stone-200 p-1 align-top"
+                        >
+                          <div className="rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-1.5 text-[11px] leading-snug shadow-sm min-h-[2.5rem]">
+                            <p className="font-semibold text-violet-950">{cellSlot.courseName}</p>
+                            {cellSlot.teacherName ? (
+                              <p className="text-stone-600 truncate">{cellSlot.teacherName}</p>
+                            ) : null}
+                            <p className="text-stone-500 tabular-nums">
+                              {cellSlot.startTime}–{cellSlot.endTime}
+                              {cellSlot.room ? ` · ${cellSlot.room}` : ''}
+                            </p>
+                          </div>
+                        </td>
                       );
-                    }
-                    const cellSlot = plan.slot;
-                    return (
-                      <td
-                        key={day.value}
-                        rowSpan={plan.rowSpan}
-                        className="border border-stone-200 p-1 align-top"
-                      >
-                        <div className="rounded-lg border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-1.5 text-[11px] leading-snug shadow-sm min-h-[2.5rem]">
-                          <p className="font-semibold text-violet-950">{cellSlot.courseName}</p>
-                          {cellSlot.teacherName ? (
-                            <p className="text-stone-600 truncate">{cellSlot.teacherName}</p>
-                          ) : null}
-                          <p className="text-stone-500 tabular-nums">
-                            {cellSlot.startTime}–{cellSlot.endTime}
-                            {cellSlot.room ? ` · ${cellSlot.room}` : ''}
-                          </p>
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+                    })}
+                  </tr>
+                );
+              });
+            })()}
           </tbody>
         </table>
       </div>

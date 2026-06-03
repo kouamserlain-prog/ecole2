@@ -50,5 +50,34 @@ export function prismaConnectionErrorMessage(error: unknown): string | null {
   if (/connect|ECONNREFUSED|Server selection timed out/i.test(msg)) {
     return 'Impossible de joindre la base de données.';
   }
+  if (/DNS resolution|réseau impossible|network unreachable|10051/i.test(msg)) {
+    return 'Impossible de joindre MongoDB (réseau ou DATABASE_URL invalide — mot de passe avec « @ » à encoder en %40).';
+  }
+  if (/ReplicaSetNoPrimary|Server selection timeout/i.test(msg)) {
+    return 'MongoDB Atlas injoignable : vérifiez replicaSet dans DATABASE_URL (copiez l’URI standard depuis Atlas → Connect) et l’accès réseau (IP autorisée).';
+  }
   return null;
+}
+
+/** Détecte une URI MongoDB dont le mot de passe contient un « @ » non encodé. */
+export function databaseUrlMisconfigurationHint(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('mongodb')) return null;
+
+  const withoutScheme = trimmed.replace(/^mongodb\+srv:\/\//, '').replace(/^mongodb:\/\//, '');
+  const pathStart = withoutScheme.indexOf('/');
+  const authority =
+    pathStart >= 0 ? withoutScheme.slice(0, pathStart) : withoutScheme.split('?')[0] ?? '';
+  const atCount = (authority.match(/@/g) ?? []).length;
+  if (atCount > 1) {
+    return 'DATABASE_URL semble mal formée : encodez les « @ » du mot de passe en %40 (et les autres caractères spéciaux en URL).';
+  }
+  return null;
+}
+
+export function logDatabaseUrlDiagnostics(): void {
+  const db = (process.env.DATABASE_URL ?? '').trim();
+  if (!db) return;
+  const hint = databaseUrlMisconfigurationHint(db);
+  if (hint) console.error(`[Config] ${hint}`);
 }

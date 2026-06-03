@@ -323,7 +323,7 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
                     >
                       Heure
                     </th>
-                    {DAYS.slice(1, 6).map((day) => (
+                    {DAYS.slice(1, 7).map((day) => (
                       <th
                         key={day.value}
                         className="relative min-w-[118px] border border-gray-200 bg-gradient-to-br from-purple-100 to-pink-100 px-2 py-1.5 text-[11px] font-semibold text-gray-700 sm:min-w-[128px] sm:text-xs"
@@ -339,7 +339,7 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
                 </thead>
                 <tbody>
                   {(() => {
-                    const weekDays = DAYS.slice(1, 6);
+                    const weekDays = DAYS.slice(1, 7);
                     const occupiedByDay: Record<number, number> = {};
                     return SCHEDULE_TIME_SLOTS.map((time) => {
                       const dayCells = weekDays.map((day) => {
@@ -353,8 +353,6 @@ const StudentScheduleCalendar: React.FC<StudentScheduleCalendarProps> = ({ sched
                         occupiedByDay[day.value] = nextOccupiedUntil;
                         return { day, plan };
                       });
-
-                      if (!dayCells.some((c) => c.plan.type !== 'skip')) return null;
 
                       return (
                       <tr key={time} className="h-4">

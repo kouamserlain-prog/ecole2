@@ -1298,6 +1298,7 @@ router.get('/schedule', async (req: AuthRequest, res) => {
 
     const courseSlots = courses.flatMap((c) =>
       c.schedule.map((s) => ({
+        id: s.id,
         courseId: c.id,
         courseName: c.name,
         courseCode: c.code,
@@ -1322,6 +1323,7 @@ router.get('/schedule', async (req: AuthRequest, res) => {
     );
 
     const replacementMapped = replacementSlots.map((s) => ({
+      id: s.id,
       courseId: s.course.id,
       courseName: s.course.name,
       courseCode: s.course.code,
@@ -1342,7 +1344,13 @@ router.get('/schedule', async (req: AuthRequest, res) => {
       },
     }));
 
-    const slots = [...courseSlots, ...replacementMapped];
+    const slotsById = new Map<string, (typeof courseSlots)[number] | (typeof replacementMapped)[number]>();
+    for (const slot of [...courseSlots, ...replacementMapped]) {
+      if (!slotsById.has(slot.id)) {
+        slotsById.set(slot.id, slot);
+      }
+    }
+    const slots = [...slotsById.values()];
 
     slots.sort((a, b) => {
       if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;

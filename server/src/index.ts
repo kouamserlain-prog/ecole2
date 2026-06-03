@@ -5,7 +5,10 @@ import { createApp } from './app/createApp';
 import { startScheduledMongoBackups } from './jobs/scheduled-mongodb-backup';
 import { startScheduledTuitionReminders } from './jobs/scheduled-tuition-reminders';
 import { startScheduledAppointmentReminders } from './jobs/scheduled-appointment-reminders';
-import { logProductionEnvDiagnostics } from './utils/production-env-diagnostics.util';
+import {
+  logDatabaseUrlDiagnostics,
+  logProductionEnvDiagnostics,
+} from './utils/production-env-diagnostics.util';
 
 dotenv.config();
 
@@ -18,6 +21,7 @@ try {
   }
 }
 
+logDatabaseUrlDiagnostics();
 logProductionEnvDiagnostics();
 
 if (process.env.NODE_ENV === 'production' && !process.env.SENSITIVE_FIELD_ENCRYPTION_KEY?.trim()) {

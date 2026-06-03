@@ -87,7 +87,10 @@ export function planScheduleGridCell<T extends { startTime: string; endTime: str
   if (timeMin < occupiedUntilMinutes) {
     return { plan: { type: 'skip' }, nextOccupiedUntil: occupiedUntilMinutes };
   }
-  const slot = daySlots.find((s) => normalizeScheduleTime(s.startTime) === time);
+  const slot = daySlots.find((s) => {
+    const startMin = scheduleTimeToMinutes(normalizeScheduleTime(s.startTime));
+    return startMin !== null && startMin === timeMin;
+  });
   if (slot) {
     const rowSpan = scheduleDurationMinutes(slot.startTime, slot.endTime);
     return {

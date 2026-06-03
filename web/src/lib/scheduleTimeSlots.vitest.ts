@@ -116,6 +116,12 @@ describe('planScheduleGridCell', () => {
     expect(nextOccupiedUntil).toBe(scheduleTimeToMinutes('09:00'));
   });
 
+  it('accepte un début d’horaire non normalisé (ex. 8:07)', () => {
+    const looseSlots = [{ id: '2', startTime: '8:07', endTime: '09:00' }];
+    const { plan } = planScheduleGridCell(looseSlots, '08:07', 0);
+    expect(plan.type).toBe('slot');
+  });
+
   it('ignore les lignes couvertes par rowspan', () => {
     const { plan } = planScheduleGridCell(slots, '08:08', scheduleTimeToMinutes('09:00')!);
     expect(plan.type).toBe('skip');
