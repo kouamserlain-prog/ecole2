@@ -14,6 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/services/api';
 import api from '@/services/api/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { isOffline } from '@/lib/offline-api';
 
 export type SchoolSummary = {
   id: string;
@@ -102,13 +103,23 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     [schools, queryClient, user?.role]
   );
 
-  const activeSchool = useMemo(
-    () => schools.find((s) => s.id === activeSchoolId) ?? null,
-    [schools, activeSchoolId]
-  );
+  const activeSchool = useMemo(() => {
+    const found = schools.find((s) => s.id === activeSchoolId);
+    if (found) return found;
+    if (activeSchoolId && isOffline()) {
+      return {
+        id: activeSchoolId,
+        name: 'Établissement (hors ligne)',
+        slug: 'offline',
+      } satisfies SchoolSummary;
+    }
+    return null;
+  }, [schools, activeSchoolId]);
 
   const schoolReady =
-    enabled && !isLoading && !!activeSchoolId && schools.some((s) => s.id === activeSchoolId);
+    !enabled ||
+    (isOffline() && !!activeSchoolId) ||
+    (enabled && !isLoading && !!activeSchoolId && schools.some((s) => s.id === activeSchoolId));
 
   const value = useMemo<SchoolContextValue>(
     () => ({

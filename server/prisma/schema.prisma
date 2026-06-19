@@ -2664,6 +2664,13 @@ model AppBranding {
   schoolPrincipal   String?
   /// Portrait affiché sur la page d’accueil (section « Mot de la Directrice des Études »)
   studiesDirectorPhotoUrl String?
+  /// Texte de la section « Mot de la Directrice » (page d’accueil publique)
+  studiesDirectorName           String?
+  studiesDirectorOccasionBadge  String?
+  studiesDirectorMessageTitle   String?
+  studiesDirectorMessage        String?
+  studiesDirectorClosing        String?
+  studiesDirectorFooterLine     String?
   /// Images personnalisables de la page d’accueil (clés homeHeroPlatform, homePillarPedagogy, …)
   homePageImages        Json?
   updatedAt         DateTime @updatedAt

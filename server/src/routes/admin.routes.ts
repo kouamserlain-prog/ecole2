@@ -4748,6 +4748,7 @@ router.get('/report-cards/generate-data', async (req, res) => {
         id: true,
         name: true,
         code: true,
+        gradingCoefficient: true,
         teacher: {
           select: {
             user: { select: { firstName: true, lastName: true } },
@@ -4847,6 +4848,7 @@ router.get('/report-cards/generate-data', async (req, res) => {
             id: c.id,
             name: c.name,
             code: c.code,
+            gradingCoefficient: c.gradingCoefficient,
             teacherName: c.teacher?.user
               ? `${c.teacher.user.lastName} ${c.teacher.user.firstName}`.trim()
               : undefined,

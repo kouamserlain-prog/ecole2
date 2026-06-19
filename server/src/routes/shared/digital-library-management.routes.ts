@@ -141,11 +141,32 @@ router.put('/library/digital-resources/:id', async (req, res) => {
 
 router.delete('/library/digital-resources/:id', async (req, res) => {
   try {
+    const existing = await prisma.digitalLibraryResource.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Ressource introuvable' });
+
     await prisma.digitalLibraryResource.update({
       where: { id: req.params.id },
       data: { isActive: false },
     });
     res.json({ message: 'Ressource archivée' });
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
+  }
+});
+
+router.post('/library/digital-resources/:id/restore', async (req, res) => {
+  try {
+    const existing = await prisma.digitalLibraryResource.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Ressource introuvable' });
+    if (existing.isActive) {
+      return res.status(400).json({ error: 'Cette ressource n’est pas archivée' });
+    }
+
+    const updated = await prisma.digitalLibraryResource.update({
+      where: { id: req.params.id },
+      data: { isActive: true },
+    });
+    res.json(updated);
   } catch (error: unknown) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Erreur serveur' });
   }

@@ -115,6 +115,16 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
     onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
   });
 
+  const unarchiveMutation = useMutation({
+    mutationFn: () => adminApi.unarchiveStudent(studentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      toast.success('Dossier désarchivé');
+    },
+    onError: (e: any) => toast.error(e.response?.data?.error || 'Erreur'),
+  });
+
   const { data: student } = useQuery({
     queryKey: studentQueryKey,
     queryFn: () => adminApi.getStudent(studentId),
@@ -406,26 +416,47 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
         </h3>
         <p className="text-sm text-gray-600 mb-3">
           Marque le dossier comme archivé (ancien élève), désactive la fiche côté admin et fixe le statut
-          d&apos;inscription sur « Archivé ».
+          d&apos;inscription sur « Archivé ». Un dossier archivé peut être désarchivé pour le réactiver.
         </p>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="border-red-200 text-red-800 hover:bg-red-100"
-          disabled={archiveMutation.isPending || (student as any)?.enrollmentStatus === 'ARCHIVED'}
-          onClick={() => {
-            if (
-              window.confirm(
-                'Archiver ce dossier élève ? Vous pourrez réactiver manuellement le statut depuis la modification de l’élève.'
-              )
-            ) {
-              archiveMutation.mutate();
-            }
-          }}
-        >
-          Archiver le dossier
-        </Button>
+        {(student as any)?.enrollmentStatus === 'ARCHIVED' ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+            disabled={unarchiveMutation.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Désarchiver ce dossier ? Le statut d’inscription repassera sur « Actif » et la fiche sera réactivée.'
+                )
+              ) {
+                unarchiveMutation.mutate();
+              }
+            }}
+          >
+            Désarchiver le dossier
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="border-red-200 text-red-800 hover:bg-red-100"
+            disabled={archiveMutation.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Archiver ce dossier élève ? Vous pourrez le désarchiver depuis cette même section.'
+                )
+              ) {
+                archiveMutation.mutate();
+              }
+            }}
+          >
+            Archiver le dossier
+          </Button>
+        )}
       </Card>
     </div>
   );

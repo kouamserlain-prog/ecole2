@@ -16,7 +16,7 @@ import {
   DIGITAL_ROLE_LABELS,
   type DigitalLibraryKind,
 } from '@/lib/digitalLibraryKinds';
-import { FiPlus, FiUpload } from 'react-icons/fi';
+import { FiPlus, FiUpload, FiRotateCcw } from 'react-icons/fi';
 
 const emptyForm = () => ({
   title: '',
@@ -74,6 +74,17 @@ export default function DigitalLibraryPanel() {
     onSuccess: () => {
       toast.success('Ressource archivée');
       qc.invalidateQueries({ queryKey: ['digital-library-admin'] });
+    },
+  });
+
+  const unarchiveMut = useMutation({
+    mutationFn: (id: string) => digitalApi.adminUnarchive(id),
+    onSuccess: () => {
+      toast.success('Ressource désarchivée');
+      qc.invalidateQueries({ queryKey: ['digital-library-admin'] });
+    },
+    onError: (e: { response?: { data?: { error?: string } } }) => {
+      toast.error(e.response?.data?.error ?? 'Désarchivage impossible');
     },
   });
 
@@ -162,6 +173,22 @@ export default function DigitalLibraryPanel() {
                 {row.isActive !== false && (
                   <Button type="button" size="sm" variant="outline" onClick={() => archiveMut.mutate(row.id)}>
                     Archiver
+                  </Button>
+                )}
+                {row.isActive === false && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={unarchiveMut.isPending}
+                    onClick={() => {
+                      if (window.confirm('Désarchiver ce document et le rendre à nouveau visible ?')) {
+                        unarchiveMut.mutate(row.id);
+                      }
+                    }}
+                  >
+                    <FiRotateCcw className="w-4 h-4 mr-1" aria-hidden />
+                    Désarchiver
                   </Button>
                 )}
               </div>

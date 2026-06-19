@@ -1,9 +1,13 @@
 import axios, { AxiosHeaders } from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import {
+  offlineGetAdapterIfAvailable,
+  offlineMutationAdapterIfAvailable,
   persistSuccessfulGet,
+  tryQueueMutationOnNetworkError,
   tryServeGetFromOfflineCache,
 } from '@/lib/offline-api';
+import { isOfflineQueuedPayload } from '@/lib/offline-sync-queue';
 
 /**
  * Base URL sans slash final.
@@ -43,7 +47,7 @@ const api = axios.create({
 });
 
 // Intercepteur : multipart (FormData) ne doit pas garder Content-Type: application/json
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     const h = config.headers;
     if (h instanceof AxiosHeaders) {
@@ -67,6 +71,15 @@ api.interceptors.request.use((config) => {
         (config.headers as Record<string, string>)['X-School-Id'] = schoolId;
       }
     }
+    const offlineGetAdapter = await offlineGetAdapterIfAvailable(config);
+    if (offlineGetAdapter) {
+      config.adapter = offlineGetAdapter;
+    } else {
+      const offlineMutationAdapter = await offlineMutationAdapterIfAvailable(config);
+      if (offlineMutationAdapter) {
+        config.adapter = offlineMutationAdapter;
+      }
+    }
   }
   return config;
 });
@@ -76,6 +89,9 @@ api.interceptors.response.use(
   async (response) => {
     if (typeof window !== 'undefined') {
       await persistSuccessfulGet(response.config as InternalAxiosRequestConfig, response.data);
+      if (response.status === 202 && isOfflineQueuedPayload(response.data)) {
+        (response as typeof response & { offlineQueued?: boolean }).offlineQueued = true;
+      }
     }
     return response;
   },
@@ -83,6 +99,18 @@ api.interceptors.response.use(
     const config = error.config as InternalAxiosRequestConfig | undefined;
 
     if (config && typeof window !== 'undefined') {
+      const queued = await tryQueueMutationOnNetworkError(config, error);
+      if (queued) {
+        return {
+          data: queued.data,
+          status: queued.status,
+          statusText: 'Accepted (file hors ligne)',
+          headers: {} as never,
+          config,
+          offlineQueued: true,
+        };
+      }
+
       const cached = await tryServeGetFromOfflineCache(config, error);
       if (cached !== null) {
         return {

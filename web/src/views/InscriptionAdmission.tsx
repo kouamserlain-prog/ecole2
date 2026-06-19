@@ -104,6 +104,12 @@ const InscriptionAdmission = () => {
     schoolWebsite: null,
     schoolPrincipal: null,
     studiesDirectorPhotoUrl: null,
+    studiesDirectorName: null,
+    studiesDirectorOccasionBadge: null,
+    studiesDirectorMessageTitle: null,
+    studiesDirectorMessage: null,
+    studiesDirectorClosing: null,
+    studiesDirectorFooterLine: null,
     homePageImages: {},
   });
 

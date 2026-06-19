@@ -661,6 +661,40 @@ router.post('/students/:id/archive', async (req, res) => {
   }
 });
 
+// Désarchivage dossier élève
+router.post('/students/:id/unarchive', async (req, res) => {
+  try {
+    const student = await prisma.student.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, enrollmentStatus: true },
+    });
+    if (!student) {
+      return res.status(404).json({ error: 'Élève non trouvé' });
+    }
+    if (student.enrollmentStatus !== 'ARCHIVED') {
+      return res.status(400).json({ error: 'Ce dossier n’est pas archivé' });
+    }
+
+    const updated = await prisma.student.update({
+      where: { id: student.id },
+      data: {
+        enrollmentStatus: 'ACTIVE',
+        isActive: true,
+        archivedAt: null,
+      },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } },
+        class: true,
+      },
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error('POST /admin/students/:id/unarchive:', error);
+    res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+});
+
 // Documents d'identité d'un élève (admin)
 router.get('/students/:id/identity-documents', async (req, res) => {
   try {

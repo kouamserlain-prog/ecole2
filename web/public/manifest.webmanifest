@@ -1,0 +1,20 @@
+{
+  "name": "Gestion scolaire",
+  "short_name": "École",
+  "description": "Plateforme de gestion scolaire — consultation hors ligne des dernières données synchronisées.",
+  "start_url": "/login",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fafaf9",
+  "theme_color": "#78350f",
+  "lang": "fr",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}

@@ -3,7 +3,12 @@ import { describe, it } from 'node:test';
 import jsPDF from 'jspdf';
 import { dossierToPdfPayload, downloadHealthDossierPdf } from './healthDossierPdf';
 import { downloadJobDescriptionPdf } from './jobDescriptionPdf';
-import { generateTranlefetReportCardPdf } from './tranlefetReportCardPdf';
+import {
+  generateTranlefetReportCardPdf,
+  resolveProfessorForRow,
+  pickPrimaryCourseForRow,
+  isSingleTrimesterBulletin,
+} from './tranlefetReportCardPdf';
 
 describe('exports PDF client (jsPDF)', () => {
   it('génère un PDF fiche de poste sans erreur', () => {
@@ -33,6 +38,72 @@ describe('exports PDF client (jsPDF)', () => {
       'École Test',
     );
     assert.doesNotThrow(() => downloadHealthDossierPdf(payload));
+  });
+
+  it('génère un PDF bulletin Tranlefet (1er trimestre) sans erreur', () => {
+    assert.doesNotThrow(() => {
+      generateTranlefetReportCardPdf(
+        {
+          studentIdNumber: 'MAT002',
+          user: { firstName: 'Kouamé', lastName: 'Aya' },
+          class: { name: '4ème A', level: '4ème' },
+          totalStudents: 28,
+          average: 12.4,
+          rank: 4,
+          allCourses: [
+            { id: 'fr', name: 'Français', teacherName: 'M. Koné' },
+            { id: 'en', name: 'Anglais', teacherName: 'Mme Diabaté' },
+            { id: 'ma', name: 'Mathématiques', teacherName: 'M. Ouattara' },
+          ],
+          courseAverages: {
+            fr: { average: 11, count: 3 },
+            en: { average: 13, count: 2 },
+            ma: { average: 14, count: 4 },
+          },
+        },
+        {
+          periodLabel: 'Trimestre 1',
+          periodKey: 'trim1',
+          academicYear: '2025-2026',
+        },
+      );
+    });
+    assert.equal(isSingleTrimesterBulletin('trim1'), true);
+    assert.equal(isSingleTrimesterBulletin('trim3'), false);
+  });
+
+  it('associe chaque professeur à la bonne matière sur le bulletin', () => {
+    const courses = [
+      { id: 'fr', name: 'Français', teacherName: 'M. Koné' },
+      { id: 'en', name: 'Anglais', teacherName: 'Mme Diabaté' },
+      { id: 'ma', name: 'Mathématiques', teacherName: 'M. Ouattara' },
+      { id: 'hg', name: 'Histoire-Géographie', teacherName: 'M. Bamba' },
+    ];
+
+    const anglaisRow = {
+      label: 'Anglais',
+      courseMatch: /^anglais|english/i,
+      showProfessor: true,
+      coefficient: 2,
+    };
+    const mathsRow = {
+      label: 'Mathématiques',
+      courseMatch: /^math/i,
+      showProfessor: true,
+      coefficient: 3,
+    };
+    const oralRow = {
+      label: 'Expression orale',
+      indent: true,
+      courseMatch: /français|francais/i,
+      subGradeMatch: /oral/i,
+      coefficient: 1,
+    };
+
+    assert.equal(resolveProfessorForRow(anglaisRow, courses), 'Mme Diabaté');
+    assert.equal(resolveProfessorForRow(mathsRow, courses), 'M. Ouattara');
+    assert.equal(resolveProfessorForRow(oralRow, courses), '');
+    assert.equal(pickPrimaryCourseForRow(anglaisRow, courses)?.id, 'en');
   });
 
   it('génère un PDF bulletin Tranlefet (3e trimestre) sans erreur', () => {

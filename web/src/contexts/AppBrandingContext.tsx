@@ -14,6 +14,7 @@ import { resolveUploadPublicUrl } from '@/lib/uploadsPublicUrl';
 import { applyBrandingToDocument } from '@/lib/applyBrandingDocument';
 import type { HomePageImagesRecord } from '@/lib/homePageImages.types';
 import { ACADEMIC_YEAR_OVERRIDE_STORAGE_KEY } from '@/utils/academicYear';
+import { loadCachedGetPayload } from '@/lib/offline-api';
 
 export type AppBrandingPayload = {
   navigationLogoUrl: string | null;
@@ -29,6 +30,12 @@ export type AppBrandingPayload = {
   schoolWebsite: string | null;
   schoolPrincipal: string | null;
   studiesDirectorPhotoUrl: string | null;
+  studiesDirectorName: string | null;
+  studiesDirectorOccasionBadge: string | null;
+  studiesDirectorMessageTitle: string | null;
+  studiesDirectorMessage: string | null;
+  studiesDirectorClosing: string | null;
+  studiesDirectorFooterLine: string | null;
   homePageImages: HomePageImagesRecord;
 };
 
@@ -57,6 +64,12 @@ const DEFAULT_BRANDING: AppBrandingPayload = {
   schoolWebsite: null,
   schoolPrincipal: null,
   studiesDirectorPhotoUrl: null,
+  studiesDirectorName: null,
+  studiesDirectorOccasionBadge: null,
+  studiesDirectorMessageTitle: null,
+  studiesDirectorMessage: null,
+  studiesDirectorClosing: null,
+  studiesDirectorFooterLine: null,
   homePageImages: {},
 };
 
@@ -85,6 +98,12 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
         schoolWebsite: data.schoolWebsite ?? null,
         schoolPrincipal: data.schoolPrincipal ?? null,
         studiesDirectorPhotoUrl: data.studiesDirectorPhotoUrl ?? null,
+        studiesDirectorName: data.studiesDirectorName ?? null,
+        studiesDirectorOccasionBadge: data.studiesDirectorOccasionBadge ?? null,
+        studiesDirectorMessageTitle: data.studiesDirectorMessageTitle ?? null,
+        studiesDirectorMessage: data.studiesDirectorMessage ?? null,
+        studiesDirectorClosing: data.studiesDirectorClosing ?? null,
+        studiesDirectorFooterLine: data.studiesDirectorFooterLine ?? null,
         homePageImages:
           data.homePageImages && typeof data.homePageImages === 'object' && !Array.isArray(data.homePageImages)
             ? (data.homePageImages as HomePageImagesRecord)
@@ -100,9 +119,43 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Chargement de la charte impossible';
-      setError(msg);
-      setBranding(DEFAULT_BRANDING);
+      const cached = (await loadCachedGetPayload('/api/public/app-branding')) as
+        | AppBrandingPayload
+        | null;
+      if (cached) {
+        setBranding({
+          navigationLogoUrl: cached.navigationLogoUrl ?? null,
+          loginLogoUrl: cached.loginLogoUrl ?? null,
+          faviconUrl: cached.faviconUrl ?? null,
+          appTitle: cached.appTitle ?? null,
+          appTagline: cached.appTagline ?? null,
+          currentAcademicYear: cached.currentAcademicYear ?? null,
+          schoolDisplayName: cached.schoolDisplayName ?? null,
+          schoolAddress: cached.schoolAddress ?? null,
+          schoolPhone: cached.schoolPhone ?? null,
+          schoolEmail: cached.schoolEmail ?? null,
+          schoolWebsite: cached.schoolWebsite ?? null,
+          schoolPrincipal: cached.schoolPrincipal ?? null,
+          studiesDirectorPhotoUrl: cached.studiesDirectorPhotoUrl ?? null,
+          studiesDirectorName: cached.studiesDirectorName ?? null,
+          studiesDirectorOccasionBadge: cached.studiesDirectorOccasionBadge ?? null,
+          studiesDirectorMessageTitle: cached.studiesDirectorMessageTitle ?? null,
+          studiesDirectorMessage: cached.studiesDirectorMessage ?? null,
+          studiesDirectorClosing: cached.studiesDirectorClosing ?? null,
+          studiesDirectorFooterLine: cached.studiesDirectorFooterLine ?? null,
+          homePageImages:
+            cached.homePageImages &&
+            typeof cached.homePageImages === 'object' &&
+            !Array.isArray(cached.homePageImages)
+              ? cached.homePageImages
+              : {},
+        });
+        setError(null);
+      } else {
+        const msg = e instanceof Error ? e.message : 'Chargement de la charte impossible';
+        setError(msg);
+        setBranding(DEFAULT_BRANDING);
+      }
     } finally {
       setLoading(false);
     }

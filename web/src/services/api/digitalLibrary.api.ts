@@ -52,4 +52,8 @@ export const digitalLibraryApi = {
     const response = await api.delete(`/admin/library/digital-resources/${id}`);
     return response.data;
   },
+  adminUnarchive: async (id: string) => {
+    const response = await api.post(`/admin/library/digital-resources/${id}/restore`);
+    return response.data;
+  },
 };

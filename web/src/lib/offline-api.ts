@@ -1,29 +1,32 @@
-import type { InternalAxiosRequestConfig } from 'axios';
+import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
 import {
   apiCacheKey,
   loadApiCacheEntry,
   saveApiCacheEntry,
 } from './offline-storage';
+import {
+  buildQueuedResponse,
+  enqueueFromConfig,
+  isMutableMethod,
+  shouldQueueMutation,
+} from './offline-sync-queue';
 
 export { apiCacheKey };
 
 /** Réponses GET mises en cache pour relecture hors ligne (pathname après résolution URL complète). */
 const CACHEABLE_PATH_REGEX: RegExp[] = [
   /^\/api\/auth\/me$/,
-  /^\/api\/student\/profile$/,
-  /^\/api\/student\/grades$/,
-  /^\/api\/student\/schedule$/,
-  /^\/api\/student\/announcements$/,
-  /^\/api\/student\/portal-feed$/,
-  /^\/api\/parent\/portal-feed$/,
-  /^\/api\/student\/notifications$/,
-  /^\/api\/parent\/children$/,
-  /^\/api\/parent\/appointments$/,
-  /^\/api\/teacher\/profile$/,
-  /^\/api\/teacher\/schedule$/,
-  /^\/api\/teacher\/appointments$/,
-  /^\/api\/educator\/profile$/,
+  /^\/api\/public\/app-branding/,
+  /^\/api\/public\/schools$/,
+  /^\/api\/student\//,
+  /^\/api\/parent\//,
+  /^\/api\/teacher\//,
+  /^\/api\/educator\//,
+  /^\/api\/admin\/schools$/,
+  /^\/api\/admin\/schools\/manage$/,
+  /^\/api\/admin\/workspaces\/my-context$/,
+  /^\/api\/staff\/schools$/,
 ];
 
 export function isOffline(): boolean {
@@ -39,7 +42,7 @@ function isNetworkError(err: unknown): boolean {
   );
 }
 
-function pathnameFromConfig(config: InternalAxiosRequestConfig): string {
+export function pathnameFromConfig(config: InternalAxiosRequestConfig): string {
   try {
     const uri = axios.getUri(config);
     const u = new URL(uri, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
@@ -63,9 +66,15 @@ export async function clearOfflineApiCachePaths(pathnames: string[]): Promise<vo
   );
 }
 
+export async function loadCachedGetPayload(pathnameWithSearch: string): Promise<unknown | null> {
+  if (!shouldCacheGet(pathnameWithSearch)) return null;
+  const row = await loadApiCacheEntry<unknown>(apiCacheKey('GET', pathnameWithSearch));
+  return row?.payload ?? null;
+}
+
 export async function persistSuccessfulGet(
   config: InternalAxiosRequestConfig,
-  data: unknown
+  data: unknown,
 ): Promise<void> {
   const method = (config.method || 'get').toUpperCase();
   if (method !== 'GET') return;
@@ -75,16 +84,70 @@ export async function persistSuccessfulGet(
   await saveApiCacheEntry(key, data);
 }
 
+/** Sert immédiatement le cache quand le navigateur est hors ligne (évite les timeouts réseau). */
+export async function offlineGetAdapterIfAvailable(
+  config: InternalAxiosRequestConfig,
+): Promise<AxiosAdapter | null> {
+  if (!isOffline()) return null;
+  const method = (config.method || 'get').toUpperCase();
+  if (method !== 'GET') return null;
+  const path = pathnameFromConfig(config);
+  const payload = await loadCachedGetPayload(path);
+  if (payload === null) return null;
+
+  return async (cfg) => ({
+    data: payload,
+    status: 200,
+    statusText: 'OK (cache hors ligne)',
+    headers: {},
+    config: cfg,
+  });
+}
+
+/** Met en file d’attente les mutations hors ligne et renvoie une réponse locale immédiate. */
+export async function offlineMutationAdapterIfAvailable(
+  config: InternalAxiosRequestConfig,
+): Promise<AxiosAdapter | null> {
+  if (!isOffline()) return null;
+  if (!isMutableMethod(config.method) || !shouldQueueMutation(config)) return null;
+
+  return async (cfg) => {
+    const item = await enqueueFromConfig(cfg);
+    return {
+      data: buildQueuedResponse(item),
+      status: 202,
+      statusText: 'Accepted (file hors ligne)',
+      headers: {},
+      config: cfg,
+    };
+  };
+}
+
+export async function tryQueueMutationOnNetworkError(
+  config: InternalAxiosRequestConfig,
+  err: unknown,
+): Promise<{ data: Record<string, unknown>; status: number } | null> {
+  if (!isMutableMethod(config.method) || !shouldQueueMutation(config)) return null;
+  if (!isNetworkError(err)) return null;
+  if ((config as InternalAxiosRequestConfig & { __offlineQueueAttempted?: boolean }).__offlineQueueAttempted) {
+    return null;
+  }
+  (config as InternalAxiosRequestConfig & { __offlineQueueAttempted?: boolean }).__offlineQueueAttempted = true;
+  const item = await enqueueFromConfig(config);
+  return {
+    data: buildQueuedResponse(item),
+    status: 202,
+  };
+}
+
 export async function tryServeGetFromOfflineCache(
   config: InternalAxiosRequestConfig,
-  err: unknown
+  err: unknown,
 ): Promise<unknown | null> {
-  if (!isNetworkError(err)) return null;
   const method = (config.method || 'get').toUpperCase();
   if (method !== 'GET') return null;
   const path = pathnameFromConfig(config);
   if (!shouldCacheGet(path)) return null;
-  const key = apiCacheKey('GET', path);
-  const row = await loadApiCacheEntry<unknown>(key);
-  return row?.payload ?? null;
+  if (!isNetworkError(err) && !isOffline()) return null;
+  return loadCachedGetPayload(path);
 }

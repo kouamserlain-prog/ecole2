@@ -53,6 +53,7 @@ export type DigitalLibraryManagementApi = {
   adminCreate: (data: Record<string, unknown>) => Promise<unknown>;
   adminUpdate: (id: string, data: Record<string, unknown>) => Promise<unknown>;
   adminArchive: (id: string) => Promise<unknown>;
+  adminUnarchive: (id: string) => Promise<unknown>;
 };
 
 export function createLibraryManagementApi(basePath: '/admin' | '/staff'): LibraryManagementApi {
@@ -102,6 +103,7 @@ export function createDigitalLibraryManagementApi(
     adminCreate: async (data) => (await api.post(prefix, data)).data,
     adminUpdate: async (id, data) => (await api.put(`${prefix}/${id}`, data)).data,
     adminArchive: async (id) => (await api.delete(`${prefix}/${id}`)).data,
+    adminUnarchive: async (id) => (await api.post(`${prefix}/${id}/restore`)).data,
   };
 }
 

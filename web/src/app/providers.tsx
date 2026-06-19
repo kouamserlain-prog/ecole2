@@ -9,9 +9,12 @@ import { SchoolProvider } from "@/contexts/SchoolContext";
 import ServerConnectionError from "@/components/ServerConnectionError";
 import PushNotificationsBootstrap from "@/components/PushNotificationsBootstrap";
 import ServiceWorkerDevCleanup from "@/components/ServiceWorkerDevCleanup";
+import ServiceWorkerBootstrap from "@/components/ServiceWorkerBootstrap";
 import OfflineBanner from "@/components/OfflineBanner";
 import OfflinePrefetch from "@/components/OfflinePrefetch";
+import SyncQueueBootstrap from "@/components/SyncQueueBootstrap";
 import { ensureStaffPedagogyApiInterceptor } from "@/lib/staffPedagogyApi";
+import { isOffline } from "@/lib/offline-api";
 import "@/utils/debug";
 
 if (typeof window !== 'undefined') {
@@ -19,14 +22,39 @@ if (typeof window !== 'undefined') {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60_000,
+            gcTime: 24 * 60 * 60 * 1000,
+            networkMode: "offlineFirst",
+            retry: (failureCount, error) => {
+              if (typeof window !== "undefined" && isOffline()) return false;
+              const code =
+                error && typeof error === "object" && "code" in error
+                  ? String((error as { code?: string }).code)
+                  : "";
+              if (code === "ERR_NETWORK" || code === "ECONNREFUSED") return false;
+              return failureCount < 2;
+            },
+          },
+          mutations: {
+            networkMode: "offlineFirst",
+          },
+        },
+      }),
+  );
   return (
     <QueryClientProvider client={queryClient}>
       <AppBrandingProvider>
         <AuthProvider>
           <SchoolProvider>
           <ServiceWorkerDevCleanup />
+          <ServiceWorkerBootstrap />
           <OfflinePrefetch />
+          <SyncQueueBootstrap />
           <OfflineBanner />
           <PushNotificationsBootstrap />
           {children}

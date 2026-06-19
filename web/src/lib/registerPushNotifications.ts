@@ -1,4 +1,5 @@
 import api from '@/services/api';
+import { registerAppServiceWorker } from '@/lib/registerServiceWorker';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -21,7 +22,10 @@ export async function registerPushNotifications(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    const reg =
+      (await navigator.serviceWorker.getRegistration('/')) ??
+      (await registerAppServiceWorker());
+    if (!reg) return false;
 
     let permission = Notification.permission;
     if (permission === 'default') {

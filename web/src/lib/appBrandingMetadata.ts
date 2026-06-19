@@ -32,6 +32,12 @@ export async function buildRootLayoutMetadata(): Promise<Metadata> {
       template: `%s · ${title}`,
     },
     description,
+    manifest: '/manifest.webmanifest',
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: 'default',
+      title: title.slice(0, 32),
+    },
     icons,
   };
 }

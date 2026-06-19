@@ -20,13 +20,14 @@
     "test:repair-db": "tsx scripts/repair-orphan-academic-records.ts",
     "clear:schedules": "tsx scripts/clear-all-schedules.ts",
     "clear:courses": "tsx scripts/clear-all-courses.ts",
+    "clear:except-users": "tsx scripts/clear-database-except-users.ts",
     "test:import-export": "tsx scripts/test-import-export-documents.ts",
     "test:staff-modules": "tsx scripts/test-staff-module-display.ts",
     "test:staff-admissions": "tsx scripts/test-staff-admissions-api.ts",
     "test:bursar": "tsx scripts/test-bursar-finance-modules.ts",
     "test:extended": "npm run test:repair-db && npm run test:staff-modules && npm run test:staff-admissions && npm run test:bursar",
     "test:smtp": "tsx scripts/test-smtp.ts",
-    "test:web-exports": "tsx --test ../web/src/lib/document-exports.test.ts",
+    "test:web-exports": "tsx --test ../web/src/lib/document-exports.test.ts ../web/src/lib/offline-sync-queue.test.ts",
     "test:all": "npm run test && npm run build && npm run test:web-exports && npm run test:repair-db && npm run test:integration && npm run test:spaces && npm run test:import-export && npm run test:extended"
   },
   "prisma": {

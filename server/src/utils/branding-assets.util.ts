@@ -34,6 +34,12 @@ export type BrandingPublicRow = {
   schoolWebsite: string | null;
   schoolPrincipal: string | null;
   studiesDirectorPhotoUrl?: string | null;
+  studiesDirectorName?: string | null;
+  studiesDirectorOccasionBadge?: string | null;
+  studiesDirectorMessageTitle?: string | null;
+  studiesDirectorMessage?: string | null;
+  studiesDirectorClosing?: string | null;
+  studiesDirectorFooterLine?: string | null;
   homePageImages?: HomePageImagesRecord | null;
 };
 
@@ -43,6 +49,12 @@ export function toPublicBrandingShape(row: BrandingPublicRow): BrandingPublicRow
     loginLogoUrl: sanitizeBrandingAssetUrl(row.loginLogoUrl),
     faviconUrl: sanitizeBrandingAssetUrl(row.faviconUrl),
     studiesDirectorPhotoUrl: sanitizeBrandingAssetUrl(row.studiesDirectorPhotoUrl),
+    studiesDirectorName: row.studiesDirectorName ?? null,
+    studiesDirectorOccasionBadge: row.studiesDirectorOccasionBadge ?? null,
+    studiesDirectorMessageTitle: row.studiesDirectorMessageTitle ?? null,
+    studiesDirectorMessage: row.studiesDirectorMessage ?? null,
+    studiesDirectorClosing: row.studiesDirectorClosing ?? null,
+    studiesDirectorFooterLine: row.studiesDirectorFooterLine ?? null,
     homePageImages: sanitizeHomePageImages(row.homePageImages),
     appTitle: row.appTitle,
     appTagline: row.appTagline,

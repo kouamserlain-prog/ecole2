@@ -124,6 +124,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error: any) {
       console.error('Erreur refreshUser:', error);
+      const network =
+        error.code === 'ERR_NETWORK' ||
+        error.code === 'ECONNREFUSED' ||
+        error.message === 'Network Error';
+      if (network) {
+        const offlineUser = await loadUserSnapshot<User>();
+        if (offlineUser?.id) {
+          setUser(offlineUser);
+          return;
+        }
+      }
       if (error.response?.status === 401) {
         localStorage.removeItem('token');
         setToken(null);

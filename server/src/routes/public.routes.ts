@@ -24,6 +24,12 @@ const EMPTY_PUBLIC_BRANDING = {
   schoolWebsite: null,
   schoolPrincipal: null,
   studiesDirectorPhotoUrl: null,
+  studiesDirectorName: null,
+  studiesDirectorOccasionBadge: null,
+  studiesDirectorMessageTitle: null,
+  studiesDirectorMessage: null,
+  studiesDirectorClosing: null,
+  studiesDirectorFooterLine: null,
   homePageImages: {} as Record<string, unknown>,
 };
 
@@ -86,6 +92,20 @@ router.get('/app-branding', async (req, res) => {
         schoolPrincipal: row.schoolPrincipal ?? null,
         studiesDirectorPhotoUrl:
           (row as { studiesDirectorPhotoUrl?: string | null }).studiesDirectorPhotoUrl ?? null,
+        studiesDirectorName:
+          (row as { studiesDirectorName?: string | null }).studiesDirectorName ?? null,
+        studiesDirectorOccasionBadge:
+          (row as { studiesDirectorOccasionBadge?: string | null }).studiesDirectorOccasionBadge ??
+          null,
+        studiesDirectorMessageTitle:
+          (row as { studiesDirectorMessageTitle?: string | null }).studiesDirectorMessageTitle ??
+          null,
+        studiesDirectorMessage:
+          (row as { studiesDirectorMessage?: string | null }).studiesDirectorMessage ?? null,
+        studiesDirectorClosing:
+          (row as { studiesDirectorClosing?: string | null }).studiesDirectorClosing ?? null,
+        studiesDirectorFooterLine:
+          (row as { studiesDirectorFooterLine?: string | null }).studiesDirectorFooterLine ?? null,
         homePageImages: (row as { homePageImages?: unknown }).homePageImages ?? null,
       }),
     );

@@ -1618,6 +1618,10 @@ export const adminApi = {
     const response = await api.post(`/admin/students/${studentId}/archive`);
     return response.data;
   },
+  unarchiveStudent: async (studentId: string) => {
+    const response = await api.post(`/admin/students/${studentId}/unarchive`);
+    return response.data;
+  },
 
   getDisciplineRulebooks: async () => {
     const response = await api.get("/admin/discipline/rulebooks");

@@ -2,16 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import api from "@/services/api";
+import { adminApi } from "@/services/api";
+import { publicApi } from "@/services/api/public";
 import { useAuth } from "@/contexts/AuthContext";
 
 async function prefetchEssential(role: string) {
-  try {
-    await api.get("/auth/me");
-  } catch {
-    /* ignore */
-  }
-
-  const tasks: Promise<unknown>[] = [];
+  const tasks: Promise<unknown>[] = [
+    api.get("/auth/me").catch(() => undefined),
+    publicApi.getAppBranding().catch(() => undefined),
+  ];
 
   switch (role) {
     case "STUDENT":
@@ -21,21 +20,21 @@ async function prefetchEssential(role: string) {
         api.get("/student/schedule"),
         api.get("/student/announcements"),
         api.get("/student/portal-feed"),
-        api.get("/student/notifications")
+        api.get("/student/notifications"),
       );
       break;
     case "PARENT":
       tasks.push(
         api.get("/parent/children"),
         api.get("/parent/appointments"),
-        api.get("/parent/portal-feed")
+        api.get("/parent/portal-feed"),
       );
       break;
     case "TEACHER":
       tasks.push(
         api.get("/teacher/profile"),
         api.get("/teacher/schedule"),
-        api.get("/teacher/appointments")
+        api.get("/teacher/appointments"),
       );
       break;
     case "EDUCATOR":
@@ -46,8 +45,18 @@ async function prefetchEssential(role: string) {
         api.get("/educator/teachers"),
         api.get("/educator/parents"),
         api.get("/educator/schedules"),
-        api.get("/educator/messaging/threads")
+        api.get("/educator/messaging/threads"),
       );
+      break;
+    case "ADMIN":
+    case "SUPER_ADMIN":
+      tasks.push(
+        adminApi.listSchools(),
+        adminApi.getAdminWorkspaceContext(),
+      );
+      break;
+    case "STAFF":
+      tasks.push(api.get("/staff/schools"));
       break;
     default:
       break;

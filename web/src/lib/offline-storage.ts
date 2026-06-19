@@ -2,9 +2,27 @@
  * Persistance locale (IndexedDB) pour consultation hors ligne des données essentielles.
  */
 
+import type { SyncQueueBody } from './offline-formdata';
+
 const DB_NAME = 'gs-offline-v1';
+const DB_VERSION = 2;
 const STORE = 'kv';
+const BLOB_STORE = 'sync-blobs';
 const USER_KEY = 'snapshot:user';
+const SYNC_QUEUE_KEY = 'sync-queue:items';
+
+export type SyncQueueItem = {
+  id: string;
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: string;
+  body?: SyncQueueBody;
+  headers: Record<string, string>;
+  label: string;
+  createdAt: number;
+  status: 'pending' | 'syncing' | 'failed';
+  error?: string;
+  retries: number;
+};
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -15,13 +33,16 @@ function openDb(): Promise<IDBDatabase> {
         reject(new Error('indexedDB indisponible'));
         return;
       }
-      const req = indexedDB.open(DB_NAME, 1);
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onerror = () => reject(req.error ?? new Error('IDB open'));
       req.onsuccess = () => resolve(req.result);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) {
           db.createObjectStore(STORE);
+        }
+        if (!db.objectStoreNames.contains(BLOB_STORE)) {
+          db.createObjectStore(BLOB_STORE);
         }
       };
     });
@@ -108,12 +129,74 @@ export async function clearAllOfflineCaches(): Promise<void> {
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
+      const tx = db.transaction([STORE, BLOB_STORE], 'readwrite');
       tx.objectStore(STORE).clear();
+      if (db.objectStoreNames.contains(BLOB_STORE)) {
+        tx.objectStore(BLOB_STORE).clear();
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   } catch {
     /* ignore */
   }
+}
+
+export async function saveSyncBlob(blobKey: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(BLOB_STORE, 'readwrite');
+      tx.objectStore(BLOB_STORE).put(blob, blobKey);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    throw new Error('Impossible d’enregistrer le fichier localement.');
+  }
+}
+
+export async function loadSyncBlob(blobKey: string): Promise<Blob | null> {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(BLOB_STORE, 'readonly');
+      const r = tx.objectStore(BLOB_STORE).get(blobKey);
+      r.onerror = () => reject(r.error);
+      r.onsuccess = () => resolve((r.result as Blob) ?? null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteSyncBlob(blobKey: string): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(BLOB_STORE, 'readwrite');
+      tx.objectStore(BLOB_STORE).delete(blobKey);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function deleteSyncBlobs(blobKeys: string[]): Promise<void> {
+  await Promise.all(blobKeys.map((key) => deleteSyncBlob(key)));
+}
+
+export async function loadSyncQueueItems(): Promise<SyncQueueItem[]> {
+  const items = await idbGet<SyncQueueItem[]>(SYNC_QUEUE_KEY);
+  return Array.isArray(items) ? items : [];
+}
+
+export async function saveSyncQueueItems(items: SyncQueueItem[]): Promise<void> {
+  await idbSet(SYNC_QUEUE_KEY, items);
+}
+
+export async function clearSyncQueueItems(): Promise<void> {
+  await idbDelete(SYNC_QUEUE_KEY);
 }

@@ -16,6 +16,16 @@ import toast from 'react-hot-toast';
 import HomePageImagesPanel from './HomePageImagesPanel';
 import { getCurrentAcademicYear } from '@/utils/academicYear';
 import {
+  DEFAULT_DIRECTOR_CLOSING,
+  DEFAULT_DIRECTOR_MESSAGE_TITLE,
+  DEFAULT_DIRECTOR_NAME,
+  DEFAULT_DIRECTOR_OCCASION,
+  DEFAULT_DIRECTOR_FOOTER,
+  DEFAULT_DIRECTOR_MESSAGE_PARAGRAPHS,
+  directorMessageBodyFromParagraphs,
+  resolveDirectorMessageContent,
+} from '@/lib/homeDirectorMessage';
+import {
   FiBriefcase,
   FiBook, 
   FiBell,
@@ -154,6 +164,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
     principal: '',
   });
 
+  const [directorMessageDraft, setDirectorMessageDraft] = useState({
+    name: '',
+    occasionBadge: '',
+    messageTitle: '',
+    message: '',
+    closing: '',
+    footerLine: '',
+  });
+
   // Academic settings
   const [academicSettings, setAcademicSettings] = useState({
     currentYear: getCurrentAcademicYear(),
@@ -239,6 +258,54 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
             email: typeof b.schoolEmail === 'string' ? b.schoolEmail : '',
             website: typeof b.schoolWebsite === 'string' ? b.schoolWebsite : '',
             principal: typeof b.schoolPrincipal === 'string' ? b.schoolPrincipal : '',
+          });
+          const resolvedDirector = resolveDirectorMessageContent({
+            studiesDirectorName:
+              typeof b.studiesDirectorName === 'string' ? b.studiesDirectorName : null,
+            studiesDirectorOccasionBadge:
+              typeof b.studiesDirectorOccasionBadge === 'string'
+                ? b.studiesDirectorOccasionBadge
+                : null,
+            studiesDirectorMessageTitle:
+              typeof b.studiesDirectorMessageTitle === 'string'
+                ? b.studiesDirectorMessageTitle
+                : null,
+            studiesDirectorMessage:
+              typeof b.studiesDirectorMessage === 'string' ? b.studiesDirectorMessage : null,
+            studiesDirectorClosing:
+              typeof b.studiesDirectorClosing === 'string' ? b.studiesDirectorClosing : null,
+            studiesDirectorFooterLine:
+              typeof b.studiesDirectorFooterLine === 'string'
+                ? b.studiesDirectorFooterLine
+                : null,
+            schoolDisplayName:
+              typeof b.schoolDisplayName === 'string' ? b.schoolDisplayName : null,
+          });
+          setDirectorMessageDraft({
+            name:
+              typeof b.studiesDirectorName === 'string'
+                ? b.studiesDirectorName
+                : resolvedDirector.name,
+            occasionBadge:
+              typeof b.studiesDirectorOccasionBadge === 'string'
+                ? b.studiesDirectorOccasionBadge
+                : resolvedDirector.occasionBadge,
+            messageTitle:
+              typeof b.studiesDirectorMessageTitle === 'string'
+                ? b.studiesDirectorMessageTitle
+                : resolvedDirector.messageTitle,
+            message:
+              typeof b.studiesDirectorMessage === 'string'
+                ? b.studiesDirectorMessage
+                : directorMessageBodyFromParagraphs(resolvedDirector.paragraphs),
+            closing:
+              typeof b.studiesDirectorClosing === 'string'
+                ? b.studiesDirectorClosing
+                : resolvedDirector.closing,
+            footerLine:
+              typeof b.studiesDirectorFooterLine === 'string'
+                ? b.studiesDirectorFooterLine
+                : resolvedDirector.footerLine,
           });
         }
       } catch {
@@ -339,6 +406,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
         schoolEmail: schoolSettings.email.trim() || null,
         schoolWebsite: schoolSettings.website.trim() || null,
         schoolPrincipal: schoolSettings.principal.trim() || null,
+        studiesDirectorName: directorMessageDraft.name.trim() || null,
+        studiesDirectorOccasionBadge: directorMessageDraft.occasionBadge.trim() || null,
+        studiesDirectorMessageTitle: directorMessageDraft.messageTitle.trim() || null,
+        studiesDirectorMessage: directorMessageDraft.message.trim() || null,
+        studiesDirectorClosing: directorMessageDraft.closing.trim() || null,
+        studiesDirectorFooterLine: directorMessageDraft.footerLine.trim() || null,
       });
       if (user) {
         await authApi.updateMe({ uiPreferences: userSettings });
@@ -717,6 +790,140 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                           <FiTrash2 className="w-4 h-4" />
                         </Button>
                       ) : null}
+                    </div>
+                  </div>
+
+                  <div className="p-4 sm:p-5 bg-violet-50/50 rounded-xl border-2 border-violet-200/80 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-gray-900">Mot de la Directrice des Études</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Texte affiché sur la page d&apos;accueil publique. Séparez les paragraphes par une
+                          ligne vide.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          setDirectorMessageDraft({
+                            name: DEFAULT_DIRECTOR_NAME,
+                            occasionBadge: DEFAULT_DIRECTOR_OCCASION,
+                            messageTitle: DEFAULT_DIRECTOR_MESSAGE_TITLE,
+                            message: directorMessageBodyFromParagraphs(
+                              DEFAULT_DIRECTOR_MESSAGE_PARAGRAPHS,
+                            ),
+                            closing: DEFAULT_DIRECTOR_CLOSING,
+                            footerLine: DEFAULT_DIRECTOR_FOOTER,
+                          })
+                        }
+                      >
+                        <FiRefreshCw className="w-4 h-4" />
+                        <span className="ml-1.5">Texte par défaut</span>
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Nom de la directrice
+                        </label>
+                        <input
+                          type="text"
+                          value={directorMessageDraft.name}
+                          onChange={(e) =>
+                            setDirectorMessageDraft((prev) => ({ ...prev, name: e.target.value }))
+                          }
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                          placeholder={DEFAULT_DIRECTOR_NAME}
+                          maxLength={120}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Badge d&apos;occasion
+                        </label>
+                        <input
+                          type="text"
+                          value={directorMessageDraft.occasionBadge}
+                          onChange={(e) =>
+                            setDirectorMessageDraft((prev) => ({
+                              ...prev,
+                              occasionBadge: e.target.value,
+                            }))
+                          }
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                          placeholder={DEFAULT_DIRECTOR_OCCASION}
+                          maxLength={160}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Titre du message
+                      </label>
+                      <input
+                        type="text"
+                        value={directorMessageDraft.messageTitle}
+                        onChange={(e) =>
+                          setDirectorMessageDraft((prev) => ({
+                            ...prev,
+                            messageTitle: e.target.value,
+                          }))
+                        }
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                        placeholder={DEFAULT_DIRECTOR_MESSAGE_TITLE}
+                        maxLength={160}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Corps du message
+                      </label>
+                      <textarea
+                        value={directorMessageDraft.message}
+                        onChange={(e) =>
+                          setDirectorMessageDraft((prev) => ({ ...prev, message: e.target.value }))
+                        }
+                        rows={12}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all resize-y min-h-[12rem] text-sm leading-relaxed"
+                        placeholder="Un paragraphe par bloc, séparés par une ligne vide…"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Formule de clôture
+                        </label>
+                        <input
+                          type="text"
+                          value={directorMessageDraft.closing}
+                          onChange={(e) =>
+                            setDirectorMessageDraft((prev) => ({ ...prev, closing: e.target.value }))
+                          }
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                          placeholder={DEFAULT_DIRECTOR_CLOSING}
+                          maxLength={500}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Ligne de pied de page
+                        </label>
+                        <input
+                          type="text"
+                          value={directorMessageDraft.footerLine}
+                          onChange={(e) =>
+                            setDirectorMessageDraft((prev) => ({
+                              ...prev,
+                              footerLine: e.target.value,
+                            }))
+                          }
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-violet-500/20 focus:border-violet-500 transition-all"
+                          placeholder={DEFAULT_DIRECTOR_FOOTER}
+                          maxLength={300}
+                        />
+                      </div>
                     </div>
                   </div>
 

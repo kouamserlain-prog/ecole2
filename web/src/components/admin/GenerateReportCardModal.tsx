@@ -43,7 +43,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
   const queryClient = useQueryClient();
   const { branding } = useAppBranding();
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('trim3');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('trim1');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2024-2025');
   const [isGenerating, setIsGenerating] = useState(false);
   /** Après génération PDF : enregistrer en base et rendre visible aux élèves / familles */

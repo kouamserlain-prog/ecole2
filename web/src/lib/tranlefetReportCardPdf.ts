@@ -56,7 +56,13 @@ export type ReportCardStudentPayload = {
     date: string;
     course?: { id: string; name: string; code?: string };
   }>;
-  allCourses?: Array<{ id: string; name: string; code?: string; teacherName?: string }>;
+  allCourses?: Array<{
+    id: string;
+    name: string;
+    code?: string;
+    teacherName?: string;
+    gradingCoefficient?: number | null;
+  }>;
   courseAverages?: Record<string, { average: number; count?: number }>;
   average?: number;
   rank?: number;
@@ -87,29 +93,72 @@ type DisciplineRow = {
   label: string;
   indent?: boolean;
   isBilan?: boolean;
-  courseIds?: string[];
+  /** Afficher le nom du professeur (ligne matière principale uniquement). */
+  showProfessor?: boolean;
+  coefficient?: number;
   courseMatch?: RegExp;
   subGradeMatch?: RegExp;
 };
 
+/** Modèle officiel Tranlefet — 1er / 2ème trimestre (cf. bulletin papier). */
 const DISCIPLINE_TEMPLATE: DisciplineRow[] = [
-  { label: 'Français', courseMatch: /français|francais/i },
-  { label: 'Expression orale', indent: true, courseMatch: /français|francais/i, subGradeMatch: /oral/i },
-  { label: 'Orthographe -\ngrammaire', indent: true, courseMatch: /français|francais/i, subGradeMatch: /ortho|grammaire/i },
-  { label: 'Expression écrite', indent: true, courseMatch: /français|francais/i, subGradeMatch: /écrit|ecrit|rédaction|redaction/i },
-  { label: 'Anglais', courseMatch: /anglais|english/i },
-  { label: 'Histoire – géographie', courseMatch: /histoire|géographie|geographie|hg/i },
-  { label: 'BILAN LETTRES', isBilan: true, courseMatch: /français|francais|anglais|histoire|géographie|geographie|hg|lettres/i },
-  { label: 'Mathématiques', courseMatch: /math/i },
-  { label: 'Physique – chimie', courseMatch: /physique|chimie|pc/i },
-  { label: 'SVT', courseMatch: /svt|vie|terre|biolog/i },
-  { label: 'BILAN SCIENCES', isBilan: true, courseMatch: /math|physique|chimie|svt|science/i },
-  { label: 'EDHC', courseMatch: /edhc|emc|citoyen/i },
-  { label: 'EPS', courseMatch: /eps|sport/i },
-  { label: 'CONDUITE', courseMatch: /conduite|comportement/i },
+  { label: 'Français', courseMatch: /^français|francais/i, showProfessor: true },
+  {
+    label: 'Expression orale',
+    indent: true,
+    courseMatch: /français|francais/i,
+    subGradeMatch: /oral/i,
+    coefficient: 1,
+  },
+  {
+    label: 'Orthographe -\ngrammaire',
+    indent: true,
+    courseMatch: /français|francais/i,
+    subGradeMatch: /ortho|grammaire/i,
+    coefficient: 1,
+  },
+  {
+    label: 'Expression écrite',
+    indent: true,
+    courseMatch: /français|francais/i,
+    subGradeMatch: /écrit|ecrit|rédaction|redaction/i,
+    coefficient: 1,
+  },
+  { label: 'Anglais', courseMatch: /^anglais|english/i, showProfessor: true, coefficient: 2 },
+  {
+    label: 'Histoire – géographie',
+    courseMatch: /^histoire|histoire[\s-–]+géographie|histoire[\s-–]+geographie|^hg$/i,
+    showProfessor: true,
+    coefficient: 2,
+  },
+  {
+    label: 'BILAN LETTRES',
+    isBilan: true,
+    courseMatch: /français|francais|anglais|histoire|géographie|geographie|hg|lettres/i,
+  },
+  { label: 'Mathématiques', courseMatch: /^math/i, showProfessor: true, coefficient: 3 },
+  {
+    label: 'Physique – chimie',
+    courseMatch: /^physique|physique[\s-–]+chimie|^pc$/i,
+    showProfessor: true,
+    coefficient: 2,
+  },
+  { label: 'SVT', courseMatch: /^svt|sciences?\s+de\s+la\s+vie/i, showProfessor: true, coefficient: 2 },
+  {
+    label: 'BILAN SCIENCES',
+    isBilan: true,
+    courseMatch: /math|physique|chimie|svt|science/i,
+  },
+  { label: 'EDHC', courseMatch: /^edhc|emc|éducation.*citoyenneté/i, showProfessor: true, coefficient: 1 },
+  { label: 'EPS', courseMatch: /^eps|éducation\s+physique|sport/i, showProfessor: true, coefficient: 1 },
+  { label: 'CONDUITE', courseMatch: /conduite|comportement/i, showProfessor: false, coefficient: 1 },
 ];
 
 const TRIM_KEYS = ['trim1', 'trim2', 'trim3'] as const;
+
+export function isSingleTrimesterBulletin(periodKey: string): boolean {
+  return periodKey === 'trim1' || periodKey === 'trim2';
+}
 
 function fmtNote(value?: number): string {
   if (value === undefined || value <= 0) return '';
@@ -141,9 +190,61 @@ function periodTitle(periodKey: string): string {
 function findCourses(
   courses: ReportCardStudentPayload['allCourses'],
   match?: RegExp,
-): Array<{ id: string; name: string; teacherName?: string }> {
+): Array<{ id: string; name: string; teacherName?: string; gradingCoefficient?: number | null }> {
   if (!courses || !match) return [];
   return courses.filter((c) => match.test(c.name) || (c.code ? match.test(c.code) : false));
+}
+
+/** Choisit le cours le plus pertinent pour une ligne (évite de mélanger les professeurs). */
+export function pickPrimaryCourseForRow(
+  row: DisciplineRow,
+  courses: ReportCardStudentPayload['allCourses'],
+): { id: string; name: string; teacherName?: string; gradingCoefficient?: number | null } | undefined {
+  const matched = findCourses(courses, row.courseMatch);
+  if (matched.length === 0) return undefined;
+  if (matched.length === 1) return matched[0];
+
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const rowKey = normalize(row.label.replace(/\n/g, ' ').split('–')[0]);
+
+  const exact = matched.find((c) => normalize(c.name) === rowKey);
+  if (exact) return exact;
+
+  const labelRules: Array<{ test: (n: string) => boolean; prefer: (c: (typeof matched)[0]) => boolean }> = [
+    { test: (n) => /^fran/.test(n), prefer: (c) => /^fran/i.test(c.name) },
+    { test: (n) => n.includes('anglais'), prefer: (c) => /anglais|english/i.test(c.name) },
+    { test: (n) => n.includes('histoire'), prefer: (c) => /histoire|geographie|géographie|^hg$/i.test(c.name) },
+    { test: (n) => n.includes('math'), prefer: (c) => /^math/i.test(c.name) },
+    { test: (n) => n.includes('physique'), prefer: (c) => /physique|chimie|^pc$/i.test(c.name) },
+    { test: (n) => n === 'svt', prefer: (c) => /^svt|vie|biolog/i.test(c.name) },
+    { test: (n) => n === 'edhc', prefer: (c) => /edhc|emc|citoyen/i.test(c.name) },
+    { test: (n) => n === 'eps', prefer: (c) => /^eps|éducation\s+physique|^sport/i.test(c.name) && !/chimie/i.test(c.name) },
+  ];
+
+  for (const rule of labelRules) {
+    if (rule.test(rowKey)) {
+      const hit = matched.find(rule.prefer);
+      if (hit) return hit;
+    }
+  }
+
+  return [...matched].sort((a, b) => a.name.length - b.name.length)[0];
+}
+
+export function resolveProfessorForRow(
+  row: DisciplineRow,
+  courses: ReportCardStudentPayload['allCourses'],
+): string {
+  if (!row.showProfessor || row.indent || row.isBilan || row.subGradeMatch) return '';
+  const course = pickPrimaryCourseForRow(row, courses);
+  return course?.teacherName?.trim() ?? '';
 }
 
 function subGradeAverage(
@@ -279,10 +380,7 @@ function resolveRowValues(
     : 'trim3') as (typeof TRIM_KEYS)[number];
   const active = computeForTerm(activeTerm);
 
-  const teacherNames = matched
-    .map((c) => c.teacherName)
-    .filter(Boolean)
-    .join('\n');
+  const prof = resolveProfessorForRow(row, courses);
 
   return {
     trim1: fmtNote(t1.avg),
@@ -299,8 +397,291 @@ function resolveRowValues(
           : 0,
     ),
     rang: fmtRank(active.rank),
-    prof: teacherNames,
+    prof,
   };
+}
+
+type SingleTrimRowValues = {
+  moy: string;
+  coef: string;
+  total: string;
+  rang: string;
+  appreciation: string;
+  prof: string;
+};
+
+function resolveCoefficient(row: DisciplineRow, courses: ReportCardStudentPayload['allCourses']): number {
+  if (row.coefficient !== undefined) return row.coefficient;
+  if (!row.showProfessor) return 0;
+  const course = pickPrimaryCourseForRow(row, courses);
+  if (course?.gradingCoefficient && course.gradingCoefficient > 0) {
+    return course.gradingCoefficient;
+  }
+  return 0;
+}
+
+function resolveSingleTrimRowValues(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  activePeriod: string,
+): SingleTrimRowValues {
+  const multi = resolveRowValues(studentData, row, activePeriod);
+  const courses = studentData.allCourses || [];
+  const activeTerm = (['trim1', 'trim2', 'trim3'].includes(activePeriod)
+    ? activePeriod
+    : 'trim1') as (typeof TRIM_KEYS)[number];
+
+  let moyNum = 0;
+  if (row.label === 'CONDUITE') {
+    moyNum = studentData.conduct?.byTerm?.[activeTerm] ?? studentData.conduct?.average ?? 0;
+  } else if (row.isBilan) {
+    const bilanCourses = findCourses(courses, row.courseMatch);
+    const values = bilanCourses
+      .map((c) => termCourseAverage(studentData, activeTerm, c.id, activePeriod))
+      .filter((v) => v > 0);
+    moyNum = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  } else if (row.subGradeMatch) {
+    const course = pickPrimaryCourseForRow(row, courses);
+    if (course && activePeriod === activeTerm) {
+      moyNum = subGradeAverage(studentData, [course.id], row.subGradeMatch);
+    }
+  } else {
+    const course = pickPrimaryCourseForRow(row, courses);
+    if (course) {
+      moyNum = termCourseAverage(studentData, activeTerm, course.id, activePeriod);
+    }
+  }
+
+  const coef = resolveCoefficient(row, courses);
+  const moy = fmtNote(moyNum);
+  const total = moyNum > 0 && coef > 0 ? (moyNum * coef).toFixed(2) : '';
+  const rang =
+    row.isBilan && moyNum > 0
+      ? `RANG : ${multi.rang || '…'}`
+      : multi.rang || (row.isBilan ? 'RANG :' : '');
+
+  return {
+    moy,
+    coef: coef > 0 ? String(coef) : row.isBilan || row.label === 'Français' ? '' : '',
+    total,
+    rang,
+    appreciation: '',
+    prof: resolveProfessorForRow(row, courses),
+  };
+}
+
+function totalTemplateCoefficients(): number {
+  return DISCIPLINE_TEMPLATE.reduce((sum, row) => sum + (row.coefficient ?? 0), 0);
+}
+
+function drawStudentIdentityTable(
+  doc: jsPDF,
+  studentData: ReportCardStudentPayload,
+  startY: number,
+  margin: number,
+): number {
+  const fullName = `${studentData.user.lastName} ${studentData.user.firstName}`.toUpperCase();
+  const dob = studentData.dateOfBirth
+    ? format(new Date(studentData.dateOfBirth), 'dd/MM/yyyy', { locale: fr })
+    : '';
+
+  autoTable(doc, {
+    startY,
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
+    body: [
+      [
+        { content: 'NOM ET PRENOM', styles: { fontStyle: 'bold' } },
+        { content: fullName, colSpan: 3 },
+      ],
+      [
+        { content: 'Matricule', styles: { fontStyle: 'bold' } },
+        studentData.studentIdNumber || '',
+        { content: 'Classe', styles: { fontStyle: 'bold' } },
+        studentData.class?.name || '',
+      ],
+      [
+        { content: 'Effectif', styles: { fontStyle: 'bold' } },
+        studentData.totalStudents ? String(studentData.totalStudents) : '',
+        { content: 'Sexe', styles: { fontStyle: 'bold' } },
+        genderLabel(studentData.gender),
+      ],
+      [
+        { content: 'Né (e) le', styles: { fontStyle: 'bold' } },
+        dob,
+        { content: 'Lieu de naissance', styles: { fontStyle: 'bold' } },
+        studentData.birthPlace || '',
+      ],
+      [
+        { content: 'Nationalité', styles: { fontStyle: 'bold' } },
+        { content: studentData.nationality || 'Ivoirienne', colSpan: 3 },
+      ],
+    ],
+    margin: { left: margin, right: margin },
+  });
+
+  return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+}
+
+function drawSingleTrimesterGradesTable(
+  doc: jsPDF,
+  studentData: ReportCardStudentPayload,
+  startY: number,
+  margin: number,
+  pageWidth: number,
+  activePeriod: string,
+): number {
+  const tableHead: RowInput[] = [
+    [
+      'Discipline',
+      'Moy.',
+      'Coef.',
+      'Total',
+      'Rang',
+      'Appréciations',
+      'Professeurs',
+      'Signature',
+    ],
+  ];
+
+  const tableBody: RowInput[] = DISCIPLINE_TEMPLATE.map((row) => {
+    const values = resolveSingleTrimRowValues(studentData, row, activePeriod);
+    const labelStyle = row.isBilan
+      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
+      : row.indent
+        ? { cellPadding: { left: 4 } }
+        : row.label === 'Français'
+          ? { fontStyle: 'bold' as const }
+          : {};
+    return [
+      { content: row.label, styles: labelStyle },
+      values.moy,
+      values.coef,
+      values.total,
+      values.rang,
+      values.appreciation,
+      values.prof,
+      '',
+    ];
+  });
+
+  tableBody.push([
+    { content: 'TOTAUX', styles: { fontStyle: 'bold' } },
+    '',
+    String(totalTemplateCoefficients()),
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: tableHead,
+    body: tableBody,
+    theme: 'grid',
+    styles: {
+      fontSize: 6,
+      cellPadding: 0.8,
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: [220, 220, 220],
+      textColor: [0, 0, 0],
+      fontStyle: 'bold',
+      fontSize: 6,
+      halign: 'center',
+    },
+    columnStyles: {
+      0: { cellWidth: 32 },
+      1: { halign: 'center', cellWidth: 11 },
+      2: { halign: 'center', cellWidth: 10 },
+      3: { halign: 'center', cellWidth: 11 },
+      4: { halign: 'center', cellWidth: 14 },
+      5: { cellWidth: 28 },
+      6: { cellWidth: 26, fontSize: 5.5 },
+      7: { cellWidth: 14 },
+    },
+    tableWidth: pageWidth - margin * 2,
+    margin: { left: margin, right: margin },
+  });
+
+  return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+}
+
+function drawMultiTrimesterGradesTable(
+  doc: jsPDF,
+  studentData: ReportCardStudentPayload,
+  startY: number,
+  margin: number,
+  pageWidth: number,
+  activePeriod: string,
+): number {
+  const tableHead: RowInput[] = [
+    [
+      { content: 'Discipline', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Trim 1', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Trim 2', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Trim 3', colSpan: 2, styles: { halign: 'center' } },
+      { content: 'Moy.', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Rang', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Professeurs', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      { content: 'Signature', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+    ],
+    ['', 'Moy.', 'Rang', 'Moy.', 'Rang', 'Moy.', 'Rang', '', '', '', ''],
+  ];
+
+  const tableBody = DISCIPLINE_TEMPLATE.map((row) => {
+    const values = resolveRowValues(studentData, row, activePeriod);
+    const labelStyle = row.isBilan
+      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
+      : row.indent
+        ? { cellPadding: { left: 4 } }
+        : {};
+    return [
+      { content: row.label, styles: labelStyle },
+      values.trim1,
+      values.rank1,
+      values.trim2,
+      values.rank2,
+      values.trim3,
+      values.rank3,
+      values.moy,
+      values.rang,
+      values.prof,
+      '',
+    ];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: tableHead,
+    body: tableBody,
+    theme: 'grid',
+    styles: { fontSize: 6, cellPadding: 0.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      1: { halign: 'center', cellWidth: 10 },
+      2: { halign: 'center', cellWidth: 8 },
+      3: { halign: 'center', cellWidth: 10 },
+      4: { halign: 'center', cellWidth: 8 },
+      5: { halign: 'center', cellWidth: 10 },
+      6: { halign: 'center', cellWidth: 8 },
+      7: { halign: 'center', cellWidth: 10 },
+      8: { halign: 'center', cellWidth: 8 },
+      9: { cellWidth: 24, fontSize: 5.5 },
+      10: { cellWidth: 14 },
+    },
+    tableWidth: pageWidth - margin * 2,
+    margin: { left: margin, right: margin },
+  });
+
+  return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
 }
 
 function drawOfficialHeader(
@@ -394,109 +775,13 @@ export function generateTranlefetReportCardPdf(
 
   let y = drawOfficialHeader(doc, pageWidth, branding, options.academicYear, activePeriod);
 
-  const fullName = `${studentData.user.lastName} ${studentData.user.firstName}`.toUpperCase();
-  const dob = studentData.dateOfBirth
-    ? format(new Date(studentData.dateOfBirth), 'dd/MM/yyyy', { locale: fr })
-    : '';
+  y = drawStudentIdentityTable(doc, studentData, y, margin);
 
-  autoTable(doc, {
-    startY: y,
-    theme: 'grid',
-    styles: { fontSize: 7, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
-    body: [
-      [
-        { content: 'NOM ET PRENOM', styles: { fontStyle: 'bold' } },
-        { content: fullName, colSpan: 3 },
-      ],
-      [
-        { content: 'Matricule', styles: { fontStyle: 'bold' } },
-        studentData.studentIdNumber || '',
-        { content: 'Classe', styles: { fontStyle: 'bold' } },
-        studentData.class?.name || '',
-      ],
-      [
-        { content: 'Effectif', styles: { fontStyle: 'bold' } },
-        studentData.totalStudents ? String(studentData.totalStudents) : '',
-        { content: 'Sexe', styles: { fontStyle: 'bold' } },
-        genderLabel(studentData.gender),
-      ],
-      [
-        { content: 'Né (e) le', styles: { fontStyle: 'bold' } },
-        dob,
-        { content: 'Lieu de naissance', styles: { fontStyle: 'bold' } },
-        studentData.birthPlace || '',
-      ],
-      [
-        { content: 'Nationalité', styles: { fontStyle: 'bold' } },
-        { content: studentData.nationality || 'Ivoirienne', colSpan: 3 },
-      ],
-    ],
-    margin: { left: margin, right: margin },
-  });
-
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
-
-  const tableHead: RowInput[] = [
-    [
-      { content: 'Discipline', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'Trim 1', colSpan: 2, styles: { halign: 'center' } },
-      { content: 'Trim 2', colSpan: 2, styles: { halign: 'center' } },
-      { content: 'Trim 3', colSpan: 2, styles: { halign: 'center' } },
-      { content: 'Moy.', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'Rang', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'Professeurs', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-      { content: 'Signature', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
-    ],
-    ['', 'Moy.', 'Rang', 'Moy.', 'Rang', 'Moy.', 'Rang', '', '', '', ''],
-  ];
-
-  const tableBody = DISCIPLINE_TEMPLATE.map((row) => {
-    const values = resolveRowValues(studentData, row, activePeriod);
-    const labelStyle = row.isBilan
-      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
-      : row.indent
-        ? { cellPadding: { left: 4 } }
-        : {};
-    return [
-      { content: row.label, styles: labelStyle },
-      values.trim1,
-      values.rank1,
-      values.trim2,
-      values.rank2,
-      values.trim3,
-      values.rank3,
-      values.moy,
-      values.rang,
-      values.prof,
-      '',
-    ];
-  });
-
-  autoTable(doc, {
-    startY: y,
-    head: tableHead,
-    body: tableBody,
-    theme: 'grid',
-    styles: { fontSize: 6, cellPadding: 0.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
-    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
-    columnStyles: {
-      0: { cellWidth: 30 },
-      1: { halign: 'center', cellWidth: 10 },
-      2: { halign: 'center', cellWidth: 8 },
-      3: { halign: 'center', cellWidth: 10 },
-      4: { halign: 'center', cellWidth: 8 },
-      5: { halign: 'center', cellWidth: 10 },
-      6: { halign: 'center', cellWidth: 8 },
-      7: { halign: 'center', cellWidth: 10 },
-      8: { halign: 'center', cellWidth: 8 },
-      9: { cellWidth: 24, fontSize: 5.5 },
-      10: { cellWidth: 14 },
-    },
-    tableWidth: pageWidth - margin * 2,
-    margin: { left: margin, right: margin },
-  });
-
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+  if (isSingleTrimesterBulletin(activePeriod)) {
+    y = drawSingleTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+  } else {
+    y = drawMultiTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+  }
 
   const stats = studentData.classStats;
   const termAvg =

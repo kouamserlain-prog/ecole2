@@ -40,6 +40,12 @@ function emptyBrandingResponse() {
     schoolWebsite: null,
     schoolPrincipal: null,
     studiesDirectorPhotoUrl: null,
+    studiesDirectorName: null,
+    studiesDirectorOccasionBadge: null,
+    studiesDirectorMessageTitle: null,
+    studiesDirectorMessage: null,
+    studiesDirectorClosing: null,
+    studiesDirectorFooterLine: null,
     homePageImages: {},
   };
 }
@@ -50,6 +56,10 @@ function trimText(v: unknown, max: number): string | null | undefined {
   if (typeof v !== 'string') return undefined;
   const t = v.trim();
   return t.length === 0 ? null : t.slice(0, max);
+}
+
+function trimLongText(v: unknown, max: number): string | null | undefined {
+  return trimText(v, max);
 }
 
 function normalizeAcademicYearSetting(v: unknown): string | null | undefined {
@@ -138,6 +148,19 @@ router.put('/app-branding', async (req: SchoolContextRequest, res) => {
     if (schoolEm !== undefined) data.schoolEmail = schoolEm;
     if (schoolWeb !== undefined) data.schoolWebsite = schoolWeb;
     if (schoolPr !== undefined) data.schoolPrincipal = schoolPr;
+
+    const directorName = trimText(body.studiesDirectorName, 120);
+    const directorOccasion = trimText(body.studiesDirectorOccasionBadge, 160);
+    const directorTitle = trimText(body.studiesDirectorMessageTitle, 160);
+    const directorMessage = trimLongText(body.studiesDirectorMessage, 20_000);
+    const directorClosing = trimText(body.studiesDirectorClosing, 500);
+    const directorFooter = trimText(body.studiesDirectorFooterLine, 300);
+    if (directorName !== undefined) data.studiesDirectorName = directorName;
+    if (directorOccasion !== undefined) data.studiesDirectorOccasionBadge = directorOccasion;
+    if (directorTitle !== undefined) data.studiesDirectorMessageTitle = directorTitle;
+    if (directorMessage !== undefined) data.studiesDirectorMessage = directorMessage;
+    if (directorClosing !== undefined) data.studiesDirectorClosing = directorClosing;
+    if (directorFooter !== undefined) data.studiesDirectorFooterLine = directorFooter;
 
     const prev = await appBranding.findUnique({ where: { id: brandingId } });
 
