@@ -255,6 +255,8 @@ export default function Home() {
   const headerTitle = schoolDisplayName;
   const headerTagline =
     (branding.appTagline && branding.appTagline.trim()) || TRANLEFET_SCHOOL.tagline;
+  const schoolCode =
+    (branding.schoolCode && branding.schoolCode.trim()) || TRANLEFET_SCHOOL.establishmentCode;
   const schoolMapsUrl = getGoogleMapsSearchUrl(
     getTranlefetSchoolMapsQuery(branding.schoolAddress)
   );
@@ -295,6 +297,9 @@ export default function Home() {
               </span>
               <span className="hidden text-[10px] font-semibold uppercase tracking-[0.2em] text-tran-mustard-800/80 sm:block">
                 {headerTagline}
+              </span>
+              <span className="mt-0.5 hidden text-[10px] font-bold tabular-nums tracking-wider text-tran-mauve-700/90 sm:block">
+                Code : {schoolCode}
               </span>
             </div>
           </Link>
@@ -406,6 +411,9 @@ export default function Home() {
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-tran-mauve-400" />
                     </span>
                     {TRANLEFET_SCHOOL.city}, {TRANLEFET_SCHOOL.country}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold tabular-nums text-tran-mustard-100 backdrop-blur-sm">
+                    Code établissement&nbsp;: {schoolCode}
                   </span>
                 </div>
 
@@ -731,6 +739,9 @@ export default function Home() {
               />
               <div className="absolute bottom-6 left-6 right-6 z-10 rounded-2xl border border-white/15 bg-stone-950/50 p-4 backdrop-blur-md lg:max-w-xs">
                 <p className="text-sm font-semibold text-white">{TRANLEFET_SCHOOL.city}</p>
+                <p className="mt-1 text-xs font-bold tabular-nums text-tran-mustard-200">
+                  Code établissement : {schoolCode}
+                </p>
                 <p className="mt-1 text-xs text-stone-300">
                   Collège privé au cœur de la ville, ouvert du lundi au vendredi.
                 </p>

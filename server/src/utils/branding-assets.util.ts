@@ -33,6 +33,7 @@ export type BrandingPublicRow = {
   schoolEmail: string | null;
   schoolWebsite: string | null;
   schoolPrincipal: string | null;
+  schoolCode?: string | null;
   studiesDirectorPhotoUrl?: string | null;
   studiesDirectorName?: string | null;
   studiesDirectorOccasionBadge?: string | null;
@@ -65,5 +66,6 @@ export function toPublicBrandingShape(row: BrandingPublicRow): BrandingPublicRow
     schoolEmail: row.schoolEmail,
     schoolWebsite: row.schoolWebsite,
     schoolPrincipal: row.schoolPrincipal,
+    schoolCode: row.schoolCode ?? null,
   };
 }

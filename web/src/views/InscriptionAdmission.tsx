@@ -103,6 +103,7 @@ const InscriptionAdmission = () => {
     schoolEmail: null,
     schoolWebsite: null,
     schoolPrincipal: null,
+    schoolCode: null,
     studiesDirectorPhotoUrl: null,
     studiesDirectorName: null,
     studiesDirectorOccasionBadge: null,

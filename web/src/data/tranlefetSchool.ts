@@ -12,6 +12,8 @@ export const TRANLEFET_SCHOOL = {
   mottoShort: "Former aujourd'hui, c'est bâtir la société de demain.",
   valuesLine: 'Science · Humanisme · Excellence',
   tagline: 'Excellence éducative et innovation',
+  /** Code officiel MENA (bulletins, documents administratifs) */
+  establishmentCode: '253798',
   intro:
     'Le collège Tranlefet incarne l’excellence éducative et l’innovation. Engagé à offrir une formation de qualité, il favorise l’épanouissement intellectuel et personnel des élèves, les préparant à devenir des leaders compétents et responsables de demain.',
   mission:

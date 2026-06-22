@@ -39,6 +39,7 @@ function emptyBrandingResponse() {
     schoolEmail: null,
     schoolWebsite: null,
     schoolPrincipal: null,
+    schoolCode: null,
     studiesDirectorPhotoUrl: null,
     studiesDirectorName: null,
     studiesDirectorOccasionBadge: null,
@@ -142,12 +143,14 @@ router.put('/app-branding', async (req: SchoolContextRequest, res) => {
     const schoolEm = trimText(body.schoolEmail, 120);
     const schoolWeb = trimText(body.schoolWebsite, 200);
     const schoolPr = trimText(body.schoolPrincipal, 120);
+    const schoolCode = trimText(body.schoolCode, 32);
     if (schoolName !== undefined) data.schoolDisplayName = schoolName;
     if (schoolAddr !== undefined) data.schoolAddress = schoolAddr;
     if (schoolPh !== undefined) data.schoolPhone = schoolPh;
     if (schoolEm !== undefined) data.schoolEmail = schoolEm;
     if (schoolWeb !== undefined) data.schoolWebsite = schoolWeb;
     if (schoolPr !== undefined) data.schoolPrincipal = schoolPr;
+    if (schoolCode !== undefined) data.schoolCode = schoolCode;
 
     const directorName = trimText(body.studiesDirectorName, 120);
     const directorOccasion = trimText(body.studiesDirectorOccasionBadge, 160);

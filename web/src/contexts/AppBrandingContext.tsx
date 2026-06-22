@@ -29,6 +29,7 @@ export type AppBrandingPayload = {
   schoolEmail: string | null;
   schoolWebsite: string | null;
   schoolPrincipal: string | null;
+  schoolCode: string | null;
   studiesDirectorPhotoUrl: string | null;
   studiesDirectorName: string | null;
   studiesDirectorOccasionBadge: string | null;
@@ -63,6 +64,7 @@ const DEFAULT_BRANDING: AppBrandingPayload = {
   schoolEmail: null,
   schoolWebsite: null,
   schoolPrincipal: null,
+  schoolCode: null,
   studiesDirectorPhotoUrl: null,
   studiesDirectorName: null,
   studiesDirectorOccasionBadge: null,
@@ -97,6 +99,7 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
         schoolEmail: data.schoolEmail ?? null,
         schoolWebsite: data.schoolWebsite ?? null,
         schoolPrincipal: data.schoolPrincipal ?? null,
+        schoolCode: data.schoolCode ?? null,
         studiesDirectorPhotoUrl: data.studiesDirectorPhotoUrl ?? null,
         studiesDirectorName: data.studiesDirectorName ?? null,
         studiesDirectorOccasionBadge: data.studiesDirectorOccasionBadge ?? null,
@@ -136,6 +139,7 @@ export function AppBrandingProvider({ children }: { children: ReactNode }) {
           schoolEmail: cached.schoolEmail ?? null,
           schoolWebsite: cached.schoolWebsite ?? null,
           schoolPrincipal: cached.schoolPrincipal ?? null,
+          schoolCode: cached.schoolCode ?? null,
           studiesDirectorPhotoUrl: cached.studiesDirectorPhotoUrl ?? null,
           studiesDirectorName: cached.studiesDirectorName ?? null,
           studiesDirectorOccasionBadge: cached.studiesDirectorOccasionBadge ?? null,

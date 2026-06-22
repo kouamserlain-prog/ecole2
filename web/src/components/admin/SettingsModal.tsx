@@ -162,6 +162,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
     email: '',
     website: '',
     principal: '',
+    code: '',
   });
 
   const [directorMessageDraft, setDirectorMessageDraft] = useState({
@@ -258,6 +259,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
             email: typeof b.schoolEmail === 'string' ? b.schoolEmail : '',
             website: typeof b.schoolWebsite === 'string' ? b.schoolWebsite : '',
             principal: typeof b.schoolPrincipal === 'string' ? b.schoolPrincipal : '',
+            code: typeof b.schoolCode === 'string' ? b.schoolCode : '',
           });
           const resolvedDirector = resolveDirectorMessageContent({
             studiesDirectorName:
@@ -320,6 +322,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
             email: '',
             website: '',
             principal: '',
+            code: '',
           });
         }
       }
@@ -406,6 +409,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
         schoolEmail: schoolSettings.email.trim() || null,
         schoolWebsite: schoolSettings.website.trim() || null,
         schoolPrincipal: schoolSettings.principal.trim() || null,
+        schoolCode: schoolSettings.code.trim() || null,
         studiesDirectorName: directorMessageDraft.name.trim() || null,
         studiesDirectorOccasionBadge: directorMessageDraft.occasionBadge.trim() || null,
         studiesDirectorMessageTitle: directorMessageDraft.messageTitle.trim() || null,
@@ -700,6 +704,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, initialT
                         onChange={(e) => setSchoolSettings({ ...schoolSettings, principal: e.target.value })}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                         placeholder="M. Directeur"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Code établissement (MENA)
+                      </label>
+                      <input
+                        type="text"
+                        value={schoolSettings.code}
+                        onChange={(e) => setSchoolSettings({ ...schoolSettings, code: e.target.value })}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                        placeholder="253798"
                       />
                     </div>
                   </div>

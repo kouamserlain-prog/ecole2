@@ -2662,6 +2662,7 @@ model AppBranding {
   schoolEmail       String?
   schoolWebsite     String?
   schoolPrincipal   String?
+  schoolCode        String?
   /// Portrait affiché sur la page d’accueil (section « Mot de la Directrice des Études »)
   studiesDirectorPhotoUrl String?
   /// Texte de la section « Mot de la Directrice » (page d’accueil publique)

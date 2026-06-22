@@ -23,6 +23,7 @@ const EMPTY_PUBLIC_BRANDING = {
   schoolEmail: null,
   schoolWebsite: null,
   schoolPrincipal: null,
+  schoolCode: null,
   studiesDirectorPhotoUrl: null,
   studiesDirectorName: null,
   studiesDirectorOccasionBadge: null,
@@ -90,6 +91,7 @@ router.get('/app-branding', async (req, res) => {
         schoolEmail: row.schoolEmail ?? null,
         schoolWebsite: row.schoolWebsite ?? null,
         schoolPrincipal: row.schoolPrincipal ?? null,
+        schoolCode: (row as { schoolCode?: string | null }).schoolCode ?? null,
         studiesDirectorPhotoUrl:
           (row as { studiesDirectorPhotoUrl?: string | null }).studiesDirectorPhotoUrl ?? null,
         studiesDirectorName:
