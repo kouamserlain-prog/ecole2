@@ -41,7 +41,7 @@ const academicYears = [
 
 const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpen, onClose }) => {
   const queryClient = useQueryClient();
-  const { branding } = useAppBranding();
+  const { branding, navigationLogoAbsolute, loginLogoAbsolute } = useAppBranding();
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('trim1');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2024-2025');
@@ -77,13 +77,16 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         branding.schoolAddress?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolAddress,
       schoolEmail:
         branding.schoolEmail?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolEmail,
+      schoolCode:
+        branding.schoolCode?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolCode,
       principalName: branding.schoolPrincipal?.trim() || '',
       studiesDirectorName: '',
+      logoAbsoluteUrl: navigationLogoAbsolute || loginLogoAbsolute || null,
       city: branding.schoolAddress?.includes('Bouaké')
         ? 'Bouaké'
         : TRANLEFET_DEFAULT_BRANDING.city,
     }),
-    [branding],
+    [branding, navigationLogoAbsolute, loginLogoAbsolute],
   );
 
   const periodLabel = useMemo(
@@ -100,7 +103,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
 
       // Generate PDF for each student
       for (const studentData of reportCardData) {
-        generateTranlefetReportCardPdf(
+        await generateTranlefetReportCardPdf(
           studentData as Parameters<typeof generateTranlefetReportCardPdf>[0],
           {
             periodLabel,

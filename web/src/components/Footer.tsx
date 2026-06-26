@@ -77,7 +77,12 @@ const SOCIAL_NETWORKS: SocialNetwork[] = [
   },
 ];
 
-const Footer = () => {
+type FooterProps = {
+  /** Masque la colonne « Fonctionnalités » (page d'accueil établissement). */
+  hideFeatures?: boolean;
+};
+
+const Footer = ({ hideFeatures = false }: FooterProps) => {
   const currentYear = new Date().getFullYear();
   const { branding, navigationLogoAbsolute } = useAppBranding();
   const displayTitle = (branding.appTitle && branding.appTitle.trim()) || 'Gestion scolaire';
@@ -95,7 +100,11 @@ const Footer = () => {
         aria-hidden
       />
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+        <div
+          className={`grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 ${
+            hideFeatures ? 'lg:grid-cols-3' : 'lg:grid-cols-4'
+          }`}
+        >
           {/* À propos */}
           <div>
             <div className="flex items-center gap-3 mb-4">
@@ -141,78 +150,79 @@ const Footer = () => {
             </div>
           </div>
 
-          {/* Fonctionnalités */}
-          <div>
-            <h3 className="text-stone-100 font-bold text-lg mb-4 flex items-center gap-2">
-              <FiBook className="w-5 h-5 text-amber-400/90 shrink-0" aria-hidden />
-              Fonctionnalités
-            </h3>
-            <ul className="space-y-2">
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiBarChart className="w-4 h-4 mr-2" />
-                  Gestion Complète
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiUsers className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                  Multi-Rôles
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiAward className="w-4 h-4 mr-2" />
-                  Suivi Pédagogique
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiBell className="w-4 h-4 mr-2" />
-                  Communication
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiCalendar className="w-4 h-4 mr-2" />
-                  Emploi du Temps
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiShield className="w-4 h-4 mr-2" />
-                  Sécurité & Confidentialité
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/home#features"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiZap className="w-4 h-4 mr-2" />
-                  Performance & Rapidité
-                </Link>
-              </li>
-            </ul>
-          </div>
+          {!hideFeatures && (
+            <div>
+              <h3 className="text-stone-100 font-bold text-lg mb-4 flex items-center gap-2">
+                <FiBook className="w-5 h-5 text-amber-400/90 shrink-0" aria-hidden />
+                Fonctionnalités
+              </h3>
+              <ul className="space-y-2">
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiBarChart className="w-4 h-4 mr-2" />
+                    Gestion Complète
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiUsers className="w-4 h-4 mr-2 shrink-0" aria-hidden />
+                    Multi-Rôles
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiAward className="w-4 h-4 mr-2" />
+                    Suivi Pédagogique
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiBell className="w-4 h-4 mr-2" />
+                    Communication
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiCalendar className="w-4 h-4 mr-2" />
+                    Emploi du Temps
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiShield className="w-4 h-4 mr-2" />
+                    Sécurité & Confidentialité
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/home#features"
+                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
+                  >
+                    <FiZap className="w-4 h-4 mr-2" />
+                    Performance & Rapidité
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {/* Ressources */}
           <div>

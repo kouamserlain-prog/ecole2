@@ -1234,7 +1234,7 @@ export default function Home() {
         </section>
       </main>
 
-      <Footer />
+      <Footer hideFeatures />
     </div>
   );
 }

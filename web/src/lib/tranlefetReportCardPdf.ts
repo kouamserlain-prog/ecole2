@@ -16,7 +16,30 @@ export type TranlefetBranding = {
   studiesDirectorName: string;
   city: string;
   motto: string;
+  logoAbsoluteUrl?: string | null;
 };
+
+async function fetchImageDataUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
+  if (dataUrl.startsWith('data:image/png')) return 'PNG';
+  if (dataUrl.startsWith('data:image/webp')) return 'WEBP';
+  return 'JPEG';
+}
 
 export const TRANLEFET_DEFAULT_BRANDING: TranlefetBranding = {
   schoolName: 'COLLEGE PRIVE TRANLEFET DE BOUAKÉ',
@@ -690,6 +713,7 @@ function drawOfficialHeader(
   branding: TranlefetBranding,
   academicYear: string,
   periodKey: string,
+  logoDataUrl: string | null,
 ): number {
   const margin = 10;
   let y = 10;
@@ -705,7 +729,25 @@ function drawOfficialHeader(
   y += 3.5;
   doc.setFont('helvetica', 'normal');
   doc.text(branding.regionalDirection, margin, y);
-  y += 5;
+  y += 4;
+
+  if (logoDataUrl) {
+    const logoSize = 17;
+    const logoX = (pageWidth - logoSize) / 2;
+    try {
+      doc.addImage(
+        logoDataUrl,
+        imageFormatFromDataUrl(logoDataUrl),
+        logoX,
+        y,
+        logoSize,
+        logoSize,
+      );
+      y += logoSize + 2;
+    } catch {
+      /* logo illisible — en-tête texte seul */
+    }
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -758,72 +800,56 @@ function drawCheckboxLine(doc: jsPDF, x: number, y: number, label: string, check
   doc.text(label, x + 3.5, y);
 }
 
-export function generateTranlefetReportCardPdf(
+function buildResumeTableBody(
   studentData: ReportCardStudentPayload,
-  options: {
-    periodLabel: string;
-    periodKey: string;
-    academicYear: string;
-    branding?: Partial<TranlefetBranding>;
-  },
-): void {
-  const branding: TranlefetBranding = { ...TRANLEFET_DEFAULT_BRANDING, ...options.branding };
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 10;
-  const activePeriod = options.periodKey;
-
-  let y = drawOfficialHeader(doc, pageWidth, branding, options.academicYear, activePeriod);
-
-  y = drawStudentIdentityTable(doc, studentData, y, margin);
-
-  if (isSingleTrimesterBulletin(activePeriod)) {
-    y = drawSingleTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
-  } else {
-    y = drawMultiTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
-  }
-
+  periodLabel: string,
+  activePeriod: string,
+  compact: boolean,
+): RowInput[] {
   const stats = studentData.classStats;
   const termAvg =
-    studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.average ?? studentData.average;
+    studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.average ??
+    studentData.average;
   const termRank =
     studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.rank ?? studentData.rank;
   const annual = studentData.annualSummary;
 
-  autoTable(doc, {
-    startY: y,
-    theme: 'grid',
-    styles: { fontSize: 6.5, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
-    body: [
-      [
-        { content: 'RESUME', colSpan: 4, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 220, 220] } },
-      ],
-      [
-        { content: `Assiduité ${options.periodLabel.toLowerCase()}`, styles: { fontStyle: 'bold' } },
-        {
-          content: studentData.absences
-            ? `Abs. : ${studentData.absences.total} (J : ${studentData.absences.excused} / NJ : ${studentData.absences.unexcused})`
-            : '',
-          colSpan: 3,
-        },
-      ],
-      [
-        { content: 'Moyenne Trimestrielle', styles: { fontStyle: 'bold' } },
-        termAvg !== undefined ? `${fmtNote(termAvg)} /20` : '',
-        { content: 'Rang', styles: { fontStyle: 'bold' } },
-        termRank && studentData.totalStudents ? `${termRank} sur ${studentData.totalStudents}` : '',
-      ],
-      [
-        { content: 'Moyenne générale de la classe', styles: { fontStyle: 'bold' } },
-        stats?.periodAverage ? fmtNote(stats.periodAverage) : '',
-        { content: 'Moy mini / maxi', styles: { fontStyle: 'bold' } },
-        stats ? `${fmtNote(stats.periodMin)} / ${fmtNote(stats.periodMax)}` : '',
-      ],
+  const rows: RowInput[] = [
+    [
+      { content: 'RESUME', colSpan: 4, styles: { fontStyle: 'bold', halign: 'center', fillColor: [220, 220, 220] } },
+    ],
+    [
+      { content: `Assiduité ${periodLabel.toLowerCase()}`, styles: { fontStyle: 'bold' } },
+      {
+        content: studentData.absences
+          ? `Abs. : ${studentData.absences.total} (J : ${studentData.absences.excused} / NJ : ${studentData.absences.unexcused})`
+          : '',
+        colSpan: 3,
+      },
+    ],
+    [
+      { content: 'Moyenne Trimestrielle', styles: { fontStyle: 'bold' } },
+      termAvg !== undefined ? `${fmtNote(termAvg)} /20` : '',
+      { content: 'Rang', styles: { fontStyle: 'bold' } },
+      termRank && studentData.totalStudents ? `${termRank} sur ${studentData.totalStudents}` : '',
+    ],
+    [
+      { content: 'Moyenne générale de la classe', styles: { fontStyle: 'bold' } },
+      stats?.periodAverage ? fmtNote(stats.periodAverage) : '',
+      { content: 'Moy mini / maxi', styles: { fontStyle: 'bold' } },
+      stats ? `${fmtNote(stats.periodMin)} / ${fmtNote(stats.periodMax)}` : '',
+    ],
+  ];
+
+  if (!compact) {
+    rows.push(
       [
         { content: 'Moyenne annuelle', styles: { fontStyle: 'bold' } },
         annual?.average ? `${fmtNote(annual.average)} /20` : '',
         { content: 'Rang annuel', styles: { fontStyle: 'bold' } },
-        annual?.rank && studentData.totalStudents ? `${annual.rank} sur ${studentData.totalStudents}` : '',
+        annual?.rank && studentData.totalStudents
+          ? `${annual.rank} sur ${studentData.totalStudents}`
+          : '',
       ],
       [
         { content: 'Résultats annuels de classe', styles: { fontStyle: 'bold' } },
@@ -833,12 +859,22 @@ export function generateTranlefetReportCardPdf(
           ? `${fmtNote(stats.annualMin)} / ${fmtNote(stats.annualMax)}`
           : '',
       ],
-    ],
-    margin: { left: margin, right: margin },
-  });
+    );
+  }
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+  return rows;
+}
 
+function drawMentionsAndSignatures(
+  doc: jsPDF,
+  pageWidth: number,
+  margin: number,
+  branding: TranlefetBranding,
+  studentData: ReportCardStudentPayload,
+  startY: number,
+  compact: boolean,
+): void {
+  let y = startY;
   const distinctions = studentData.distinctions ?? [];
   const sanctions = studentData.sanctions ?? [];
   const distinctionOptions = [
@@ -870,30 +906,41 @@ export function generateTranlefetReportCardPdf(
   });
 
   y += 16;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
-  doc.text(`Redoublant (e) : ${studentData.repeating ? 'Oui' : 'Non'}`, margin, y);
-  doc.text(`Décision de fin d'année : ${studentData.yearEndDecision || '…………………………'}`, margin + 45, y);
-  y += 6;
 
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(6);
-  doc.text(branding.motto, pageWidth / 2, y, { align: 'center' });
-  y += 5;
+  if (!compact) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.text(`Redoublant (e) : ${studentData.repeating ? 'Oui' : 'Non'}`, margin, y);
+    doc.text(`Décision de fin d'année : ${studentData.yearEndDecision || '…………………………'}`, margin + 45, y);
+    y += 6;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6);
+    doc.text(branding.motto, pageWidth / 2, y, { align: 'center' });
+    y += 5;
+  }
 
   const sigY = y + 2;
-  const colW = (pageWidth - margin * 2) / 3;
+  const sigLabels = compact
+    ? [
+        'Nom/Signature du\nprofesseur principal',
+        branding.principalName
+          ? `Chef d'Etablissement\n${branding.principalName}`
+          : 'Chef d\'Etablissement',
+      ]
+    : [
+        'Nom/Signature du\nprofesseur principal',
+        branding.principalName
+          ? `Chef d'Etablissement\n${branding.principalName}`
+          : 'Chef d\'Etablissement',
+        branding.studiesDirectorName
+          ? `Le Directeur des Etudes\n${branding.studiesDirectorName}`
+          : 'Le Directeur des Etudes',
+      ];
+  const colCount = sigLabels.length;
+  const colW = (pageWidth - margin * 2) / colCount;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6);
-  const sigLabels = [
-    'Nom/Signature du\nprofesseur principal',
-    branding.principalName
-      ? `Chef d'Etablissement\n${branding.principalName}`
-      : 'Chef d\'Etablissement',
-    branding.studiesDirectorName
-      ? `Le Directeur des Etudes\n${branding.studiesDirectorName}`
-      : 'Le Directeur des Etudes',
-  ];
   sigLabels.forEach((label, i) => {
     const x = margin + i * colW;
     const lines = doc.splitTextToSize(label, colW - 4);
@@ -908,6 +955,55 @@ export function generateTranlefetReportCardPdf(
     sigY + 16,
     { align: 'right' },
   );
+}
+
+export async function generateTranlefetReportCardPdf(
+  studentData: ReportCardStudentPayload,
+  options: {
+    periodLabel: string;
+    periodKey: string;
+    academicYear: string;
+    branding?: Partial<TranlefetBranding>;
+  },
+): Promise<void> {
+  const branding: TranlefetBranding = { ...TRANLEFET_DEFAULT_BRANDING, ...options.branding };
+  const logoDataUrl = branding.logoAbsoluteUrl
+    ? await fetchImageDataUrl(branding.logoAbsoluteUrl)
+    : null;
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 10;
+  const activePeriod = options.periodKey;
+  const compactFooter = isSingleTrimesterBulletin(activePeriod);
+
+  let y = drawOfficialHeader(
+    doc,
+    pageWidth,
+    branding,
+    options.academicYear,
+    activePeriod,
+    logoDataUrl,
+  );
+
+  y = drawStudentIdentityTable(doc, studentData, y, margin);
+
+  if (compactFooter) {
+    y = drawSingleTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+  } else {
+    y = drawMultiTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+  }
+
+  autoTable(doc, {
+    startY: y,
+    theme: 'grid',
+    styles: { fontSize: 6.5, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
+    body: buildResumeTableBody(studentData, options.periodLabel, activePeriod, compactFooter),
+    margin: { left: margin, right: margin },
+  });
+
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+
+  drawMentionsAndSignatures(doc, pageWidth, margin, branding, studentData, y, compactFooter);
 
   const fileName = `bulletin_${studentData.user.lastName}_${studentData.user.firstName}_${options.periodKey}_${options.academicYear}.pdf`;
   doc.save(fileName);
