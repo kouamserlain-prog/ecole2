@@ -4,6 +4,38 @@ import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { TRANLEFET_SCHOOL } from '../data/tranlefetSchool';
 
+const REPORT_CARD_MARGIN = 10;
+
+function reportCardTableWidth(pageWidth: number): number {
+  return pageWidth - REPORT_CARD_MARGIN * 2;
+}
+
+function reportCardTableMargins(): { left: number; right: number } {
+  return { left: REPORT_CARD_MARGIN, right: REPORT_CARD_MARGIN };
+}
+
+/** Répartit des largeurs relatives sur la largeur utile du bulletin. */
+function buildColumnStyles(
+  relativeWidths: number[],
+  tableWidth: number,
+  overrides: Record<number, Record<string, unknown>> = {},
+): Record<number, Record<string, unknown>> {
+  const sum = relativeWidths.reduce((acc, value) => acc + value, 0);
+  const styles: Record<number, Record<string, unknown>> = {};
+  let allocated = 0;
+
+  relativeWidths.forEach((width, index) => {
+    const isLast = index === relativeWidths.length - 1;
+    const cellWidth = isLast
+      ? Math.round((tableWidth - allocated) * 10) / 10
+      : Math.round((width / sum) * tableWidth * 10) / 10;
+    allocated += cellWidth;
+    styles[index] = { cellWidth, ...(overrides[index] ?? {}) };
+  });
+
+  return styles;
+}
+
 export type TranlefetBranding = {
   schoolName: string;
   schoolPhone: string;
@@ -610,12 +642,13 @@ function drawStudentIdentityTable(
   doc: jsPDF,
   studentData: ReportCardStudentPayload,
   startY: number,
-  margin: number,
+  pageWidth: number,
 ): number {
   const fullName = `${studentData.user.lastName} ${studentData.user.firstName}`.toUpperCase();
   const dob = studentData.dateOfBirth
     ? format(new Date(studentData.dateOfBirth), 'dd/MM/yyyy', { locale: fr })
     : '';
+  const tableWidth = reportCardTableWidth(pageWidth);
 
   autoTable(doc, {
     startY,
@@ -649,7 +682,9 @@ function drawStudentIdentityTable(
         { content: studentData.nationality || 'Ivoirienne', colSpan: 3 },
       ],
     ],
-    margin: { left: margin, right: margin },
+    tableWidth,
+    columnStyles: buildColumnStyles([38, 57, 38, 57], tableWidth),
+    margin: reportCardTableMargins(),
   });
 
   return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
@@ -659,7 +694,6 @@ function drawSingleTrimesterGradesTable(
   doc: jsPDF,
   studentData: ReportCardStudentPayload,
   startY: number,
-  margin: number,
   pageWidth: number,
   activePeriod: string,
 ): number {
@@ -709,6 +743,8 @@ function drawSingleTrimesterGradesTable(
     '',
   ]);
 
+  const tableWidth = reportCardTableWidth(pageWidth);
+
   autoTable(doc, {
     startY,
     head: tableHead,
@@ -729,18 +765,15 @@ function drawSingleTrimesterGradesTable(
       fontSize: 6,
       halign: 'center',
     },
-    columnStyles: {
-      0: { cellWidth: 32 },
-      1: { halign: 'center', cellWidth: 11 },
-      2: { halign: 'center', cellWidth: 10 },
-      3: { halign: 'center', cellWidth: 11 },
-      4: { halign: 'center', cellWidth: 14 },
-      5: { cellWidth: 28 },
-      6: { cellWidth: 26, fontSize: 5.5 },
-      7: { cellWidth: 14 },
-    },
-    tableWidth: pageWidth - margin * 2,
-    margin: { left: margin, right: margin },
+    columnStyles: buildColumnStyles([32, 11, 10, 11, 14, 28, 26, 14], tableWidth, {
+      1: { halign: 'center' },
+      2: { halign: 'center' },
+      3: { halign: 'center' },
+      4: { halign: 'center' },
+      6: { fontSize: 5.5 },
+    }),
+    tableWidth,
+    margin: reportCardTableMargins(),
   });
 
   return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
@@ -750,7 +783,6 @@ function drawMultiTrimesterGradesTable(
   doc: jsPDF,
   studentData: ReportCardStudentPayload,
   startY: number,
-  margin: number,
   pageWidth: number,
   activePeriod: string,
 ): number {
@@ -790,6 +822,8 @@ function drawMultiTrimesterGradesTable(
     ];
   });
 
+  const tableWidth = reportCardTableWidth(pageWidth);
+
   autoTable(doc, {
     startY,
     head: tableHead,
@@ -797,21 +831,19 @@ function drawMultiTrimesterGradesTable(
     theme: 'grid',
     styles: { fontSize: 6, cellPadding: 0.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
     headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
-    columnStyles: {
-      0: { cellWidth: 30 },
-      1: { halign: 'center', cellWidth: 10 },
-      2: { halign: 'center', cellWidth: 8 },
-      3: { halign: 'center', cellWidth: 10 },
-      4: { halign: 'center', cellWidth: 8 },
-      5: { halign: 'center', cellWidth: 10 },
-      6: { halign: 'center', cellWidth: 8 },
-      7: { halign: 'center', cellWidth: 10 },
-      8: { halign: 'center', cellWidth: 8 },
-      9: { cellWidth: 24, fontSize: 5.5 },
-      10: { cellWidth: 14 },
-    },
-    tableWidth: pageWidth - margin * 2,
-    margin: { left: margin, right: margin },
+    columnStyles: buildColumnStyles([30, 10, 8, 10, 8, 10, 8, 10, 8, 24, 14], tableWidth, {
+      1: { halign: 'center' },
+      2: { halign: 'center' },
+      3: { halign: 'center' },
+      4: { halign: 'center' },
+      5: { halign: 'center' },
+      6: { halign: 'center' },
+      7: { halign: 'center' },
+      8: { halign: 'center' },
+      9: { fontSize: 5.5 },
+    }),
+    tableWidth,
+    margin: reportCardTableMargins(),
   });
 
   return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
@@ -844,10 +876,7 @@ function drawOfficialHeader(
   const flagY = mottoY + 2.5;
   drawCoteDivoireFlag(doc, flagX, flagY, flagW, flagH);
 
-  y += 3.5;
-  doc.setFont('helvetica', 'normal');
-  doc.text(branding.regionalDirection, margin, y);
-  y += 2.5;
+  y += 2;
 
   if (logoDataUrl) {
     const logoSize = 17;
@@ -861,12 +890,15 @@ function drawOfficialHeader(
         logoSize,
         logoSize,
       );
-      y += logoSize + 1.5;
+      y += logoSize + 1;
     } catch {
-      y += 1;
+      y += 0.5;
     }
   }
 
+  doc.setFont('helvetica', 'normal');
+  doc.text(branding.regionalDirection, margin, y);
+  y += 3;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.text(branding.schoolName, pageWidth / 2, y, { align: 'center' });
@@ -886,23 +918,20 @@ function drawOfficialHeader(
   doc.setFontSize(7);
   doc.text(`CODE : ${branding.schoolCode}`, margin + 2, y);
   doc.text('Statut : Privé', pageWidth - margin - 2, y, { align: 'right' });
-  y += 5;
+  y += 4;
 
-  const boxW = 78;
-  const boxX = (pageWidth - boxW) / 2;
-  doc.setLineWidth(0.35);
-  doc.rect(boxX, y, boxW, 9);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.text('BULLETIN DE NOTES TRIMESTRIEL', pageWidth / 2, y + 4, { align: 'center' });
+  doc.text('BULLETIN DE NOTES TRIMESTRIEL', pageWidth / 2, y, { align: 'center' });
+  y += 4;
   doc.setFontSize(8);
-  doc.text(periodTitle(periodKey), pageWidth / 2, y + 7.5, { align: 'center' });
-  y += 11;
+  doc.text(periodTitle(periodKey), pageWidth / 2, y, { align: 'center' });
+  y += 4;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.text(`Année Scolaire ${academicYear}`, pageWidth / 2, y, { align: 'center' });
-  y += 5;
+  y += 4;
 
   return y;
 }
@@ -1079,9 +1108,9 @@ export async function generateTranlefetReportCardPdf(
     : null;
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 10;
   const activePeriod = options.periodKey;
   const compactFooter = isSingleTrimesterBulletin(activePeriod);
+  const tableWidth = reportCardTableWidth(pageWidth);
 
   let y = drawOfficialHeader(
     doc,
@@ -1092,12 +1121,12 @@ export async function generateTranlefetReportCardPdf(
     logoDataUrl,
   );
 
-  y = drawStudentIdentityTable(doc, studentData, y, margin);
+  y = drawStudentIdentityTable(doc, studentData, y, pageWidth);
 
   if (compactFooter) {
-    y = drawSingleTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+    y = drawSingleTrimesterGradesTable(doc, studentData, y, pageWidth, activePeriod);
   } else {
-    y = drawMultiTrimesterGradesTable(doc, studentData, y, margin, pageWidth, activePeriod);
+    y = drawMultiTrimesterGradesTable(doc, studentData, y, pageWidth, activePeriod);
   }
 
   autoTable(doc, {
@@ -1105,12 +1134,14 @@ export async function generateTranlefetReportCardPdf(
     theme: 'grid',
     styles: { fontSize: 6.5, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
     body: buildResumeTableBody(studentData, options.periodLabel, activePeriod, compactFooter),
-    margin: { left: margin, right: margin },
+    tableWidth,
+    columnStyles: buildColumnStyles([48, 48, 47, 47], tableWidth),
+    margin: reportCardTableMargins(),
   });
 
   y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
 
-  drawMentionsAndSignatures(doc, pageWidth, margin, branding, studentData, y, compactFooter);
+  drawMentionsAndSignatures(doc, pageWidth, REPORT_CARD_MARGIN, branding, studentData, y, compactFooter);
 
   const fileName = `bulletin_${studentData.user.lastName}_${studentData.user.firstName}_${options.periodKey}_${options.academicYear}.pdf`;
   doc.save(fileName);
