@@ -11,6 +11,7 @@ import {
   generateTranlefetReportCardPdf,
   TRANLEFET_DEFAULT_BRANDING,
 } from '@/lib/tranlefetReportCardPdf';
+import { getCurrentAcademicYear, getCurrentTrimester } from '@/lib/academicCalendar';
 
 import {
   FiFileText,
@@ -43,8 +44,8 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
   const queryClient = useQueryClient();
   const { branding, navigationLogoAbsolute, loginLogoAbsolute } = useAppBranding();
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('trim1');
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2024-2025');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(() => getCurrentTrimester());
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => getCurrentAcademicYear());
   const [isGenerating, setIsGenerating] = useState(false);
   /** Après génération PDF : enregistrer en base et rendre visible aux élèves / familles */
   const [publishAfterSave, setPublishAfterSave] = useState(false);
@@ -160,13 +161,26 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
 
   const handleClose = () => {
     setSelectedClass('');
-    setSelectedPeriod('trim1');
-    setSelectedAcademicYear('2024-2025');
+    setSelectedPeriod(getCurrentTrimester());
+    setSelectedAcademicYear(getCurrentAcademicYear());
     setPublishAfterSave(false);
     onClose();
   };
 
   const canGenerate = selectedClass && selectedPeriod && selectedAcademicYear && reportCardData && reportCardData.length > 0;
+
+  const studentsWithoutGrades = useMemo(() => {
+    if (!reportCardData) return 0;
+    return reportCardData.filter(
+      (s: { grades?: unknown[]; courseAverages?: Record<string, { average?: number }> }) => {
+        const gradeCount = s.grades?.length ?? 0;
+        const hasAverage = s.courseAverages
+          ? Object.values(s.courseAverages).some((c) => (c.average ?? 0) > 0)
+          : false;
+        return gradeCount === 0 && !hasAverage;
+      },
+    ).length;
+  }, [reportCardData]);
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Génération de Bulletins" size="lg">
@@ -251,6 +265,12 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
             <p className="text-sm text-gray-700">
               {reportCardData.length} élève(s) trouvé(s) dans cette classe. Les bulletins seront générés pour tous les élèves.
             </p>
+            {studentsWithoutGrades > 0 && (
+              <p className="text-sm text-amber-800 mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
+                {studentsWithoutGrades} élève(s) sans note pour <strong>{periodLabel}</strong> ({selectedAcademicYear}).
+                Vérifiez l&apos;année et le trimestre, ou rattachez les notes au bon trimestre lors de la saisie.
+              </p>
+            )}
             {selectedClass && classes && (
               <p className="text-sm text-gray-600 mt-2">
                 Classe: {classes.find((c: any) => c.id === selectedClass)?.name}

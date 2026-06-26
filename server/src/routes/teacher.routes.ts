@@ -14,6 +14,10 @@ import {
   gradeToPayload,
   workflowStatusLabel,
 } from '../utils/academic-change-request.util';
+import {
+  getCurrentAcademicYear,
+  inferReportingPeriod,
+} from '../utils/report-card.util';
 
 const router = express.Router();
 
@@ -277,6 +281,7 @@ router.post(
         maxScore,
         coefficient,
         date,
+        reportingPeriod,
         comments,
       } = req.body;
 
@@ -298,6 +303,12 @@ router.post(
         return res.status(403).json({ error: 'Vous n\'enseignez pas ce cours' });
       }
 
+      const gradeDate = date ? new Date(date) : new Date();
+      const resolvedReportingPeriod =
+        typeof reportingPeriod === 'string' && reportingPeriod.trim()
+          ? reportingPeriod.trim()
+          : inferReportingPeriod(gradeDate, getCurrentAcademicYear(gradeDate));
+
       const grade = await prisma.grade.create({
         data: {
           studentId,
@@ -308,7 +319,8 @@ router.post(
           score: parseFloat(score),
           maxScore: parseFloat(maxScore) || 20,
           coefficient: parseFloat(coefficient) || 1,
-          date: date ? new Date(date) : new Date(),
+          date: gradeDate,
+          reportingPeriod: resolvedReportingPeriod,
           comments: comments ?? null,
         },
         include: {

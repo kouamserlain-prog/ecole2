@@ -33,6 +33,13 @@ import {
   normalizeEvaluationType,
   type EvaluationTypeValue,
 } from '@/lib/evaluationTypes';
+import { getCurrentTrimester } from '@/lib/academicCalendar';
+
+const REPORTING_PERIOD_OPTIONS = [
+  { value: 'trim1', label: 'Trimestre 1' },
+  { value: 'trim2', label: 'Trimestre 2' },
+  { value: 'trim3', label: 'Trimestre 3' },
+];
 
 interface GradesManagerProps {
   searchQuery?: string;
@@ -385,6 +392,7 @@ const AddGradeModal = ({ isOpen, onClose, courseId, courseData, grade }: AddGrad
     date: grade?.date 
       ? new Date(grade.date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
+    reportingPeriod: grade?.reportingPeriod || getCurrentTrimester(),
     comments: grade?.comments || '',
   });
 
@@ -446,6 +454,7 @@ const AddGradeModal = ({ isOpen, onClose, courseId, courseData, grade }: AddGrad
       maxScore: parseFloat(formData.maxScore),
       coefficient: parseFloat(formData.coefficient),
       date: formData.date,
+      reportingPeriod: formData.reportingPeriod,
       ...(formData.comments && { comments: formData.comments }),
     };
 
@@ -579,6 +588,29 @@ const AddGradeModal = ({ isOpen, onClose, courseId, courseData, grade }: AddGrad
             required
           />
         </div>
+
+        {!isEditMode && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Trimestre bulletin *
+            </label>
+            <select
+              value={formData.reportingPeriod}
+              onChange={(e) => setFormData({ ...formData, reportingPeriod: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              required
+            >
+              {REPORTING_PERIOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Trimestre auquel cette note sera rattachée sur le bulletin (indépendamment de la date de saisie).
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">

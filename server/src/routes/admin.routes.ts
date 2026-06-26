@@ -10,7 +10,7 @@ import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/
 import prisma from '../utils/prisma';
 import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
 import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
-import { computeClassBulletinRanks, enrichReportCardsWithTermHistory } from '../utils/report-card.util';
+import { computeClassBulletinRanks, enrichReportCardsWithTermHistory, getCurrentAcademicYear, getPeriodDates, getPeriodLabel, gradePeriodWhere, inferReportingPeriod } from '../utils/report-card.util';
 import {
   parseGradingCoefficient,
   parseWeeklyHours,
@@ -1013,8 +1013,15 @@ router.post(
         maxScore,
         coefficient,
         date,
+        reportingPeriod,
         comments,
       } = req.body;
+
+      const gradeDate = date ? new Date(date) : new Date();
+      const resolvedReportingPeriod =
+        typeof reportingPeriod === 'string' && reportingPeriod.trim()
+          ? reportingPeriod.trim()
+          : inferReportingPeriod(gradeDate, getCurrentAcademicYear(gradeDate));
 
       const grade = await prisma.grade.create({
         data: {
@@ -1026,7 +1033,8 @@ router.post(
           score: parseFloat(score),
           maxScore: parseFloat(maxScore) || 20,
           coefficient: parseFloat(coefficient) || 1,
-          date: date ? new Date(date) : new Date(),
+          date: gradeDate,
+          reportingPeriod: resolvedReportingPeriod,
           comments: comments ?? null,
         },
         include: {
@@ -4764,10 +4772,7 @@ router.get('/report-cards/generate-data', async (req, res) => {
         const grades = await prisma.grade.findMany({
           where: {
             studentId: student.id,
-            date: {
-              gte: periodDates.start,
-              lte: periodDates.end,
-            },
+            ...gradePeriodWhere(period as string, academicYear as string),
           },
           include: {
             course: {
@@ -4910,10 +4915,7 @@ router.post('/report-cards/save', async (req: AuthRequest, res) => {
         const grades = await prisma.grade.findMany({
           where: {
             studentId: student.id,
-            date: {
-              gte: periodDates.start,
-              lte: periodDates.end,
-            },
+            ...gradePeriodWhere(period, academicYear),
           },
         });
 
@@ -4946,10 +4948,7 @@ router.post('/report-cards/save', async (req: AuthRequest, res) => {
             const sGrades = await prisma.grade.findMany({
               where: {
                 studentId: s.id,
-                date: {
-                  gte: periodDates.start,
-                  lte: periodDates.end,
-                },
+                ...gradePeriodWhere(period, academicYear),
               },
             });
             let sTotal = 0;
@@ -5321,52 +5320,6 @@ router.put('/class-councils/:id', async (req, res) => {
     res.status(500).json({ error: error.message || 'Erreur serveur' });
   }
 });
-
-// Fonctions utilitaires
-function getPeriodDates(period: string, academicYear: string): { start: Date; end: Date } {
-  const [yearStart, yearEnd] = academicYear.split('-').map(Number);
-  let start: Date;
-  let end: Date;
-
-  switch (period) {
-    case 'trim1':
-      start = new Date(yearStart, 8, 1); // Septembre
-      end = new Date(yearStart, 10, 30); // Novembre
-      break;
-    case 'trim2':
-      start = new Date(yearStart, 11, 1); // Décembre
-      end = new Date(yearEnd, 1, 28); // Février
-      break;
-    case 'trim3':
-      start = new Date(yearEnd, 2, 1); // Mars
-      end = new Date(yearEnd, 6, 30); // Juillet
-      break;
-    case 'sem1':
-      start = new Date(yearStart, 8, 1); // Septembre
-      end = new Date(yearEnd, 1, 28); // Février
-      break;
-    case 'sem2':
-      start = new Date(yearEnd, 2, 1); // Mars
-      end = new Date(yearEnd, 6, 30); // Juillet
-      break;
-    default:
-      start = new Date(yearStart, 8, 1);
-      end = new Date(yearEnd, 6, 30);
-  }
-
-  return { start, end };
-}
-
-function getPeriodLabel(period: string): string {
-  const labels: Record<string, string> = {
-    trim1: 'Trimestre 1',
-    trim2: 'Trimestre 2',
-    trim3: 'Trimestre 3',
-    sem1: 'Semestre 1',
-    sem2: 'Semestre 2',
-  };
-  return labels[period] || period;
-}
 
 // ========== GESTION DES FRAIS DE SCOLARITÉ ==========
 

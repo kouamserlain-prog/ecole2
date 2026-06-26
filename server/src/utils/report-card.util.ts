@@ -23,6 +23,29 @@ export type ReportCardClassStats = {
   annualMax?: number;
 };
 
+const TRIMESTER_KEYS = ['trim1', 'trim2', 'trim3'] as const;
+
+function endOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+/** Année scolaire courante (ex. 2025-2026 à partir de septembre 2025). */
+export function getCurrentAcademicYear(reference = new Date()): string {
+  const month = reference.getMonth();
+  const year = reference.getFullYear();
+  const startYear = month >= 8 ? year : year - 1;
+  return `${startYear}-${startYear + 1}`;
+}
+
+/** Trimestre déduit d'une date dans une année scolaire donnée. */
+export function inferReportingPeriod(date: Date, academicYear: string): string | null {
+  for (const period of TRIMESTER_KEYS) {
+    const { start, end } = getPeriodDates(period, academicYear);
+    if (date >= start && date <= end) return period;
+  }
+  return null;
+}
+
 export function getPeriodDates(period: string, academicYear: string): { start: Date; end: Date } {
   const parts = academicYear.split('-').map(Number);
   const yearStart = parts[0];
@@ -33,30 +56,41 @@ export function getPeriodDates(period: string, academicYear: string): { start: D
   switch (period) {
     case 'trim1':
       start = new Date(yearStart, 8, 1);
-      end = new Date(yearStart, 10, 30);
+      end = endOfDay(new Date(yearStart, 10, 30));
       break;
     case 'trim2':
       start = new Date(yearStart, 11, 1);
-      end = new Date(yearEnd, 1, 28);
+      end = endOfDay(new Date(yearEnd, 1, 28));
       break;
     case 'trim3':
       start = new Date(yearEnd, 2, 1);
-      end = new Date(yearEnd, 6, 30);
+      end = endOfDay(new Date(yearEnd, 5, 30));
       break;
     case 'sem1':
       start = new Date(yearStart, 8, 1);
-      end = new Date(yearEnd, 1, 28);
+      end = endOfDay(new Date(yearEnd, 1, 28));
       break;
     case 'sem2':
       start = new Date(yearEnd, 2, 1);
-      end = new Date(yearEnd, 6, 30);
+      end = endOfDay(new Date(yearEnd, 5, 30));
       break;
     default:
       start = new Date(yearStart, 8, 1);
-      end = new Date(yearEnd, 6, 30);
+      end = endOfDay(new Date(yearEnd, 5, 30));
   }
 
   return { start, end };
+}
+
+/** Filtre Prisma : notes par dates de période OU rattachement explicite au trimestre. */
+export function gradePeriodWhere(period: string, academicYear: string) {
+  const { start, end } = getPeriodDates(period, academicYear);
+  if (TRIMESTER_KEYS.includes(period as (typeof TRIMESTER_KEYS)[number])) {
+    return {
+      OR: [{ date: { gte: start, lte: end } }, { reportingPeriod: period }],
+    };
+  }
+  return { date: { gte: start, lte: end } };
 }
 
 export function getPeriodLabel(period: string): string {
@@ -76,16 +110,14 @@ export function getPeriodLabel(period: string): string {
 export async function computeStudentBulletinAverage(
   studentId: string,
   classId: string,
-  periodDates: { start: Date; end: Date }
+  period: string,
+  academicYear: string,
 ): Promise<number> {
   const [grades, classCourses] = await Promise.all([
     prisma.grade.findMany({
       where: {
         studentId,
-        date: {
-          gte: periodDates.start,
-          lte: periodDates.end,
-        },
+        ...gradePeriodWhere(period, academicYear),
       },
     }),
     prisma.course.findMany({
@@ -148,7 +180,7 @@ export async function computeClassBulletinRanks(
   const withAvg = await Promise.all(
     students.map(async (s) => ({
       studentId: s.id,
-      average: await computeStudentBulletinAverage(s.id, classId, periodDates),
+      average: await computeStudentBulletinAverage(s.id, classId, periodKey, academicYear),
     }))
   );
 
@@ -300,7 +332,7 @@ export async function enrichReportCardsWithTermHistory(
       const grades = await prisma.grade.findMany({
         where: {
           studentId,
-          date: { gte: periodDates.start, lte: periodDates.end },
+          ...gradePeriodWhere(term, academicYear),
         },
         select: {
           courseId: true,

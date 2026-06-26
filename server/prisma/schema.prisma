@@ -1595,6 +1595,8 @@ model Grade {
   score           Float
   maxScore        Float          @default(20)
   coefficient     Float          @default(1)
+  /// Trimestre de rattachement bulletin (trim1 | trim2 | trim3) — prioritaire sur la date seule
+  reportingPeriod String?
   date            DateTime       @default(now())
   comments        String?
   createdAt       DateTime       @default(now())

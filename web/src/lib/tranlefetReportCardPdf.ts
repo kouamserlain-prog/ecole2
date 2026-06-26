@@ -125,48 +125,45 @@ type DisciplineRow = {
 
 /** Modèle officiel Tranlefet — 1er / 2ème trimestre (cf. bulletin papier). */
 const DISCIPLINE_TEMPLATE: DisciplineRow[] = [
-  { label: 'Français', courseMatch: /^français|francais/i, showProfessor: true },
+  { label: 'Français', courseMatch: /^(français|francais)\b/i, showProfessor: true },
   {
     label: 'Expression orale',
     indent: true,
-    courseMatch: /français|francais/i,
-    subGradeMatch: /oral/i,
+    courseMatch: /expression\s*[-–]?\s*orale|\(expression\s*[-–]?\s*oral/i,
     coefficient: 1,
   },
   {
     label: 'Orthographe -\ngrammaire',
     indent: true,
-    courseMatch: /français|francais/i,
-    subGradeMatch: /ortho|grammaire/i,
+    courseMatch: /orthographe|grammaire/i,
     coefficient: 1,
   },
   {
     label: 'Expression écrite',
     indent: true,
-    courseMatch: /français|francais/i,
-    subGradeMatch: /écrit|ecrit|rédaction|redaction/i,
+    courseMatch: /composition|expression\s*écrite|expression\s*ecrite/i,
     coefficient: 1,
   },
-  { label: 'Anglais', courseMatch: /^anglais|english/i, showProfessor: true, coefficient: 2 },
+  { label: 'Anglais', courseMatch: /^anglais\b|english/i, showProfessor: true, coefficient: 2 },
   {
     label: 'Histoire – géographie',
-    courseMatch: /^histoire|histoire[\s-–]+géographie|histoire[\s-–]+geographie|^hg$/i,
+    courseMatch: /^histoire|histoire\s*[-–]\s*géographie|histoire\s*[-–]\s*geographie|^hg$/i,
     showProfessor: true,
     coefficient: 2,
   },
   {
     label: 'BILAN LETTRES',
     isBilan: true,
-    courseMatch: /français|francais|anglais|histoire|géographie|geographie|hg|lettres/i,
+    courseMatch: /français|francais|anglais|english|histoire|géographie|geographie|\bhg\b|lettres/i,
   },
   { label: 'Mathématiques', courseMatch: /^math/i, showProfessor: true, coefficient: 3 },
   {
     label: 'Physique – chimie',
-    courseMatch: /^physique|physique[\s-–]+chimie|^pc$/i,
+    courseMatch: /^physique|physique\s*[-–]\s*chimie|^pc$/i,
     showProfessor: true,
     coefficient: 2,
   },
-  { label: 'SVT', courseMatch: /^svt|sciences?\s+de\s+la\s+vie/i, showProfessor: true, coefficient: 2 },
+  { label: 'SVT', courseMatch: /^svt\b|sciences?\s+de\s+la\s+vie|\(svt\)/i, showProfessor: true, coefficient: 2 },
   {
     label: 'BILAN SCIENCES',
     isBilan: true,
@@ -241,7 +238,9 @@ export function pickPrimaryCourseForRow(
   if (exact) return exact;
 
   const labelRules: Array<{ test: (n: string) => boolean; prefer: (c: (typeof matched)[0]) => boolean }> = [
-    { test: (n) => /^fran/.test(n), prefer: (c) => /^fran/i.test(c.name) },
+    { test: (n) => n.includes('composition') || n.includes('écrit') || n.includes('ecrit'), prefer: (c) => /composition|écrit|ecrit/i.test(c.name) && !/orale|oral/i.test(c.name) },
+    { test: (n) => n.includes('orthographe') || n.includes('grammaire'), prefer: (c) => /orthographe|grammaire/i.test(c.name) },
+    { test: (n) => n.includes('oral'), prefer: (c) => /expression\s*[-–]?\s*orale|oral/i.test(c.name) && !/composition/i.test(c.name) },
     { test: (n) => n.includes('anglais'), prefer: (c) => /anglais|english/i.test(c.name) },
     { test: (n) => n.includes('histoire'), prefer: (c) => /histoire|geographie|géographie|^hg$/i.test(c.name) },
     { test: (n) => n.includes('math'), prefer: (c) => /^math/i.test(c.name) },
