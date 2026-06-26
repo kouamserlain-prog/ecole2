@@ -81,7 +81,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
       schoolCode:
         branding.schoolCode?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolCode,
       principalName: branding.schoolPrincipal?.trim() || '',
-      studiesDirectorName: '',
+      studiesDirectorName: branding.studiesDirectorName?.trim() || '',
       logoAbsoluteUrl: navigationLogoAbsolute || loginLogoAbsolute || null,
       city: branding.schoolAddress?.includes('Bouaké')
         ? 'Bouaké'

@@ -41,6 +41,20 @@ function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
   return 'JPEG';
 }
 
+/** Drapeau de la Côte d'Ivoire (bandes verticales orange, blanc, vert). */
+function drawCoteDivoireFlag(doc: jsPDF, x: number, y: number, width: number, height: number): void {
+  const stripeW = width / 3;
+  doc.setFillColor(255, 130, 0);
+  doc.rect(x, y, stripeW, height, 'F');
+  doc.setFillColor(255, 255, 255);
+  doc.rect(x + stripeW, y, stripeW, height, 'F');
+  doc.setFillColor(0, 154, 68);
+  doc.rect(x + stripeW * 2, y, stripeW, height, 'F');
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.12);
+  doc.rect(x, y, width, height, 'S');
+}
+
 export const TRANLEFET_DEFAULT_BRANDING: TranlefetBranding = {
   schoolName: 'COLLEGE PRIVE TRANLEFET DE BOUAKÉ',
   schoolPhone: '07 88 94 87 12',
@@ -59,6 +73,8 @@ export type TermHistoryEntry = {
   average: number;
   rank: number;
   byCourse: Record<string, { average: number; rank: number }>;
+  bilanLettres?: { average: number; rank: number };
+  bilanSciences?: { average: number; rank: number };
 };
 
 export type ReportCardStudentPayload = {
@@ -328,6 +344,30 @@ function termCourseRank(
   return studentData.termHistory?.[term]?.byCourse[courseId]?.rank;
 }
 
+function resolveBilanRank(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  term: (typeof TRIM_KEYS)[number],
+): number | undefined {
+  if (!row.isBilan) return undefined;
+  const entry = studentData.termHistory?.[term];
+  if (row.label === 'BILAN LETTRES') return entry?.bilanLettres?.rank;
+  if (row.label === 'BILAN SCIENCES') return entry?.bilanSciences?.rank;
+  return undefined;
+}
+
+function resolveBilanAverage(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  term: (typeof TRIM_KEYS)[number],
+): number | undefined {
+  if (!row.isBilan) return undefined;
+  const entry = studentData.termHistory?.[term];
+  if (row.label === 'BILAN LETTRES') return entry?.bilanLettres?.average;
+  if (row.label === 'BILAN SCIENCES') return entry?.bilanSciences?.average;
+  return undefined;
+}
+
 function resolveRowValues(
   studentData: ReportCardStudentPayload,
   row: DisciplineRow,
@@ -370,6 +410,10 @@ function resolveRowValues(
       return { avg: 0 };
     }
     if (row.isBilan && row.courseMatch) {
+      const fromServer = resolveBilanAverage(studentData, row, term);
+      if (fromServer !== undefined && fromServer > 0) {
+        return { avg: fromServer, rank: resolveBilanRank(studentData, row, term) };
+      }
       const bilanCourses = findCourses(courses, row.courseMatch);
       const avgs = TRIM_KEYS.map((t) => {
         const values = bilanCourses
@@ -378,7 +422,7 @@ function resolveRowValues(
         return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
       });
       const idx = TRIM_KEYS.indexOf(term);
-      return { avg: avgs[idx] ?? 0 };
+      return { avg: avgs[idx] ?? 0, rank: resolveBilanRank(studentData, row, term) };
     }
     if (courseIds.length === 1) {
       const avg = termCourseAverage(studentData, term, courseIds[0], activePeriod);
@@ -418,7 +462,12 @@ function resolveRowValues(
           ? courseAverageFromPayload(studentData, courseIds[0])
           : 0,
     ),
-    rang: fmtRank(active.rank),
+    rang: row.isBilan
+      ? (() => {
+          const r = resolveBilanRank(studentData, row, activeTerm);
+          return r && r > 0 ? `RANG : ${r}` : active.avg > 0 ? 'RANG :' : '';
+        })()
+      : fmtRank(active.rank),
     prof,
   };
 }
@@ -457,11 +506,16 @@ function resolveSingleTrimRowValues(
   if (row.label === 'CONDUITE') {
     moyNum = studentData.conduct?.byTerm?.[activeTerm] ?? studentData.conduct?.average ?? 0;
   } else if (row.isBilan) {
-    const bilanCourses = findCourses(courses, row.courseMatch);
-    const values = bilanCourses
-      .map((c) => termCourseAverage(studentData, activeTerm, c.id, activePeriod))
-      .filter((v) => v > 0);
-    moyNum = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    const fromServer = resolveBilanAverage(studentData, row, activeTerm);
+    if (fromServer !== undefined && fromServer > 0) {
+      moyNum = fromServer;
+    } else {
+      const bilanCourses = findCourses(courses, row.courseMatch);
+      const values = bilanCourses
+        .map((c) => termCourseAverage(studentData, activeTerm, c.id, activePeriod))
+        .filter((v) => v > 0);
+      moyNum = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    }
   } else if (row.subGradeMatch) {
     const course = pickPrimaryCourseForRow(row, courses);
     if (course && activePeriod === activeTerm) {
@@ -477,10 +531,14 @@ function resolveSingleTrimRowValues(
   const coef = resolveCoefficient(row, courses);
   const moy = fmtNote(moyNum);
   const total = moyNum > 0 && coef > 0 ? (moyNum * coef).toFixed(2) : '';
-  const rang =
-    row.isBilan && moyNum > 0
-      ? `RANG : ${multi.rang || '…'}`
-      : multi.rang || (row.isBilan ? 'RANG :' : '');
+  const bilanRank = row.isBilan ? resolveBilanRank(studentData, row, activeTerm) : undefined;
+  const rang = row.isBilan
+    ? bilanRank && bilanRank > 0
+      ? `RANG : ${bilanRank}`
+      : moyNum > 0
+        ? 'RANG :'
+        : ''
+    : multi.rang || '';
 
   return {
     moy,
@@ -494,6 +552,58 @@ function resolveSingleTrimRowValues(
 
 function totalTemplateCoefficients(): number {
   return DISCIPLINE_TEMPLATE.reduce((sum, row) => sum + (row.coefficient ?? 0), 0);
+}
+
+/** Moyenne générale, somme des coef. et total points (moy × coef) pour la ligne TOTAUX. */
+function computeTrimesterTableTotals(
+  studentData: ReportCardStudentPayload,
+  activePeriod: string,
+): { moyenne: number; coefSum: number; totalSum: number } {
+  let coefSum = 0;
+  let totalSum = 0;
+
+  for (const row of DISCIPLINE_TEMPLATE) {
+    if (row.isBilan) continue;
+    const values = resolveSingleTrimRowValues(studentData, row, activePeriod);
+    const coef = Number(values.coef);
+    const lineTotal = Number(values.total);
+    if (!Number.isFinite(coef) || coef <= 0) continue;
+    if (!Number.isFinite(lineTotal) || lineTotal <= 0) continue;
+    coefSum += coef;
+    totalSum += lineTotal;
+  }
+
+  const periodKey = ['trim1', 'trim2', 'trim3'].includes(activePeriod)
+    ? (activePeriod as 'trim1' | 'trim2' | 'trim3')
+    : null;
+  const fromServer =
+    (periodKey ? studentData.termHistory?.[periodKey]?.average : undefined) ??
+    studentData.average ??
+    0;
+
+  const moyenne =
+    fromServer > 0 ? fromServer : coefSum > 0 ? totalSum / coefSum : 0;
+
+  return {
+    moyenne,
+    coefSum: coefSum > 0 ? coefSum : totalTemplateCoefficients(),
+    totalSum,
+  };
+}
+
+function resolvePeriodAverage(
+  studentData: ReportCardStudentPayload,
+  activePeriod: string,
+): number {
+  const periodKey = ['trim1', 'trim2', 'trim3'].includes(activePeriod)
+    ? (activePeriod as 'trim1' | 'trim2' | 'trim3')
+    : null;
+  const fromServer =
+    (periodKey ? studentData.termHistory?.[periodKey]?.average : undefined) ??
+    studentData.average ??
+    0;
+  if (fromServer > 0) return fromServer;
+  return computeTrimesterTableTotals(studentData, activePeriod).moyenne;
 }
 
 function drawStudentIdentityTable(
@@ -587,11 +697,12 @@ function drawSingleTrimesterGradesTable(
     ];
   });
 
+  const totals = computeTrimesterTableTotals(studentData, activePeriod);
   tableBody.push([
     { content: 'TOTAUX', styles: { fontStyle: 'bold' } },
-    '',
-    String(totalTemplateCoefficients()),
-    '',
+    fmtNote(totals.moyenne),
+    String(totals.coefSum),
+    totals.totalSum > 0 ? totals.totalSum.toFixed(2) : '',
     '',
     '',
     '',
@@ -724,11 +835,19 @@ function drawOfficialHeader(
   y += 3.5;
   doc.text('ET DE L\'ALPHABETISATION', margin, y);
   doc.setFont('helvetica', 'italic');
-  doc.text('Union – Discipline – Travail', pageWidth - margin, y, { align: 'right' });
+  const mottoY = y;
+  doc.text('Union – Discipline – Travail', pageWidth - margin, mottoY, { align: 'right' });
+
+  const flagW = 14;
+  const flagH = 9;
+  const flagX = pageWidth - margin - flagW;
+  const flagY = mottoY + 2.5;
+  drawCoteDivoireFlag(doc, flagX, flagY, flagW, flagH);
+
   y += 3.5;
   doc.setFont('helvetica', 'normal');
   doc.text(branding.regionalDirection, margin, y);
-  y += 4;
+  y += 2.5;
 
   if (logoDataUrl) {
     const logoSize = 17;
@@ -742,9 +861,9 @@ function drawOfficialHeader(
         logoSize,
         logoSize,
       );
-      y += logoSize + 2;
+      y += logoSize + 1.5;
     } catch {
-      /* logo illisible — en-tête texte seul */
+      y += 1;
     }
   }
 
@@ -806,9 +925,7 @@ function buildResumeTableBody(
   compact: boolean,
 ): RowInput[] {
   const stats = studentData.classStats;
-  const termAvg =
-    studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.average ??
-    studentData.average;
+  const termAvg = resolvePeriodAverage(studentData, activePeriod);
   const termRank =
     studentData.termHistory?.[activePeriod as 'trim1' | 'trim2' | 'trim3']?.rank ?? studentData.rank;
   const annual = studentData.annualSummary;
@@ -828,7 +945,7 @@ function buildResumeTableBody(
     ],
     [
       { content: 'Moyenne Trimestrielle', styles: { fontStyle: 'bold' } },
-      termAvg !== undefined ? `${fmtNote(termAvg)} /20` : '',
+      termAvg > 0 ? `${fmtNote(termAvg)} /20` : '',
       { content: 'Rang', styles: { fontStyle: 'bold' } },
       termRank && studentData.totalStudents ? `${termRank} sur ${studentData.totalStudents}` : '',
     ],
@@ -919,22 +1036,13 @@ function drawMentionsAndSignatures(
   }
 
   const sigY = y + 2;
-  const sigLabels = compact
-    ? [
-        'Nom/Signature du\nprofesseur principal',
-        branding.principalName
-          ? `Chef d'Etablissement\n${branding.principalName}`
-          : 'Chef d\'Etablissement',
-      ]
-    : [
-        'Nom/Signature du\nprofesseur principal',
-        branding.principalName
-          ? `Chef d'Etablissement\n${branding.principalName}`
-          : 'Chef d\'Etablissement',
-        branding.studiesDirectorName
-          ? `Le Directeur des Etudes\n${branding.studiesDirectorName}`
-          : 'Le Directeur des Etudes',
-      ];
+  const directorLabel = branding.studiesDirectorName
+    ? `Directeur des Etudes\n${branding.studiesDirectorName}`
+    : 'Directeur des Etudes';
+  const sigLabels = [
+    'Nom/Signature du\nprofesseur principal',
+    directorLabel,
+  ];
   const colCount = sigLabels.length;
   const colW = (pageWidth - margin * 2) / colCount;
 

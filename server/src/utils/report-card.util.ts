@@ -6,6 +6,8 @@ export type TermHistoryEntry = {
   average: number;
   rank: number;
   byCourse: Record<string, { average: number; rank: number }>;
+  bilanLettres?: { average: number; rank: number };
+  bilanSciences?: { average: number; rank: number };
 };
 
 export type ReportCardTermHistory = {
@@ -275,6 +277,35 @@ function rankCourseAverages(
 
 const TRIMESTER_PERIODS = ['trim1', 'trim2', 'trim3'] as const;
 
+const BILAN_LETTRES_COURSE_MATCH = /français|francais|anglais|english|histoire|géographie|geographie|\bhg\b|lettres/i;
+const BILAN_SCIENCES_COURSE_MATCH = /math|physique|chimie|svt|science/i;
+
+function bilanAverageFromSnapshot(
+  snap: { courseAverages: Record<string, CourseAverageEntry> },
+  courses: Array<{ id: string; name: string }>,
+  match: RegExp,
+): number {
+  const matchedIds = courses.filter((c) => match.test(c.name)).map((c) => c.id);
+  const values = matchedIds
+    .map((id) => snap.courseAverages[id]?.average ?? 0)
+    .filter((v) => v > 0);
+  return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+}
+
+function rankBilanAverages(
+  snapshots: Array<{ studentId: string; courseAverages: Record<string, CourseAverageEntry> }>,
+  courses: Array<{ id: string; name: string }>,
+  match: RegExp,
+): Map<string, number> {
+  const rows = snapshots
+    .map((s) => ({
+      id: s.studentId,
+      average: bilanAverageFromSnapshot(s, courses, match),
+    }))
+    .filter((r) => r.average > 0);
+  return rankByAverage(rows);
+}
+
 function conductPeriodLabel(period: (typeof TRIMESTER_PERIODS)[number]): string {
   const map: Record<(typeof TRIMESTER_PERIODS)[number], string> = {
     trim1: 'Trimestre 1',
@@ -307,7 +338,7 @@ export async function enrichReportCardsWithTermHistory(
 
   const classCourses = await prisma.course.findMany({
     where: { classId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   const courseIds = classCourses.map((c) => c.id);
   const studentIds = reportCards.map((r) => r.studentId);
@@ -392,6 +423,8 @@ export async function enrichReportCardsWithTermHistory(
     for (const term of TRIMESTER_PERIODS) {
       const snapshots = termSnapshots[term];
       const courseRanks = rankCourseAverages(snapshots, courseIds);
+      const lettresRanks = rankBilanAverages(snapshots, classCourses, BILAN_LETTRES_COURSE_MATCH);
+      const sciencesRanks = rankBilanAverages(snapshots, classCourses, BILAN_SCIENCES_COURSE_MATCH);
       const overallRanks = rankByAverage(
         snapshots.map((s) => ({ id: s.studentId, average: s.overallAverage })),
       );
@@ -407,10 +440,21 @@ export async function enrichReportCardsWithTermHistory(
         }
       });
 
+      const lettresAvg = bilanAverageFromSnapshot(snap, classCourses, BILAN_LETTRES_COURSE_MATCH);
+      const sciencesAvg = bilanAverageFromSnapshot(snap, classCourses, BILAN_SCIENCES_COURSE_MATCH);
+      const lettresRank = lettresRanks.get(card.studentId);
+      const sciencesRank = sciencesRanks.get(card.studentId);
+
       termHistory[term] = {
         average: snap.overallAverage,
         rank: overallRanks.get(card.studentId) ?? 0,
         byCourse,
+        ...(lettresAvg > 0 && lettresRank !== undefined
+          ? { bilanLettres: { average: lettresAvg, rank: lettresRank } }
+          : {}),
+        ...(sciencesAvg > 0 && sciencesRank !== undefined
+          ? { bilanSciences: { average: sciencesAvg, rank: sciencesRank } }
+          : {}),
       };
     }
 
