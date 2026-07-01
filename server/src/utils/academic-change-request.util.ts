@@ -46,25 +46,71 @@ export async function resolveStudentClassId(studentId: string): Promise<string |
   return student?.classId ?? null;
 }
 
+const DUPLICATE_PENDING_MESSAGE =
+  'Une demande de modification est déjà en cours pour cet élément.';
+
+function throwDuplicatePending(): never {
+  throw Object.assign(new Error(DUPLICATE_PENDING_MESSAGE), { statusCode: 409 });
+}
+
 async function assertNoDuplicatePending(params: {
   target: AcademicChangeTarget;
   kind: AcademicChangeKind;
   gradeId?: string | null;
   reportCardId?: string | null;
+  studentId?: string;
 }) {
   const where: Prisma.AcademicChangeRequestWhereInput = {
     status: { in: ACTIVE_STATUSES },
     target: params.target,
     kind: params.kind,
   };
-  if (params.gradeId) where.gradeId = params.gradeId;
-  if (params.reportCardId) where.reportCardId = params.reportCardId;
+  if (params.gradeId) {
+    where.gradeId = params.gradeId;
+  } else if (params.reportCardId) {
+    where.reportCardId = params.reportCardId;
+  } else if (params.studentId) {
+    where.studentId = params.studentId;
+  }
 
   const existing = await prisma.academicChangeRequest.findFirst({ where });
   if (existing) {
-    throw Object.assign(new Error('Une demande de modification est déjà en cours pour cet élément.'), {
-      statusCode: 409,
+    throwDuplicatePending();
+  }
+}
+
+async function assertNoDuplicateReportCardPending(params: {
+  kind: AcademicChangeKind;
+  reportCardId?: string | null;
+  studentId: string;
+  payload: ReportCardPayload;
+}) {
+  if (params.reportCardId) {
+    await assertNoDuplicatePending({
+      target: 'REPORT_CARD',
+      kind: params.kind,
+      reportCardId: params.reportCardId,
     });
+    return;
+  }
+
+  const pending = await prisma.academicChangeRequest.findMany({
+    where: {
+      status: { in: ACTIVE_STATUSES },
+      target: 'REPORT_CARD',
+      kind: params.kind,
+      studentId: params.studentId,
+      reportCardId: null,
+    },
+  });
+
+  const duplicateForSamePeriod = pending.some((row) => {
+    const p = row.payload as ReportCardPayload;
+    return p.period === params.payload.period && p.academicYear === params.payload.academicYear;
+  });
+
+  if (duplicateForSamePeriod) {
+    throwDuplicatePending();
   }
 }
 
@@ -106,6 +152,7 @@ export async function createGradeChangeRequest(params: {
     target: 'GRADE',
     kind: params.kind,
     gradeId: params.gradeId,
+    studentId: params.gradeId ? undefined : params.studentId,
   });
 
   const classId = await resolveStudentClassId(params.studentId);
@@ -135,10 +182,11 @@ export async function createReportCardChangeRequest(params: {
   payload: ReportCardPayload;
   previousPayload?: ReportCardPayload | null;
 }) {
-  await assertNoDuplicatePending({
-    target: 'REPORT_CARD',
+  await assertNoDuplicateReportCardPending({
     kind: params.kind,
     reportCardId: params.reportCardId,
+    studentId: params.studentId,
+    payload: params.payload,
   });
 
   const classId = await resolveStudentClassId(params.studentId);

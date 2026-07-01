@@ -944,6 +944,8 @@ model Student {
   faceDescriptor  Json?
   faceEnrolledAt  DateTime?
   dateOfBirth     DateTime
+  birthPlace      String?
+  isRepeating     Boolean          @default(false)
   gender          Gender
   address         String?
   emergencyContact String?
@@ -2437,6 +2439,8 @@ model Admission {
   email            String
   phone            String?
   dateOfBirth      DateTime
+  birthPlace       String?
+  isRepeating      Boolean         @default(false)
   gender           Gender
 
   desiredLevel     String

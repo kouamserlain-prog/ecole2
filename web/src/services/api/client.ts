@@ -18,7 +18,7 @@ const API_URL = (() => {
   const n = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '');
   if (n?.startsWith('http')) return n;
   if (typeof window !== 'undefined') {
-    return n || (process.env.VERCEL ? '/api' : 'http://localhost:5000/api');
+    return n || '/api';
   }
   if (process.env.VERCEL_URL) {
     const path = n?.startsWith('/') ? n : '/api';

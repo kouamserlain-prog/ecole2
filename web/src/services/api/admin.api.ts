@@ -72,6 +72,14 @@ export const adminApi = {
     const response = await api.put(`/admin/students/${id}`, data);
     return response.data;
   },
+  uploadStudentAvatar: async (studentId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const response = await api.post(`/admin/students/${studentId}/avatar`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data as { url: string };
+  },
   deleteStudent: async (id: string) => {
     const response = await api.delete(`/admin/students/${id}`);
     return response.data;
@@ -1206,7 +1214,18 @@ export const adminApi = {
   // Report Cards
   generateReportCardData: async (params: { classId: string; period: string; academicYear: string }) => {
     const response = await api.get('/admin/report-cards/generate-data', { params });
-    return response.data;
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return { students: data, logoDataUrl: null as string | null };
+    }
+    if (data && typeof data === 'object' && Array.isArray((data as { students?: unknown }).students)) {
+      const payload = data as { students: unknown[]; logoDataUrl?: string | null };
+      return {
+        students: payload.students,
+        logoDataUrl: typeof payload.logoDataUrl === 'string' ? payload.logoDataUrl : null,
+      };
+    }
+    return { students: [] as unknown[], logoDataUrl: null as string | null };
   },
   saveReportCards: async (data: {
     classId: string;

@@ -23,6 +23,12 @@ const router = express.Router();
 
 router.use(publicFormLimiter);
 
+function parseBooleanFormField(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['true', '1', 'yes', 'oui', 'on'].includes(normalized);
+}
+
 async function generateUniqueReference(): Promise<string> {
   const year = new Date().getFullYear();
   for (let i = 0; i < 12; i++) {
@@ -43,6 +49,16 @@ const admissionValidators = [
   body('lastName').trim().notEmpty().withMessage('Nom requis'),
   body('email').isEmail().withMessage('Email invalide'),
   body('dateOfBirth').isISO8601().withMessage('Date de naissance invalide'),
+  body('birthPlace')
+    .trim()
+    .notEmpty()
+    .withMessage('Lieu de naissance requis')
+    .isLength({ max: 120 })
+    .withMessage('Lieu de naissance : 120 caractères maximum'),
+  body('isRepeating')
+    .optional({ values: 'falsy' })
+    .isIn(['true', 'false', '1', '0', 'yes', 'no', 'oui', 'non'])
+    .withMessage('Indiquez si l\'élève est doublant (oui/non)'),
   body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Genre invalide'),
   body('desiredLevel').trim().notEmpty().withMessage('Niveau souhaité requis'),
   body('academicYear').trim().notEmpty().withMessage('Année scolaire requise'),
@@ -80,6 +96,8 @@ router.post(
         email,
         phone,
         dateOfBirth,
+        birthPlace,
+        isRepeating,
         gender,
         desiredLevel,
         academicYear,
@@ -168,6 +186,8 @@ router.post(
           email: emailNorm,
           phone: phone ? String(phone).trim() : undefined,
           dateOfBirth: new Date(dateOfBirth),
+          birthPlace: String(birthPlace).trim(),
+          isRepeating: parseBooleanFormField(isRepeating),
           gender,
           desiredLevel: levelTrim,
           academicYear: String(academicYear).trim(),

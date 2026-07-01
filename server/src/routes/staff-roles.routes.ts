@@ -15,6 +15,7 @@ import {
   validateCashPayment,
 } from '../utils/cash-payment-validation.util';
 import { enrollStudentFromAdmission } from '../utils/admission-enroll.util';
+import { buildStudentEnrollmentDossierPayload } from '../utils/student-enrollment-dossier.util';
 import {
   admissionScopeWhere,
   classScopeWhere,
@@ -241,6 +242,42 @@ router.post(
       console.error('POST /staff/admissions/:id/enroll:', error);
       const code = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500;
       res.status(code).json({ error: err.message || 'Erreur serveur' });
+    }
+  },
+);
+
+router.get(
+  '/students/:id/enrollment-dossier',
+  requireStaffModule('admissions'),
+  async (req: SchoolContextRequest, res) => {
+    try {
+      const { id } = req.params;
+      if (!/^[a-f\d]{24}$/i.test(id)) {
+        return res.status(400).json({ error: 'Identifiant élève invalide' });
+      }
+
+      const schoolId = req.schoolId!;
+      const inScope = await prisma.student.findFirst({
+        where: {
+          id,
+          ...studentScopeWhere(schoolId, req.school?.isDefault ?? false),
+        },
+        select: { id: true },
+      });
+      if (!inScope) {
+        return res.status(404).json({ error: 'Élève introuvable dans cet établissement.' });
+      }
+
+      const payload = await buildStudentEnrollmentDossierPayload(id);
+      if (!payload) {
+        return res.status(404).json({ error: 'Élève non trouvé' });
+      }
+      res.json(payload);
+    } catch (error: unknown) {
+      console.error('GET /staff/students/:id/enrollment-dossier:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Erreur serveur',
+      });
     }
   },
 );

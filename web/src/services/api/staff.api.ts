@@ -114,6 +114,10 @@ export const staffApi = {
     const response = await api.post(`/staff/admissions/${id}/enroll`, data);
     return response.data;
   },
+  getStudentEnrollmentDossier: async (studentId: string) => {
+    const response = await api.get(`/staff/students/${studentId}/enrollment-dossier`);
+    return response.data;
+  },
   getAppointmentsStats: async () => {
     const response = await api.get('/staff/appointments/stats');
     return response.data as { pending: number; today: number; confirmed: number };

@@ -16,6 +16,16 @@ function isSafeHttpOrigin(origin: string): boolean {
   }
 }
 
+function devBackendOrigin(): string {
+  const api = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "").trim();
+  if (api?.startsWith("http://") || api?.startsWith("https://")) {
+    if (!isSafeHttpOrigin(api)) return "http://localhost:5000";
+    const stripped = api.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+    return stripped.length > 0 ? stripped : "http://localhost:5000";
+  }
+  return "http://localhost:5000";
+}
+
 function backendOriginForUploadsProxy(): string | null {
   const explicit = process.env.NEXT_PUBLIC_UPLOADS_ORIGIN?.replace(/\/+$/, "").trim();
   if (explicit?.startsWith("http://") || explicit?.startsWith("https://")) {
@@ -83,20 +93,33 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    // Même domaine que l’API (reverse proxy, pas de proxy Next nécessaire) — évite une boucle si l’API est sur le même hôte.
-    if (process.env.NEXT_PUBLIC_DISABLE_UPLOADS_REWRITE === "1") return [];
-    const origin = backendOriginForUploadsProxy();
-    if (!origin || !isSafeHttpOrigin(origin)) return [];
-    return [
-      {
-        source: "/uploads/:path*",
-        destination: `${origin}/uploads/:path*`,
-      },
-      {
-        source: "/api/uploads/:path*",
-        destination: `${origin}/uploads/:path*`,
-      },
-    ];
+    const rewrites: { source: string; destination: string }[] = [];
+
+    if (process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DISABLE_API_REWRITE !== "1") {
+      const backend = devBackendOrigin();
+      rewrites.push({
+        source: "/api/:path*",
+        destination: `${backend}/api/:path*`,
+      });
+    }
+
+    if (process.env.NEXT_PUBLIC_DISABLE_UPLOADS_REWRITE !== "1") {
+      const origin = backendOriginForUploadsProxy() ?? (process.env.NODE_ENV === "development" ? devBackendOrigin() : null);
+      if (origin && isSafeHttpOrigin(origin)) {
+        rewrites.push(
+          {
+            source: "/uploads/:path*",
+            destination: `${origin}/uploads/:path*`,
+          },
+          {
+            source: "/api/uploads/:path*",
+            destination: `${origin}/uploads/:path*`,
+          },
+        );
+      }
+    }
+
+    return rewrites;
   },
 };
 

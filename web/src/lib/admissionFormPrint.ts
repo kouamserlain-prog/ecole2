@@ -16,6 +16,8 @@ export type AdmissionPrintFormData = {
   email?: string;
   phone?: string;
   dateOfBirth?: string;
+  birthPlace?: string;
+  isRepeating?: string;
   gender?: string;
   desiredLevel?: string;
   academicYear?: string;
@@ -104,6 +106,12 @@ function buildPrintHtml(opts: {
       : f.dateOfBirth?.trim() || '';
 
   const genderLabel = f.gender ? (GENDER_LABELS[f.gender] ?? f.gender) : '';
+  const repeatingLabel =
+    f.isRepeating === 'true' || f.isRepeating === '1' || f.isRepeating === 'oui'
+      ? 'Oui'
+      : f.isRepeating === 'false' || f.isRepeating === '0' || f.isRepeating === 'non'
+        ? 'Non'
+        : '';
 
   const gradeRows = gradeKeys
     .map((key) => row(ADMISSION_GRADE_FIELD_LABELS[key], fieldValue(f[key], '4rem'), true))
@@ -157,7 +165,9 @@ function buildPrintHtml(opts: {
     ${row('Nom', fieldValue(f.lastName), true)}
     ${row('Numéro matricule', fieldValue(f.matricule))}
     ${row('Date de naissance', fieldValue(dob), true)}
+    ${row('Lieu de naissance', fieldValue(f.birthPlace), true)}
     ${row('Genre', fieldValue(genderLabel), true)}
+    ${row('Doublant (e)', fieldValue(repeatingLabel || 'Non'), true)}
     ${row('E-mail', fieldValue(f.email), true)}
     ${row('Téléphone', fieldValue(f.phone))}
   </table>

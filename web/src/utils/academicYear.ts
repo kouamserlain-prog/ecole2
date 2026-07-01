@@ -23,6 +23,15 @@ export const computeCurrentAcademicYear = (): string => {
 };
 
 /**
+ * Année scolaire pour l'affichage SSR / hydratation (ignore localStorage).
+ * Préfère un override explicite (ex. branding admin), sinon calcul UTC.
+ */
+export const getAcademicYearForDisplay = (override?: string | null): string => {
+  if (isValidAcademicYear(override)) return override;
+  return computeCurrentAcademicYear();
+};
+
+/**
  * Année scolaire active : réglage admin en priorité, sinon calcul automatique.
  */
 export const getCurrentAcademicYear = (): string => {

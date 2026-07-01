@@ -10,7 +10,7 @@ import HomeReveal from '../components/public/HomeReveal';
 import HomeDirectorSection from '../components/public/HomeDirectorSection';
 import HomePageImage from '../components/public/HomePageImage';
 import PreInscriptionSchoolEntry from '../components/public/PreInscriptionSchoolEntry';
-import { getCurrentAcademicYear } from '../utils/academicYear';
+import { getAcademicYearForDisplay } from '../utils/academicYear';
 import { getRoleDashboardPath } from '../lib/rolePaths';
 import {
   TRANLEFET_MARQUEE,
@@ -242,7 +242,7 @@ const HERO_FLOATING = [
 export default function Home() {
   const { user } = useAuth();
   const { navigationLogoAbsolute, branding } = useAppBranding();
-  const year = getCurrentAcademicYear();
+  const year = getAcademicYearForDisplay(branding.currentAcademicYear);
   const [menuOpen, setMenuOpen] = useState(false);
   const schoolDisplayName =
     (branding.schoolDisplayName && branding.schoolDisplayName.trim()) ||
@@ -1234,7 +1234,7 @@ export default function Home() {
         </section>
       </main>
 
-      <Footer hideFeatures />
+      <Footer />
     </div>
   );
 }

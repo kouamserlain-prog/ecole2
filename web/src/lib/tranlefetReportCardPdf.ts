@@ -3,8 +3,42 @@ import autoTable, { type RowInput } from 'jspdf-autotable';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { TRANLEFET_SCHOOL } from '../data/tranlefetSchool';
+import { resolveUploadFetchUrl, resolveUploadPublicUrl } from './uploadsPublicUrl';
 
-const REPORT_CARD_MARGIN = 10;
+const REPORT_CARD_MARGIN = 8;
+
+/** Photo d'identité ronde (à droite du titre « Bulletin trimestriel »). */
+const STUDENT_PHOTO_SIZE = 28;
+
+/** Polices et espacements — lisibilité impression A4. */
+const BULLETIN_FS = {
+  ministry: 8,
+  schoolName: 10.5,
+  schoolMeta: 8,
+  code: 8,
+  mainTitle: 10,
+  period: 9,
+  academicYear: 8.5,
+  identity: 8.5,
+  table: 7.5,
+  tableHead: 7.5,
+  tableProf: 7,
+  resume: 8,
+  mentionsTitle: 7.5,
+  mentions: 7,
+  signature: 7.5,
+  signatureDate: 8,
+  checkbox: 7,
+} as const;
+
+const BULLETIN_PAD = {
+  identity: 1.5,
+  table: 1.2,
+  resume: 1.4,
+} as const;
+
+/** Espace entre le tableau RÉSUMÉ et « Mentions du conseil de classe ». */
+const MENTIONS_SECTION_TOP_GAP = 10;
 
 function reportCardTableWidth(pageWidth: number): number {
   return pageWidth - REPORT_CARD_MARGIN * 2;
@@ -49,12 +83,54 @@ export type TranlefetBranding = {
   city: string;
   motto: string;
   logoAbsoluteUrl?: string | null;
+  /** Préchargé côté serveur (évite fetch CORS / Blob dans le navigateur). */
+  logoDataUrl?: string | null;
 };
 
-async function fetchImageDataUrl(url: string): Promise<string | null> {
+async function loadImageToJpegDataUrl(src: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, img.naturalWidth);
+        canvas.height = Math.max(1, img.naturalHeight);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function fetchRemoteImageAsDataUrl(url: string): Promise<string | null> {
+  const absolute =
+    url.startsWith('data:') || url.startsWith('blob:')
+      ? url
+      : resolveUploadFetchUrl(url) ?? resolveUploadPublicUrl(url) ?? url;
+
+  if (absolute.startsWith('data:')) {
+    return absolute;
+  }
+
   try {
-    const res = await fetch(url);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const res = await fetch(absolute, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
     if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('pdf') || absolute.toLowerCase().endsWith('.pdf')) {
+      return null;
+    }
     const blob = await res.blob();
     return await new Promise((resolve) => {
       const reader = new FileReader();
@@ -65,6 +141,101 @@ async function fetchImageDataUrl(url: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function fetchLogoDataUrl(logoUrl: string | null | undefined): Promise<string | null> {
+  if (!logoUrl) return null;
+  return fetchRemoteImageAsDataUrl(logoUrl);
+}
+
+async function resolveLogoDataUrlForPdf(branding: TranlefetBranding): Promise<string | null> {
+  const preloaded = branding.logoDataUrl?.trim();
+  const raw =
+    preloaded?.startsWith('data:image/') ? preloaded : await fetchLogoDataUrl(branding.logoAbsoluteUrl);
+  if (!raw) return null;
+  if (raw.startsWith('data:image/jpeg')) return raw;
+  const jpeg = await loadImageToJpegDataUrl(raw);
+  return jpeg ?? raw;
+}
+
+async function toCircularPhotoDataUrl(dataUrl: string, size = 320): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        const scale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+        const w = img.naturalWidth * scale;
+        const h = img.naturalHeight * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+async function resolveStudentPhotoDataUrl(
+  studentData: ReportCardStudentPayload,
+): Promise<string | null> {
+  const raw = studentData.photoUrl ?? studentData.user.avatar ?? null;
+  if (!raw) return null;
+  const absolute = resolveUploadFetchUrl(raw) ?? resolveUploadPublicUrl(raw);
+  if (!absolute) return null;
+  const dataUrl = await fetchRemoteImageAsDataUrl(absolute);
+  if (!dataUrl) return null;
+  if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/png')) {
+    return toCircularPhotoDataUrl(dataUrl);
+  }
+  const jpeg = await loadImageToJpegDataUrl(dataUrl);
+  return jpeg ? toCircularPhotoDataUrl(jpeg) : null;
+}
+
+function drawStudentPhotoBox(
+  doc: jsPDF,
+  photoDataUrl: string | null,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const radius = size / 2;
+
+  if (photoDataUrl) {
+    try {
+      doc.addImage(photoDataUrl, 'PNG', x, y, size, size, undefined, 'FAST');
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.25);
+      doc.circle(cx, cy, radius, 'S');
+      return;
+    } catch {
+      // placeholder ci-dessous
+    }
+  }
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.25);
+  doc.circle(cx, cy, radius, 'S');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Sans photo', cx, cy, { align: 'center', baseline: 'middle' });
+  doc.setTextColor(0, 0, 0);
 }
 
 function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
@@ -111,6 +282,8 @@ export type TermHistoryEntry = {
 
 export type ReportCardStudentPayload = {
   studentIdNumber?: string;
+  /** Avatar profil ou pièce « photo d'identité » (chemin relatif ou URL). */
+  photoUrl?: string | null;
   user: { firstName: string; lastName: string; avatar?: string | null };
   class?: { name: string; level: string };
   gender?: string;
@@ -221,6 +394,110 @@ const DISCIPLINE_TEMPLATE: DisciplineRow[] = [
   { label: 'EPS', courseMatch: /^eps|éducation\s+physique|sport/i, showProfessor: true, coefficient: 1 },
   { label: 'CONDUITE', courseMatch: /conduite|comportement/i, showProfessor: false, coefficient: 1 },
 ];
+
+/** Français + 3 sous-disciplines : fusion Appréciations / Professeurs / Signature. */
+const FRENCH_BLOCK_ROW_COUNT = 4;
+
+function frenchBlockRowIndex(templateIndex: number): number | null {
+  if (templateIndex >= 0 && templateIndex < FRENCH_BLOCK_ROW_COUNT) return templateIndex;
+  return null;
+}
+
+const mergedFrenchCellStyle = { valign: 'middle' as const };
+
+function resolveFrenchBlockProfessor(studentData: ReportCardStudentPayload): string {
+  const frenchRow = DISCIPLINE_TEMPLATE[0];
+  return resolveProfessorForRow(frenchRow, studentData.allCourses || []);
+}
+
+function buildSingleTrimDisciplineRow(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  rowIndex: number,
+  activePeriod: string,
+): RowInput {
+  const values = resolveSingleTrimRowValues(studentData, row, activePeriod);
+  const labelStyle = row.isBilan
+    ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
+    : row.indent
+      ? { cellPadding: { left: 5 } }
+      : row.label === 'Français'
+        ? { fontStyle: 'bold' as const }
+        : {};
+
+  const gradeCells: RowInput = [
+    { content: row.label, styles: labelStyle },
+    values.moy,
+    values.coef,
+    values.total,
+    values.rang,
+  ];
+
+  const frenchIdx = frenchBlockRowIndex(rowIndex);
+  if (frenchIdx === 0) {
+    return [
+      ...gradeCells,
+      { content: '', rowSpan: FRENCH_BLOCK_ROW_COUNT, styles: mergedFrenchCellStyle },
+      {
+        content: resolveFrenchBlockProfessor(studentData),
+        rowSpan: FRENCH_BLOCK_ROW_COUNT,
+        styles: mergedFrenchCellStyle,
+      },
+      { content: '', rowSpan: FRENCH_BLOCK_ROW_COUNT, styles: mergedFrenchCellStyle },
+    ];
+  }
+  if (frenchIdx !== null && frenchIdx > 0) {
+    return gradeCells;
+  }
+
+  return [...gradeCells, values.appreciation, values.prof, ''];
+}
+
+function buildMultiTrimDisciplineRow(
+  studentData: ReportCardStudentPayload,
+  row: DisciplineRow,
+  rowIndex: number,
+  activePeriod: string,
+): RowInput {
+  const values = resolveRowValues(studentData, row, activePeriod);
+  const labelStyle = row.isBilan
+    ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
+    : row.indent
+      ? { cellPadding: { left: 5 } }
+      : row.label === 'Français'
+        ? { fontStyle: 'bold' as const }
+        : {};
+
+  const gradeCells: RowInput = [
+    { content: row.label, styles: labelStyle },
+    values.trim1,
+    values.rank1,
+    values.trim2,
+    values.rank2,
+    values.trim3,
+    values.rank3,
+    values.moy,
+    values.rang,
+  ];
+
+  const frenchIdx = frenchBlockRowIndex(rowIndex);
+  if (frenchIdx === 0) {
+    return [
+      ...gradeCells,
+      {
+        content: resolveFrenchBlockProfessor(studentData),
+        rowSpan: FRENCH_BLOCK_ROW_COUNT,
+        styles: mergedFrenchCellStyle,
+      },
+      { content: '', rowSpan: FRENCH_BLOCK_ROW_COUNT, styles: mergedFrenchCellStyle },
+    ];
+  }
+  if (frenchIdx !== null && frenchIdx > 0) {
+    return gradeCells;
+  }
+
+  return [...gradeCells, values.prof, ''];
+}
 
 const TRIM_KEYS = ['trim1', 'trim2', 'trim3'] as const;
 
@@ -653,7 +930,7 @@ function drawStudentIdentityTable(
   autoTable(doc, {
     startY,
     theme: 'grid',
-    styles: { fontSize: 7, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
+    styles: { fontSize: BULLETIN_FS.identity, cellPadding: BULLETIN_PAD.identity, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
     body: [
       [
         { content: 'NOM ET PRENOM', styles: { fontStyle: 'bold' } },
@@ -679,7 +956,9 @@ function drawStudentIdentityTable(
       ],
       [
         { content: 'Nationalité', styles: { fontStyle: 'bold' } },
-        { content: studentData.nationality || 'Ivoirienne', colSpan: 3 },
+        studentData.nationality || 'Ivoirienne',
+        { content: 'Doublant (e)', styles: { fontStyle: 'bold' } },
+        studentData.repeating ? 'Oui' : 'Non',
       ],
     ],
     tableWidth,
@@ -710,26 +989,9 @@ function drawSingleTrimesterGradesTable(
     ],
   ];
 
-  const tableBody: RowInput[] = DISCIPLINE_TEMPLATE.map((row) => {
-    const values = resolveSingleTrimRowValues(studentData, row, activePeriod);
-    const labelStyle = row.isBilan
-      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
-      : row.indent
-        ? { cellPadding: { left: 4 } }
-        : row.label === 'Français'
-          ? { fontStyle: 'bold' as const }
-          : {};
-    return [
-      { content: row.label, styles: labelStyle },
-      values.moy,
-      values.coef,
-      values.total,
-      values.rang,
-      values.appreciation,
-      values.prof,
-      '',
-    ];
-  });
+  const tableBody: RowInput[] = DISCIPLINE_TEMPLATE.map((row, rowIndex) =>
+    buildSingleTrimDisciplineRow(studentData, row, rowIndex, activePeriod),
+  );
 
   const totals = computeTrimesterTableTotals(studentData, activePeriod);
   tableBody.push([
@@ -751,8 +1013,8 @@ function drawSingleTrimesterGradesTable(
     body: tableBody,
     theme: 'grid',
     styles: {
-      fontSize: 6,
-      cellPadding: 0.8,
+      fontSize: BULLETIN_FS.table,
+      cellPadding: BULLETIN_PAD.table,
       textColor: [0, 0, 0],
       lineColor: [0, 0, 0],
       lineWidth: 0.2,
@@ -762,7 +1024,7 @@ function drawSingleTrimesterGradesTable(
       fillColor: [220, 220, 220],
       textColor: [0, 0, 0],
       fontStyle: 'bold',
-      fontSize: 6,
+      fontSize: BULLETIN_FS.tableHead,
       halign: 'center',
     },
     columnStyles: buildColumnStyles([32, 11, 10, 11, 14, 28, 26, 14], tableWidth, {
@@ -770,7 +1032,7 @@ function drawSingleTrimesterGradesTable(
       2: { halign: 'center' },
       3: { halign: 'center' },
       4: { halign: 'center' },
-      6: { fontSize: 5.5 },
+      6: { fontSize: BULLETIN_FS.tableProf },
     }),
     tableWidth,
     margin: reportCardTableMargins(),
@@ -800,27 +1062,9 @@ function drawMultiTrimesterGradesTable(
     ['', 'Moy.', 'Rang', 'Moy.', 'Rang', 'Moy.', 'Rang', '', '', '', ''],
   ];
 
-  const tableBody = DISCIPLINE_TEMPLATE.map((row) => {
-    const values = resolveRowValues(studentData, row, activePeriod);
-    const labelStyle = row.isBilan
-      ? { fontStyle: 'bold' as const, fillColor: [235, 235, 235] as [number, number, number] }
-      : row.indent
-        ? { cellPadding: { left: 4 } }
-        : {};
-    return [
-      { content: row.label, styles: labelStyle },
-      values.trim1,
-      values.rank1,
-      values.trim2,
-      values.rank2,
-      values.trim3,
-      values.rank3,
-      values.moy,
-      values.rang,
-      values.prof,
-      '',
-    ];
-  });
+  const tableBody = DISCIPLINE_TEMPLATE.map((row, rowIndex) =>
+    buildMultiTrimDisciplineRow(studentData, row, rowIndex, activePeriod),
+  );
 
   const tableWidth = reportCardTableWidth(pageWidth);
 
@@ -829,8 +1073,8 @@ function drawMultiTrimesterGradesTable(
     head: tableHead,
     body: tableBody,
     theme: 'grid',
-    styles: { fontSize: 6, cellPadding: 0.8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
-    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 6, halign: 'center' },
+    styles: { fontSize: BULLETIN_FS.table, cellPadding: BULLETIN_PAD.table, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2, overflow: 'linebreak' },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: BULLETIN_FS.tableHead, halign: 'center' },
     columnStyles: buildColumnStyles([30, 10, 8, 10, 8, 10, 8, 10, 8, 24, 14], tableWidth, {
       1: { halign: 'center' },
       2: { halign: 'center' },
@@ -840,7 +1084,7 @@ function drawMultiTrimesterGradesTable(
       6: { halign: 'center' },
       7: { halign: 'center' },
       8: { halign: 'center' },
-      9: { fontSize: 5.5 },
+      9: { fontSize: BULLETIN_FS.tableProf },
     }),
     tableWidth,
     margin: reportCardTableMargins(),
@@ -856,95 +1100,105 @@ function drawOfficialHeader(
   academicYear: string,
   periodKey: string,
   logoDataUrl: string | null,
+  photoDataUrl: string | null = null,
 ): number {
-  const margin = 10;
-  let y = 10;
+  const margin = REPORT_CARD_MARGIN;
+  let y = REPORT_CARD_MARGIN;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(BULLETIN_FS.ministry);
   doc.text('MINISTERE DE L\'EDUCATION NATIONALE', margin, y);
   doc.text('REPUBLIQUE DE COTE D\'IVOIRE', pageWidth - margin, y, { align: 'right' });
-  y += 3.5;
+  y += 4;
   doc.text('ET DE L\'ALPHABETISATION', margin, y);
   doc.setFont('helvetica', 'italic');
   const mottoY = y;
   doc.text('Union – Discipline – Travail', pageWidth - margin, mottoY, { align: 'right' });
 
-  const flagW = 14;
-  const flagH = 9;
+  const flagW = 15;
+  const flagH = 10;
   const flagX = pageWidth - margin - flagW;
-  const flagY = mottoY + 2.5;
+  const flagY = mottoY + 3;
   drawCoteDivoireFlag(doc, flagX, flagY, flagW, flagH);
 
-  y += 2;
+  y += 2.5;
 
   if (logoDataUrl) {
-    const logoSize = 17;
+    const logoSize = 21;
     const logoX = (pageWidth - logoSize) / 2;
+    const logoFormat = imageFormatFromDataUrl(logoDataUrl);
     try {
-      doc.addImage(
-        logoDataUrl,
-        imageFormatFromDataUrl(logoDataUrl),
-        logoX,
-        y,
-        logoSize,
-        logoSize,
-      );
-      y += logoSize + 1;
+      doc.addImage(logoDataUrl, logoFormat, logoX, y, logoSize, logoSize, undefined, 'FAST');
+      y += logoSize + 1.5;
     } catch {
-      y += 0.5;
+      try {
+        doc.addImage(logoDataUrl, 'PNG', logoX, y, logoSize, logoSize, undefined, 'FAST');
+        y += logoSize + 1.5;
+      } catch {
+        try {
+          doc.addImage(logoDataUrl, 'JPEG', logoX, y, logoSize, logoSize, undefined, 'FAST');
+          y += logoSize + 1.5;
+        } catch {
+          y += 0.5;
+        }
+      }
     }
   }
 
   doc.setFont('helvetica', 'normal');
   doc.text(branding.regionalDirection, margin, y);
-  y += 3;
+  y += 3.5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(BULLETIN_FS.schoolName);
   doc.text(branding.schoolName, pageWidth / 2, y, { align: 'center' });
-  y += 4;
+  y += 4.5;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(BULLETIN_FS.schoolMeta);
   doc.text(
     `${branding.schoolAddress.toUpperCase()}, ${branding.schoolLocation} Cel : ${branding.schoolPhone.replace(/\s/g, '')}`,
     pageWidth / 2,
     y,
     { align: 'center' },
   );
-  y += 3.5;
-  doc.text(`E-mail : ${branding.schoolEmail}`, pageWidth / 2, y, { align: 'center' });
   y += 4;
+  doc.text(`E-mail : ${branding.schoolEmail}`, pageWidth / 2, y, { align: 'center' });
+  y += 4.5;
 
-  doc.setFontSize(7);
+  doc.setFontSize(BULLETIN_FS.code);
   doc.text(`CODE : ${branding.schoolCode}`, margin + 2, y);
   doc.text('Statut : Privé', pageWidth - margin - 2, y, { align: 'right' });
-  y += 4;
+  y += 4.5;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(BULLETIN_FS.mainTitle);
+  const titleY = y;
   doc.text('BULLETIN DE NOTES TRIMESTRIEL', pageWidth / 2, y, { align: 'center' });
-  y += 4;
-  doc.setFontSize(8);
+  y += 4.5;
+  doc.setFontSize(BULLETIN_FS.period);
   doc.text(periodTitle(periodKey), pageWidth / 2, y, { align: 'center' });
-  y += 4;
+  y += 4.5;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(BULLETIN_FS.academicYear);
   doc.text(`Année Scolaire ${academicYear}`, pageWidth / 2, y, { align: 'center' });
-  y += 4;
+  y += 4.5;
 
-  return y;
+  const photoX = pageWidth - margin - STUDENT_PHOTO_SIZE;
+  drawStudentPhotoBox(doc, photoDataUrl, photoX, titleY, STUDENT_PHOTO_SIZE);
+
+  return Math.max(y, titleY + STUDENT_PHOTO_SIZE + 2);
 }
 
 function drawCheckboxLine(doc: jsPDF, x: number, y: number, label: string, checked: boolean): void {
+  const box = 3;
   doc.setLineWidth(0.25);
-  doc.rect(x, y - 2.5, 2.5, 2.5);
+  doc.rect(x, y - box + 0.5, box, box);
   if (checked) {
-    doc.setFontSize(6);
-    doc.text('×', x + 0.45, y - 0.1);
+    doc.setFontSize(BULLETIN_FS.checkbox);
+    doc.text('×', x + 0.55, y + 0.15);
   }
-  doc.setFontSize(6);
-  doc.text(label, x + 3.5, y);
+  doc.setFontSize(BULLETIN_FS.checkbox);
+  doc.text(label, x + box + 1, y);
 }
 
 function buildResumeTableBody(
@@ -1035,33 +1289,33 @@ function drawMentionsAndSignatures(
   ];
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
+  doc.setFontSize(BULLETIN_FS.mentionsTitle);
   doc.text('Mentions du conseil de classe', margin, y);
-  y += 3;
-  doc.setFontSize(6);
+  y += 3.5;
+  doc.setFontSize(BULLETIN_FS.mentions);
   doc.text('DISTINCTIONS', margin, y);
   doc.text('SANCTIONS', pageWidth / 2 + 2, y);
-  y += 3;
+  y += 3.5;
 
   distinctionOptions.forEach((label, i) => {
-    drawCheckboxLine(doc, margin, y + i * 3.5, label, distinctions.includes(label));
+    drawCheckboxLine(doc, margin, y + i * 4, label, distinctions.includes(label));
   });
   sanctionOptions.forEach((label, i) => {
-    drawCheckboxLine(doc, pageWidth / 2 + 2, y + i * 3.5, label, sanctions.includes(label));
+    drawCheckboxLine(doc, pageWidth / 2 + 2, y + i * 4, label, sanctions.includes(label));
   });
 
-  y += 16;
+  y += 18;
 
   if (!compact) {
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
+    doc.setFontSize(BULLETIN_FS.mentionsTitle);
     doc.text(`Redoublant (e) : ${studentData.repeating ? 'Oui' : 'Non'}`, margin, y);
-    doc.text(`Décision de fin d'année : ${studentData.yearEndDecision || '…………………………'}`, margin + 45, y);
-    y += 6;
+    doc.text(`Décision de fin d'année : ${studentData.yearEndDecision || '…………………………'}`, margin + 48, y);
+    y += 6.5;
     doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6);
+    doc.setFontSize(BULLETIN_FS.mentions);
     doc.text(branding.motto, pageWidth / 2, y, { align: 'center' });
-    y += 5;
+    y += 5.5;
   }
 
   const sigY = y + 2;
@@ -1076,19 +1330,18 @@ function drawMentionsAndSignatures(
   const colW = (pageWidth - margin * 2) / colCount;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6);
+  doc.setFontSize(BULLETIN_FS.signature);
   sigLabels.forEach((label, i) => {
     const x = margin + i * colW;
     const lines = doc.splitTextToSize(label, colW - 4);
     doc.text(lines, x + colW / 2, sigY, { align: 'center' });
-    doc.line(x + 3, sigY + 10, x + colW - 3, sigY + 10);
   });
 
-  doc.setFontSize(6.5);
+  doc.setFontSize(BULLETIN_FS.signatureDate);
   doc.text(
     `Fait à ${branding.city}, le ${format(new Date(), 'dd/MM/yyyy', { locale: fr })}`,
     pageWidth - margin,
-    sigY + 16,
+    sigY + 18,
     { align: 'right' },
   );
 }
@@ -1103,9 +1356,8 @@ export async function generateTranlefetReportCardPdf(
   },
 ): Promise<void> {
   const branding: TranlefetBranding = { ...TRANLEFET_DEFAULT_BRANDING, ...options.branding };
-  const logoDataUrl = branding.logoAbsoluteUrl
-    ? await fetchImageDataUrl(branding.logoAbsoluteUrl)
-    : null;
+  const logoDataUrl = await resolveLogoDataUrlForPdf(branding);
+  const photoDataUrl = await resolveStudentPhotoDataUrl(studentData);
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const activePeriod = options.periodKey;
@@ -1119,6 +1371,7 @@ export async function generateTranlefetReportCardPdf(
     options.academicYear,
     activePeriod,
     logoDataUrl,
+    photoDataUrl,
   );
 
   y = drawStudentIdentityTable(doc, studentData, y, pageWidth);
@@ -1132,14 +1385,14 @@ export async function generateTranlefetReportCardPdf(
   autoTable(doc, {
     startY: y,
     theme: 'grid',
-    styles: { fontSize: 6.5, cellPadding: 1.2, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
+    styles: { fontSize: BULLETIN_FS.resume, cellPadding: BULLETIN_PAD.resume, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
     body: buildResumeTableBody(studentData, options.periodLabel, activePeriod, compactFooter),
     tableWidth,
     columnStyles: buildColumnStyles([48, 48, 47, 47], tableWidth),
     margin: reportCardTableMargins(),
   });
 
-  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + MENTIONS_SECTION_TOP_GAP;
 
   drawMentionsAndSignatures(doc, pageWidth, REPORT_CARD_MARGIN, branding, studentData, y, compactFooter);
 

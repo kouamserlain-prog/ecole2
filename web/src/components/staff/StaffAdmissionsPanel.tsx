@@ -11,7 +11,12 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import Modal from '../ui/Modal';
 import AdmissionGradesDisplay from '../admission/AdmissionGradesDisplay';
-import { FiKey } from 'react-icons/fi';
+import { FiKey, FiDownload } from 'react-icons/fi';
+import { EnrollmentDossierSuccessModal } from '../admin/EnrollmentDossierSuccessModal';
+import {
+  downloadStudentEnrollmentDossier,
+  staffEnrollmentDossierFetcher,
+} from '@/lib/downloadStudentEnrollmentDossier';
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'En attente',
@@ -60,6 +65,10 @@ export default function StaffAdmissionsPanel() {
   const [enrollStateAssignment, setEnrollStateAssignment] = useState<
     'STATE_ASSIGNED' | 'NOT_STATE_ASSIGNED'
   >('NOT_STATE_ASSIGNED');
+  const [enrollmentDossierSuccess, setEnrollmentDossierSuccess] = useState<{
+    studentId: string;
+    studentName: string;
+  } | null>(null);
 
   const { data: workspace } = useQuery({
     queryKey: ['staff-workspace'],
@@ -140,12 +149,23 @@ export default function StaffAdmissionsPanel() {
         ...(enrollClassId ? { classId: enrollClassId } : {}),
       }),
     onSuccess: (data: unknown) => {
-      const sent = (data as { passwordSetupEmailSent?: boolean })?.passwordSetupEmailSent;
+      const d = data as {
+        passwordSetupEmailSent?: boolean;
+        user?: { studentProfile?: { id?: string } };
+      };
+      const sent = d?.passwordSetupEmailSent;
       toast.success(
         sent
           ? 'Élève inscrit. Un lien pour choisir le mot de passe a été envoyé par e-mail (48 h).'
           : 'Élève inscrit — dossier finalisé',
       );
+      const enrolledStudentDbId = d?.user?.studentProfile?.id;
+      if (enrolledStudentDbId && enrollTarget) {
+        setEnrollmentDossierSuccess({
+          studentId: enrolledStudentDbId,
+          studentName: `${enrollTarget.lastName} ${enrollTarget.firstName}`.trim(),
+        });
+      }
       setEnrollTarget(null);
       setEnrollPassword('');
       setEnrollStudentId('');
@@ -327,8 +347,25 @@ export default function StaffAdmissionsPanel() {
                 Inscrire
               </Button>
             )}
-            {selected.status === 'ENROLLED' || selected.enrolledStudentId ? (
-              <p className="text-xs text-emerald-700 w-full">Dossier déjà inscrit — compte élève actif.</p>
+            {selected.enrolledStudentId ? (
+              <div className="flex flex-wrap items-center gap-2 w-full">
+                <p className="text-xs text-emerald-700">Dossier inscrit — compte élève actif.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void downloadStudentEnrollmentDossier(
+                      selected.enrolledStudentId!,
+                      staffEnrollmentDossierFetcher,
+                    )
+                      .then(() => toast.success('Dossier PDF téléchargé'))
+                      .catch(() => toast.error('Impossible de télécharger le dossier PDF'));
+                  }}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-violet-700 hover:text-violet-900"
+                >
+                  <FiDownload className="w-4 h-4" aria-hidden />
+                  Dossier PDF
+                </button>
+              </div>
             ) : null}
           </div>
         </Card>
@@ -430,6 +467,14 @@ export default function StaffAdmissionsPanel() {
           </form>
         )}
       </Modal>
+
+      <EnrollmentDossierSuccessModal
+        open={!!enrollmentDossierSuccess}
+        onClose={() => setEnrollmentDossierSuccess(null)}
+        studentId={enrollmentDossierSuccess?.studentId ?? ''}
+        studentName={enrollmentDossierSuccess?.studentName ?? ''}
+        fetcher={staffEnrollmentDossierFetcher}
+      />
     </div>
   );
 }

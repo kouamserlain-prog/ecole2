@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import prisma from '../utils/prisma';
 import { generateDigitalCardPublicId } from './digital-card.util';
+import { APP_BRANDING_ID, getAppBrandingDelegate } from './app-branding-prisma.util';
+import { toPublicBrandingShape } from './branding-assets.util';
 
 const IDENTITY_DOC_LABELS: Record<string, string> = {
   NATIONAL_ID: "Pièce d'identité nationale",
@@ -19,6 +21,9 @@ export type StudentEnrollmentDossierPayload = {
     phone?: string | null;
     email?: string | null;
     principalName?: string | null;
+    schoolCode?: string | null;
+    motto?: string | null;
+    logoUrl?: string | null;
   } | null;
   student: {
     id: string;
@@ -27,6 +32,8 @@ export type StudentEnrollmentDossierPayload = {
     enrollmentStatus: string;
     stateAssignment?: string | null;
     dateOfBirth: string;
+    birthPlace?: string | null;
+    isRepeating?: boolean;
     gender: string;
     address?: string | null;
     emergencyContact?: string | null;
@@ -142,6 +149,12 @@ export async function buildStudentEnrollmentDossierPayload(
 
   if (!student) return null;
 
+  const appBranding = getAppBrandingDelegate();
+  const brandingRow = appBranding
+    ? await appBranding.findUnique({ where: { id: APP_BRANDING_ID } })
+    : null;
+  const branding = brandingRow ? toPublicBrandingShape(brandingRow) : null;
+
   const admission = await prisma.admission.findFirst({
     where: { enrolledStudentId: student.id },
     orderBy: { reviewedAt: 'desc' },
@@ -203,13 +216,27 @@ export async function buildStudentEnrollmentDossierPayload(
     generatedAt: new Date().toISOString(),
     school: student.school
       ? {
-          name: student.school.name,
-          address: student.school.address,
-          phone: student.school.phone,
-          email: student.school.email,
-          principalName: student.school.principalName,
+          name: branding?.schoolDisplayName?.trim() || student.school.name,
+          address: branding?.schoolAddress?.trim() || student.school.address,
+          phone: branding?.schoolPhone?.trim() || student.school.phone,
+          email: branding?.schoolEmail?.trim() || student.school.email,
+          principalName: branding?.schoolPrincipal?.trim() || student.school.principalName,
+          schoolCode: branding?.schoolCode?.trim() || null,
+          motto: null,
+          logoUrl: branding?.loginLogoUrl || branding?.navigationLogoUrl || null,
         }
-      : null,
+      : branding
+        ? {
+            name: branding.schoolDisplayName?.trim() || 'Établissement',
+            address: branding.schoolAddress,
+            phone: branding.schoolPhone,
+            email: branding.schoolEmail,
+            principalName: branding.schoolPrincipal,
+            schoolCode: branding.schoolCode,
+            motto: null,
+            logoUrl: branding.loginLogoUrl || branding.navigationLogoUrl,
+          }
+        : null,
     student: {
       id: student.id,
       studentId: student.studentId,
@@ -217,6 +244,8 @@ export async function buildStudentEnrollmentDossierPayload(
       enrollmentStatus: student.enrollmentStatus,
       stateAssignment: student.stateAssignment,
       dateOfBirth: student.dateOfBirth.toISOString(),
+      birthPlace: student.birthPlace,
+      isRepeating: student.isRepeating ?? false,
       gender: student.gender,
       address: student.address,
       emergencyContact: student.emergencyContact,

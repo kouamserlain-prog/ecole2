@@ -106,7 +106,40 @@ export function resolveUploadPublicUrl(relativePath: string | null | undefined):
   }
   const origin = getApiOriginForUploads();
   const path = normalizeUploadedAssetPathForClient(
-    relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+    relativePath.startsWith('/') ? relativePath : `/${relativePath}`,
   );
   return `${origin}${path}`;
+}
+
+/**
+ * URL pour charger une image côté navigateur (PDF, canvas).
+ * Réécrit l'hôte des URLs `/uploads/...` vers l'origine courante (proxy Next en dev).
+ */
+export function resolveUploadFetchUrl(storedUrl: string | null | undefined): string | null {
+  if (!storedUrl) return null;
+  if (storedUrl.startsWith('data:') || storedUrl.startsWith('blob:')) {
+    return storedUrl;
+  }
+
+  let pathname = '';
+  let search = '';
+
+  if (storedUrl.startsWith('http://') || storedUrl.startsWith('https://')) {
+    try {
+      const u = new URL(storedUrl);
+      pathname = u.pathname;
+      search = u.search;
+    } catch {
+      return storedUrl;
+    }
+  } else {
+    pathname = storedUrl.startsWith('/') ? storedUrl : `/${storedUrl}`;
+  }
+
+  if (!pathname.includes('/uploads/')) {
+    return storedUrl.startsWith('http') ? storedUrl : resolveUploadPublicUrl(storedUrl);
+  }
+
+  const path = normalizeUploadedAssetPathForClient(pathname);
+  return `${getApiOriginForUploads()}${path}${search}`;
 }

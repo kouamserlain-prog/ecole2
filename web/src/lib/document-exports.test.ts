@@ -9,6 +9,7 @@ import {
   pickPrimaryCourseForRow,
   isSingleTrimesterBulletin,
 } from './tranlefetReportCardPdf';
+import { buildStudentEnrollmentDossierDoc } from './studentEnrollmentDossierPdf';
 
 describe('exports PDF client (jsPDF)', () => {
   it('génère un PDF fiche de poste sans erreur', () => {
@@ -44,6 +45,9 @@ describe('exports PDF client (jsPDF)', () => {
     await generateTranlefetReportCardPdf(
       {
         studentIdNumber: 'MAT002',
+        dateOfBirth: '2011-03-15',
+        birthPlace: 'Bouaké',
+        repeating: true,
         user: { firstName: 'Kouamé', lastName: 'Aya' },
         class: { name: '4ème A', level: '4ème' },
         totalStudents: 28,
@@ -109,6 +113,8 @@ describe('exports PDF client (jsPDF)', () => {
       {
         studentIdNumber: 'MAT001',
         dateOfBirth: '2012-05-01',
+        birthPlace: 'Bouaké',
+        repeating: false,
         gender: 'FEMALE',
         user: { firstName: 'Marie', lastName: 'Kouassi' },
         class: { name: '5ème B', level: '5ème' },
@@ -150,6 +156,49 @@ describe('exports PDF client (jsPDF)', () => {
         academicYear: '2025-2026',
       },
     );
+  });
+
+  it('génère un PDF dossier d\'inscription définitive sans erreur', () => {
+    assert.doesNotThrow(() => {
+      buildStudentEnrollmentDossierDoc({
+        generatedAt: new Date().toISOString(),
+        school: {
+          name: 'Collège Privé Tranlefet de Bouaké',
+          schoolCode: '1234567A',
+          address: 'Bouaké',
+        },
+        student: {
+          id: 's1',
+          studentId: 'MAT2026001',
+          enrollmentDate: '2026-09-01',
+          enrollmentStatus: 'ACTIVE',
+          stateAssignment: 'NOT_STATE_ASSIGNED',
+          dateOfBirth: '2012-04-10',
+          birthPlace: 'Bouaké',
+          isRepeating: false,
+          gender: 'MALE',
+        },
+        user: {
+          firstName: 'Kouadio',
+          lastName: 'Yao',
+          email: 'yao@example.ci',
+        },
+        class: {
+          name: '6ème A',
+          level: '6ème',
+          academicYear: '2025-2026',
+        },
+        subjectOptions: [],
+        parents: [],
+        admission: {
+          reference: 'ADM-2026-001',
+          desiredLevel: '6ème',
+          academicYear: '2025-2026',
+        },
+        identityDocuments: [],
+        digitalCard: null,
+      });
+    });
   });
 
   it('produit un flux PDF binaire via jsPDF', () => {

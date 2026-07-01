@@ -12,6 +12,7 @@ import {
   TRANLEFET_DEFAULT_BRANDING,
 } from '@/lib/tranlefetReportCardPdf';
 import { getCurrentAcademicYear, getCurrentTrimester } from '@/lib/academicCalendar';
+import { resolveUploadFetchUrl } from '@/lib/uploadsPublicUrl';
 
 import {
   FiFileText,
@@ -58,7 +59,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
   });
 
   // Fetch report card data when class is selected
-  const { data: reportCardData, isLoading: isLoadingData } = useQuery({
+  const { data: reportCardPayload, isLoading: isLoadingData } = useQuery({
     queryKey: ['report-card-data', selectedClass, selectedPeriod, selectedAcademicYear],
     queryFn: () => adminApi.generateReportCardData({
       classId: selectedClass,
@@ -67,6 +68,8 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
     }),
     enabled: isOpen && !!selectedClass && !!selectedPeriod && !!selectedAcademicYear,
   });
+
+  const reportCardStudents = reportCardPayload?.students ?? [];
 
   const pdfBranding = useMemo(
     () => ({
@@ -82,12 +85,17 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         branding.schoolCode?.trim() || TRANLEFET_DEFAULT_BRANDING.schoolCode,
       principalName: branding.schoolPrincipal?.trim() || '',
       studiesDirectorName: branding.studiesDirectorName?.trim() || '',
-      logoAbsoluteUrl: navigationLogoAbsolute || loginLogoAbsolute || null,
+      logoDataUrl: reportCardPayload?.logoDataUrl ?? null,
+      logoAbsoluteUrl:
+        resolveUploadFetchUrl(navigationLogoAbsolute || loginLogoAbsolute) ??
+        navigationLogoAbsolute ??
+        loginLogoAbsolute ??
+        null,
       city: branding.schoolAddress?.includes('Bouaké')
         ? 'Bouaké'
         : TRANLEFET_DEFAULT_BRANDING.city,
     }),
-    [branding, navigationLogoAbsolute, loginLogoAbsolute],
+    [branding, navigationLogoAbsolute, loginLogoAbsolute, reportCardPayload?.logoDataUrl],
   );
 
   const periodLabel = useMemo(
@@ -98,12 +106,12 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
   // Generate report card mutation
   const generateReportCardMutation = useMutation({
     mutationFn: async () => {
-      if (!reportCardData) {
+      if (!reportCardPayload?.students?.length) {
         throw new Error('Données de bulletin non disponibles');
       }
 
       // Generate PDF for each student
-      for (const studentData of reportCardData) {
+      for (const studentData of reportCardPayload.students) {
         await generateTranlefetReportCardPdf(
           studentData as Parameters<typeof generateTranlefetReportCardPdf>[0],
           {
@@ -115,28 +123,79 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         );
       }
 
-      const saveResult = await adminApi.saveReportCards({
-        classId: selectedClass,
-        period: selectedPeriod,
-        academicYear: selectedAcademicYear,
-        publish: publishAfterSave,
-      });
+      let saveResult: { message?: string; skippedPending?: number } | null = null;
+      let saveWarning: string | null = null;
+      try {
+        saveResult = await adminApi.saveReportCards({
+          classId: selectedClass,
+          period: selectedPeriod,
+          academicYear: selectedAcademicYear,
+          publish: publishAfterSave,
+        });
+      } catch (saveError: unknown) {
+        const axiosErr = saveError as {
+          code?: string;
+          message?: string;
+          response?: { status?: number; data?: { error?: string } };
+        };
+        const apiMessage = axiosErr.response?.data?.error;
+        const backendUnreachable =
+          axiosErr.code === 'ERR_NETWORK' ||
+          axiosErr.code === 'ECONNREFUSED' ||
+          (axiosErr.response?.status === 500 && !apiMessage);
+
+        if (backendUnreachable) {
+          saveWarning =
+            'Les PDF ont été téléchargés, mais le serveur API est injoignable. Vérifiez que `npm run dev` tourne dans le dossier server/, puis resynchronisez depuis l’onglet Bulletins.';
+        } else if (axiosErr.response?.status === 409) {
+          saveWarning =
+            apiMessage ??
+            'Les PDF ont été téléchargés. Une demande de validation est déjà en cours pour cette période.';
+        } else {
+          saveWarning =
+            apiMessage ??
+            'Les PDF ont été téléchargés, mais l’enregistrement en base a échoué.';
+        }
+      }
 
       queryClient.invalidateQueries({ queryKey: ['report-cards'] });
       queryClient.invalidateQueries({ queryKey: ['admin-report-cards-tab'] });
-      return { count: reportCardData.length, saveResult };
+      return { count: reportCardPayload.students.length, saveResult, saveWarning };
     },
-    onSuccess: ({ count, saveResult }: { count: number; saveResult?: { message?: string } }) => {
-      const validationMsg = saveResult?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE;
-      toast.success(
-        `${count} PDF généré(s). ${validationMsg}`,
-        { duration: 8000 }
-      );
+    onSuccess: ({
+      count,
+      saveResult,
+      saveWarning,
+    }: {
+      count: number;
+      saveResult?: { message?: string; skippedPending?: number } | null;
+      saveWarning?: string | null;
+    }) => {
+      if (saveWarning) {
+        toast.success(`${count} PDF généré(s) et téléchargé(s).`, { duration: 6000 });
+        toast.error(saveWarning, { duration: 10000 });
+      } else {
+        const validationMsg = saveResult?.message ?? ACADEMIC_CHANGE_VALIDATION_MESSAGE;
+        toast.success(`${count} PDF généré(s). ${validationMsg}`, { duration: 8000 });
+      }
       handleClose();
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       console.error('Error generating report cards:', error);
-      toast.error(error.response?.data?.error || 'Erreur lors de la génération des bulletins');
+      const axiosErr = error as {
+        code?: string;
+        response?: { status?: number; data?: { error?: string } };
+      };
+      const apiMessage = axiosErr.response?.data?.error;
+      if (axiosErr.code === 'ERR_NETWORK' || axiosErr.response?.status === 500) {
+        toast.error(
+          apiMessage ||
+            'Serveur API inaccessible. Lancez le backend : cd server puis npm run dev (port 5000).',
+          { duration: 10000 },
+        );
+        return;
+      }
+      toast.error(apiMessage || 'Erreur lors de la génération des bulletins');
     },
     onSettled: () => setIsGenerating(false),
   });
@@ -167,11 +226,15 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
     onClose();
   };
 
-  const canGenerate = selectedClass && selectedPeriod && selectedAcademicYear && reportCardData && reportCardData.length > 0;
+  const canGenerate =
+    selectedClass &&
+    selectedPeriod &&
+    selectedAcademicYear &&
+    reportCardStudents.length > 0;
 
   const studentsWithoutGrades = useMemo(() => {
-    if (!reportCardData) return 0;
-    return reportCardData.filter(
+    if (!reportCardStudents.length) return 0;
+    return reportCardStudents.filter(
       (s: { grades?: unknown[]; courseAverages?: Record<string, { average?: number }> }) => {
         const gradeCount = s.grades?.length ?? 0;
         const hasAverage = s.courseAverages
@@ -180,7 +243,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
         return gradeCount === 0 && !hasAverage;
       },
     ).length;
-  }, [reportCardData]);
+  }, [reportCardStudents]);
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="Génération de Bulletins" size="lg">
@@ -256,14 +319,14 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
           </div>
         )}
 
-        {reportCardData && reportCardData.length > 0 && (
+        {reportCardStudents.length > 0 && (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <div className="flex items-center space-x-2 mb-3">
               <FiUsers className="w-5 h-5 text-gray-600" />
               <h3 className="font-semibold text-gray-800">Aperçu</h3>
             </div>
             <p className="text-sm text-gray-700">
-              {reportCardData.length} élève(s) trouvé(s) dans cette classe. Les bulletins seront générés pour tous les élèves.
+              {reportCardStudents.length} élève(s) trouvé(s) dans cette classe. Les bulletins seront générés pour tous les élèves.
             </p>
             {studentsWithoutGrades > 0 && (
               <p className="text-sm text-amber-800 mt-2 bg-amber-50 border border-amber-200 rounded-md p-2">
@@ -279,7 +342,7 @@ const GenerateReportCardModal: React.FC<GenerateReportCardModalProps> = ({ isOpe
           </div>
         )}
 
-        {reportCardData && reportCardData.length === 0 && selectedClass && (
+        {reportCardPayload && reportCardStudents.length === 0 && selectedClass && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-center space-x-2">
               <FiAlertCircle className="w-5 h-5 text-yellow-600" />

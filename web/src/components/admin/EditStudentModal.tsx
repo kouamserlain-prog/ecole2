@@ -5,6 +5,8 @@ import Modal from '../ui/Modal';
 import IdentityDocumentsPanel from '../identity/IdentityDocumentsPanel';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
+import Avatar from '../ui/Avatar';
+import ImageUpload from '../ui/ImageUpload';
 import toast from 'react-hot-toast';
 import { 
   FiUser, 
@@ -54,6 +56,8 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
     email: '',
     phone: '',
     dateOfBirth: '',
+    birthPlace: '',
+    isRepeating: false,
     gender: 'MALE' as 'MALE' | 'FEMALE' | 'OTHER',
     
     // Informations académiques
@@ -85,6 +89,8 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
         dateOfBirth: student.dateOfBirth 
           ? new Date(student.dateOfBirth).toISOString().split('T')[0]
           : '',
+        birthPlace: (student as { birthPlace?: string | null }).birthPlace || '',
+        isRepeating: Boolean((student as { isRepeating?: boolean | null }).isRepeating),
         gender: student.gender || 'MALE',
         classId: student.classId || '',
         classGroupId: student.classGroup?.id || '',
@@ -175,6 +181,23 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
     },
   });
 
+  const handleStudentAvatarUpload = async (url: string) => {
+    if (url) {
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      return;
+    }
+    try {
+      await adminApi.updateStudent(studentId, { avatar: null });
+      queryClient.invalidateQueries({ queryKey: studentQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      toast.success('Photo supprimée');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || 'Impossible de supprimer la photo');
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     if (name === 'classId') {
@@ -254,6 +277,8 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
       lastName: formData.lastName,
       phone: formData.phone || undefined,
       dateOfBirth: formData.dateOfBirth,
+      birthPlace: formData.birthPlace.trim() || undefined,
+      isRepeating: formData.isRepeating,
       gender: formData.gender,
       classId: formData.classId || undefined,
       classGroupId: formData.classId
@@ -368,6 +393,27 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
           {/* Step 1: Informations Personnelles */}
           {currentStep === 1 && (
             <div className="space-y-2 animate-fade-in">
+              <div className="flex flex-col sm:flex-row gap-4 pb-2 border-b border-stone-100">
+                <Avatar
+                  src={(student as { user?: { avatar?: string | null } }).user?.avatar}
+                  name={`${formData.firstName} ${formData.lastName}`}
+                  size="lg"
+                />
+                <div className="flex-1 min-w-0">
+                  <ImageUpload
+                    currentImage={(student as { user?: { avatar?: string | null } }).user?.avatar}
+                    onUpload={handleStudentAvatarUpload}
+                    type="avatar"
+                    label="Photo de l'élève"
+                    uploadEndpoint={`/admin/students/${studentId}/avatar`}
+                    uploadFieldName="avatar"
+                  />
+                  <p className="mt-1 text-[11px] text-stone-500">
+                    Utilisée sur le profil et les bulletins scolaires (JPEG, PNG, WEBP — max. 5 Mo).
+                  </p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -501,10 +547,26 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  <label htmlFor="edit-student-birth-place" className="block text-xs font-semibold text-stone-700 mb-1">
+                    Lieu de naissance
+                  </label>
+                  <input
+                    id="edit-student-birth-place"
+                    type="text"
+                    name="birthPlace"
+                    value={formData.birthPlace}
+                    onChange={handleChange}
+                    placeholder="Ex. Bouaké, Abidjan…"
+                    className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500/40 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-student-gender" className="block text-xs font-semibold text-stone-700 mb-1">
                     Genre <span className="text-red-500">*</span>
                   </label>
                   <select
+                    id="edit-student-gender"
                     name="gender"
                     value={formData.gender}
                     onChange={handleChange}
@@ -522,6 +584,24 @@ const EditStudentModal: React.FC<EditStudentModalProps> = ({ isOpen, onClose, st
                       {errors.gender}
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <label htmlFor="edit-student-is-repeating" className="block text-xs font-semibold text-stone-700 mb-1">
+                    Doublant (e)
+                  </label>
+                  <select
+                    id="edit-student-is-repeating"
+                    name="isRepeating"
+                    value={formData.isRepeating ? 'true' : 'false'}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, isRepeating: e.target.value === 'true' }))
+                    }
+                    className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500/40 transition-all"
+                  >
+                    <option value="false">Non</option>
+                    <option value="true">Oui</option>
+                  </select>
                 </div>
               </div>
             </div>

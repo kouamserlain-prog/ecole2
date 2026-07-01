@@ -76,6 +76,8 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
     confirmPassword: '',
     phone: '',
     dateOfBirth: '',
+    birthPlace: '',
+    isRepeating: false,
     gender: 'MALE' as 'MALE' | 'FEMALE' | 'OTHER',
     
     // Informations académiques
@@ -237,6 +239,8 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
       phone: formData.phone || undefined,
       studentId: formData.studentId,
       dateOfBirth: formData.dateOfBirth,
+      birthPlace: formData.birthPlace.trim() || undefined,
+      isRepeating: formData.isRepeating,
       gender: formData.gender,
       address: formData.address || undefined,
       emergencyContact: formData.emergencyContact || undefined,
@@ -266,6 +270,8 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
       confirmPassword: '',
       phone: '',
       dateOfBirth: '',
+      birthPlace: '',
+      isRepeating: false,
       gender: 'MALE',
       studentId: '',
       classId: '',
@@ -515,6 +521,21 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                 </div>
 
                 <div>
+                  <label htmlFor="add-student-birth-place" className="block text-xs font-semibold text-stone-700 mb-1">
+                    Lieu de naissance
+                  </label>
+                  <input
+                    id="add-student-birth-place"
+                    type="text"
+                    name="birthPlace"
+                    value={formData.birthPlace}
+                    onChange={handleChange}
+                    placeholder="Ex. Bouaké, Abidjan…"
+                    className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500/40 transition-all"
+                  />
+                </div>
+
+                <div>
                   <label htmlFor="add-student-gender" className="block text-xs font-semibold text-stone-700 mb-1">
                     Genre <span className="text-red-500">*</span>
                   </label>
@@ -537,6 +558,24 @@ const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClose }) =>
                       {errors.gender}
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <label htmlFor="add-student-is-repeating" className="block text-xs font-semibold text-stone-700 mb-1">
+                    Doublant (e)
+                  </label>
+                  <select
+                    id="add-student-is-repeating"
+                    name="isRepeating"
+                    value={formData.isRepeating ? 'true' : 'false'}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, isRepeating: e.target.value === 'true' }))
+                    }
+                    className="w-full px-3 py-1.5 text-sm border border-stone-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500/40 transition-all"
+                  >
+                    <option value="false">Non</option>
+                    <option value="true">Oui</option>
+                  </select>
                 </div>
               </div>
 

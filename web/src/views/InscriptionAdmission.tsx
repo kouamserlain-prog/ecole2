@@ -62,6 +62,8 @@ const InscriptionAdmission = () => {
     email: '',
     phone: '',
     dateOfBirth: '',
+    birthPlace: '',
+    isRepeating: 'false' as 'true' | 'false',
     gender: 'MALE' as 'MALE' | 'FEMALE' | 'OTHER',
     desiredLevel: '',
     academicYear: defaultYear,
@@ -203,6 +205,10 @@ const InscriptionAdmission = () => {
       toast.error('Indiquez la date de naissance.');
       return;
     }
+    if (!form.birthPlace.trim()) {
+      toast.error('Indiquez le lieu de naissance.');
+      return;
+    }
     const dob = new Date(form.dateOfBirth);
     if (Number.isNaN(dob.getTime())) {
       toast.error('Date de naissance invalide.');
@@ -249,6 +255,8 @@ const InscriptionAdmission = () => {
         'matricule',
         'email',
         'phone',
+        'birthPlace',
+        'isRepeating',
         'gender',
         'desiredLevel',
         'academicYear',
@@ -289,6 +297,8 @@ const InscriptionAdmission = () => {
         email: '',
         phone: '',
         dateOfBirth: '',
+        birthPlace: '',
+        isRepeating: 'false',
         previousSchool: '',
         parentName: '',
         parentPhone: '',
@@ -607,6 +617,24 @@ const InscriptionAdmission = () => {
                 />
               </div>
               <div>
+                <label htmlFor="adm-birthPlace" className="block text-sm font-medium text-stone-800 mb-1.5">
+                  Lieu de naissance *
+                </label>
+                <input
+                  id="adm-birthPlace"
+                  name="birthPlace"
+                  type="text"
+                  required
+                  value={form.birthPlace}
+                  onChange={handleChange}
+                  placeholder="Ex. Bouaké, Abidjan…"
+                  className={fieldClassName}
+                />
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
                 <label htmlFor="adm-gender" className="block text-sm font-medium text-stone-800 mb-1.5">
                   Genre *
                 </label>
@@ -620,6 +648,21 @@ const InscriptionAdmission = () => {
                   <option value="MALE">Masculin</option>
                   <option value="FEMALE">Féminin</option>
                   <option value="OTHER">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="adm-isRepeating" className="block text-sm font-medium text-stone-800 mb-1.5">
+                  Doublant (e) *
+                </label>
+                <select
+                  id="adm-isRepeating"
+                  name="isRepeating"
+                  value={form.isRepeating}
+                  onChange={handleChange}
+                  className={fieldClassName}
+                >
+                  <option value="false">Non</option>
+                  <option value="true">Oui</option>
                 </select>
               </div>
             </div>

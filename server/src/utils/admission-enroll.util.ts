@@ -119,6 +119,8 @@ export async function enrollStudentFromAdmission(
           studentId,
           digitalCardPublicId: generateDigitalCardPublicId(),
           dateOfBirth: admission.dateOfBirth,
+          birthPlace: admission.birthPlace ?? undefined,
+          isRepeating: admission.isRepeating ?? false,
           gender: admission.gender,
           address: body.address ?? admission.address ?? undefined,
           emergencyContact: body.emergencyContact ?? admission.parentName ?? undefined,

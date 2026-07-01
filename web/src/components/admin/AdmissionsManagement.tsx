@@ -26,6 +26,7 @@ import {
   FiDownload,
 } from 'react-icons/fi';
 import { downloadStudentEnrollmentDossier } from '@/lib/downloadStudentEnrollmentDossier';
+import { EnrollmentDossierSuccessModal } from './EnrollmentDossierSuccessModal';
 import EnrollmentTuitionSummary from './EnrollmentTuitionSummary';
 import { getCurrentAcademicYear } from '@/utils/academicYear';
 
@@ -78,6 +79,10 @@ const AdmissionsManagement = () => {
   const [enrollStateAssignment, setEnrollStateAssignment] = useState<
     'STATE_ASSIGNED' | 'NOT_STATE_ASSIGNED'
   >('NOT_STATE_ASSIGNED');
+  const [enrollmentDossierSuccess, setEnrollmentDossierSuccess] = useState<{
+    studentId: string;
+    studentName: string;
+  } | null>(null);
 
   const { data: admissions, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['admissions', statusFilter],
@@ -166,9 +171,11 @@ const AdmissionsManagement = () => {
       }
       toast.success(msg);
       const enrolledStudentDbId = d?.user?.studentProfile?.id;
-      if (enrolledStudentDbId) {
-        void downloadStudentEnrollmentDossier(enrolledStudentDbId).catch(() => {
-          toast.error('Dossier PDF : échec du téléchargement automatique. Téléchargez-le depuis la fiche élève.');
+      const target = enrollTarget as { firstName?: string; lastName?: string } | null;
+      if (enrolledStudentDbId && target) {
+        setEnrollmentDossierSuccess({
+          studentId: enrolledStudentDbId,
+          studentName: `${target.lastName ?? ''} ${target.firstName ?? ''}`.trim() || 'Élève',
         });
       }
       setEnrollTarget(null);
@@ -413,6 +420,8 @@ const AdmissionsManagement = () => {
                 <FiCalendar className="w-4 h-4 text-gray-400" />
                 Né(e) le{' '}
                 {format(new Date(selected.dateOfBirth), 'dd/MM/yyyy', { locale: fr })} — {selected.gender}
+                {selected.birthPlace ? ` — né(e) à ${selected.birthPlace}` : ''}
+                {selected.isRepeating ? ' — doublant(e)' : ''}
               </p>
               <p className="flex items-center gap-2">
                 <FiPhone className="w-4 h-4 text-gray-400" />
@@ -595,6 +604,13 @@ const AdmissionsManagement = () => {
           </form>
         )}
       </Modal>
+
+      <EnrollmentDossierSuccessModal
+        open={!!enrollmentDossierSuccess}
+        onClose={() => setEnrollmentDossierSuccess(null)}
+        studentId={enrollmentDossierSuccess?.studentId ?? ''}
+        studentName={enrollmentDossierSuccess?.studentName ?? ''}
+      />
     </div>
   );
 };

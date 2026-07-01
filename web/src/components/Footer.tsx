@@ -5,17 +5,7 @@ import Link from 'next/link';
 import { useAppBranding } from '@/contexts/AppBrandingContext';
 import {
   FiBook,
-  FiUsers,
-  FiAward,
-  FiShield,
-  FiBarChart,
-  FiCalendar,
-  FiBell,
-  FiLock,
-  FiZap,
   FiMail,
-  FiPhone,
-  FiMapPin,
   FiMessageSquare,
   FiHelpCircle,
   FiFileText,
@@ -77,12 +67,7 @@ const SOCIAL_NETWORKS: SocialNetwork[] = [
   },
 ];
 
-type FooterProps = {
-  /** Masque la colonne « Fonctionnalités » (page d'accueil établissement). */
-  hideFeatures?: boolean;
-};
-
-const Footer = ({ hideFeatures = false }: FooterProps) => {
+const Footer = () => {
   const currentYear = new Date().getFullYear();
   const { branding, navigationLogoAbsolute } = useAppBranding();
   const displayTitle = (branding.appTitle && branding.appTitle.trim()) || 'Gestion scolaire';
@@ -100,11 +85,7 @@ const Footer = ({ hideFeatures = false }: FooterProps) => {
         aria-hidden
       />
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div
-          className={`grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 ${
-            hideFeatures ? 'lg:grid-cols-3' : 'lg:grid-cols-4'
-          }`}
-        >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           {/* À propos */}
           <div>
             <div className="flex items-center gap-3 mb-4">
@@ -149,80 +130,6 @@ const Footer = ({ hideFeatures = false }: FooterProps) => {
               ))}
             </div>
           </div>
-
-          {!hideFeatures && (
-            <div>
-              <h3 className="text-stone-100 font-bold text-lg mb-4 flex items-center gap-2">
-                <FiBook className="w-5 h-5 text-amber-400/90 shrink-0" aria-hidden />
-                Fonctionnalités
-              </h3>
-              <ul className="space-y-2">
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiBarChart className="w-4 h-4 mr-2" />
-                    Gestion Complète
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiUsers className="w-4 h-4 mr-2 shrink-0" aria-hidden />
-                    Multi-Rôles
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiAward className="w-4 h-4 mr-2" />
-                    Suivi Pédagogique
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiBell className="w-4 h-4 mr-2" />
-                    Communication
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiCalendar className="w-4 h-4 mr-2" />
-                    Emploi du Temps
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiShield className="w-4 h-4 mr-2" />
-                    Sécurité & Confidentialité
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/home#features"
-                    className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                  >
-                    <FiZap className="w-4 h-4 mr-2" />
-                    Performance & Rapidité
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          )}
 
           {/* Ressources */}
           <div>
@@ -278,81 +185,13 @@ const Footer = ({ hideFeatures = false }: FooterProps) => {
               </li>
             </ul>
           </div>
-
-          {/* Informations Légales */}
-          <div>
-            <h3 className="text-stone-100 font-bold text-lg mb-4 flex items-center gap-2">
-              <FiLock className="w-5 h-5 text-amber-400/90 shrink-0" aria-hidden />
-              Informations Légales
-            </h3>
-            <ul className="space-y-2">
-              <li>
-                <Link
-                  href="/privacy"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiShield className="w-4 h-4 mr-2" />
-                  Politique de Confidentialité
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/terms"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiFileText className="w-4 h-4 mr-2" />
-                  Conditions d'Utilisation
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/cookies"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiSettings className="w-4 h-4 mr-2" />
-                  Politique des Cookies
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/legal"
-                  className="text-sm text-stone-400 hover:text-amber-100 transition-colors flex items-center rounded-lg py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45"
-                >
-                  <FiFileText className="w-4 h-4 mr-2" />
-                  Mentions Légales
-                </Link>
-              </li>
-            </ul>
-          </div>
         </div>
 
         {/* Copyright */}
         <div className="border-t border-stone-700/80 mt-8 pt-8">
-          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0 gap-4">
-            <p className="text-sm text-stone-500 text-center md:text-left">
-              © {currentYear} {displayTitle}. Tous droits réservés.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
-              <Link
-                href="/privacy"
-                className="text-stone-500 hover:text-amber-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 rounded"
-              >
-                Confidentialité
-              </Link>
-              <Link
-                href="/terms"
-                className="text-stone-500 hover:text-amber-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 rounded"
-              >
-                Conditions
-              </Link>
-              <Link
-                href="/sitemap"
-                className="text-stone-500 hover:text-amber-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 rounded"
-              >
-                Plan du site
-              </Link>
-            </div>
-          </div>
+          <p className="text-sm text-stone-500 text-center">
+            © {currentYear} {displayTitle}. Tous droits réservés.
+          </p>
         </div>
       </div>
     </footer>

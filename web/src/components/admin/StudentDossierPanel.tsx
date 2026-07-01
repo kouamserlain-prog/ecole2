@@ -6,10 +6,13 @@ import { adminApi } from '../../services/api';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 import toast from 'react-hot-toast';
-import { FiLayers, FiShuffle, FiCreditCard, FiArchive, FiTrash2, FiPlus, FiDownload } from 'react-icons/fi';
+import { FiLayers, FiShuffle, FiCreditCard, FiArchive, FiTrash2, FiPlus, FiDownload, FiPrinter } from 'react-icons/fi';
 import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
-import { downloadStudentEnrollmentDossier } from '@/lib/downloadStudentEnrollmentDossier';
+import {
+  downloadStudentEnrollmentDossier,
+  printStudentEnrollmentDossier,
+} from '@/lib/downloadStudentEnrollmentDossier';
 import { useSchool } from '@/contexts/SchoolContext';
 import { useSchoolReady, schoolQueryKey } from '@/hooks/useSchoolReady';
 
@@ -30,6 +33,7 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
   const schoolReady = useSchoolReady();
   const studentQueryKey = schoolQueryKey(['student', studentId], activeSchoolId);
   const [dossierDownloading, setDossierDownloading] = useState(false);
+  const [dossierPrinting, setDossierPrinting] = useState(false);
   const [historyForm, setHistoryForm] = useState({
     academicYear: '',
     className: '',
@@ -166,27 +170,50 @@ const StudentDossierPanel: React.FC<StudentDossierPanelProps> = ({ studentId }) 
               carte numérique.
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            disabled={dossierDownloading}
-            onClick={async () => {
-              setDossierDownloading(true);
-              try {
-                await downloadStudentEnrollmentDossier(studentId);
-                toast.success('Dossier PDF téléchargé');
-              } catch (e: unknown) {
-                const err = e as { response?: { data?: { error?: string } } };
-                toast.error(err.response?.data?.error || 'Impossible de générer le dossier PDF');
-              } finally {
-                setDossierDownloading(false);
-              }
-            }}
-            className="inline-flex items-center gap-2 shrink-0"
-          >
-            <FiDownload className="w-4 h-4" aria-hidden />
-            {dossierDownloading ? 'Génération…' : 'Télécharger le dossier'}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row shrink-0">
+            <Button
+              type="button"
+              size="sm"
+              disabled={dossierDownloading || dossierPrinting}
+              onClick={async () => {
+                setDossierDownloading(true);
+                try {
+                  await downloadStudentEnrollmentDossier(studentId);
+                  toast.success('Dossier PDF téléchargé');
+                } catch (e: unknown) {
+                  const err = e as { response?: { data?: { error?: string } } };
+                  toast.error(err.response?.data?.error || 'Impossible de générer le dossier PDF');
+                } finally {
+                  setDossierDownloading(false);
+                }
+              }}
+              className="inline-flex items-center gap-2"
+            >
+              <FiDownload className="w-4 h-4" aria-hidden />
+              {dossierDownloading ? 'Génération…' : 'Télécharger'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={dossierDownloading || dossierPrinting}
+              onClick={async () => {
+                setDossierPrinting(true);
+                try {
+                  await printStudentEnrollmentDossier(studentId);
+                } catch (e: unknown) {
+                  const err = e as { response?: { data?: { error?: string } } };
+                  toast.error(err.response?.data?.error || "Impossible d'ouvrir le dossier pour impression");
+                } finally {
+                  setDossierPrinting(false);
+                }
+              }}
+              className="inline-flex items-center gap-2"
+            >
+              <FiPrinter className="w-4 h-4" aria-hidden />
+              {dossierPrinting ? 'Ouverture…' : 'Imprimer'}
+            </Button>
+          </div>
         </div>
       </Card>
 

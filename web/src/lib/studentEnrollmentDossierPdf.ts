@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import fr from 'date-fns/locale/fr';
 import { ENROLLMENT_STATUS_LABELS, type EnrollmentStatusValue } from './enrollmentStatus';
 import { STATE_ASSIGNMENT_LABELS, type StudentStateAssignmentValue } from './stateAssignment';
+import { TRANLEFET_SCHOOL } from '../data/tranlefetSchool';
 
 export type StudentEnrollmentDossierPayload = {
   generatedAt: string;
@@ -13,6 +14,9 @@ export type StudentEnrollmentDossierPayload = {
     phone?: string | null;
     email?: string | null;
     principalName?: string | null;
+    schoolCode?: string | null;
+    motto?: string | null;
+    logoUrl?: string | null;
   } | null;
   student: {
     id: string;
@@ -21,6 +25,8 @@ export type StudentEnrollmentDossierPayload = {
     enrollmentStatus: string;
     stateAssignment?: string | null;
     dateOfBirth: string;
+    birthPlace?: string | null;
+    isRepeating?: boolean;
     gender: string;
     address?: string | null;
     emergencyContact?: string | null;
@@ -167,32 +173,96 @@ function gradeLine(label: string, value: number | null | undefined): string | nu
   return `${label} : ${value} / 20`;
 }
 
-export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDossierPayload): void {
+function imageFormatFromDataUrl(dataUrl: string): 'PNG' | 'JPEG' | 'WEBP' {
+  if (dataUrl.startsWith('data:image/png')) return 'PNG';
+  if (dataUrl.startsWith('data:image/webp')) return 'WEBP';
+  return 'JPEG';
+}
+
+function drawSignaturesBlock(
+  doc: jsPDF,
+  margin: number,
+  pageWidth: number,
+  y: number,
+  pageHeight: number,
+): number {
+  if (y > pageHeight - 42) {
+    doc.addPage();
+    y = 20;
+  }
+  const colW = (pageWidth - margin * 2) / 2;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...C.muted);
+  doc.text('Date et signature du responsable légal', margin + colW / 2, y, { align: 'center' });
+  doc.text('Cachet et visa de l\'administration', margin + colW + colW / 2, y, { align: 'center' });
+  y += 4;
+  doc.setDrawColor(...C.line);
+  doc.setLineWidth(0.25);
+  doc.line(margin + 4, y + 14, margin + colW - 4, y + 14);
+  doc.line(margin + colW + 4, y + 14, pageWidth - margin - 4, y + 14);
+  return y + 22;
+}
+
+export type EnrollmentDossierRenderOptions = {
+  logoDataUrl?: string | null;
+};
+
+/** Construit le document PDF (sans téléchargement). */
+export function buildStudentEnrollmentDossierDoc(
+  payload: StudentEnrollmentDossierPayload,
+  options: EnrollmentDossierRenderOptions = {},
+): jsPDF {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 16;
   const maxWidth = pageWidth - margin * 2;
-  let y = 16;
+  let y = 14;
 
-  const schoolName = payload.school?.name?.trim();
-  if (schoolName) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...C.brand);
-    doc.text(schoolName.toUpperCase(), pageWidth / 2, y, { align: 'center' });
-    y += 6;
+  const schoolName = payload.school?.name?.trim() || TRANLEFET_SCHOOL.fullName;
+  const schoolCode = payload.school?.schoolCode?.trim() || TRANLEFET_SCHOOL.establishmentCode;
+
+  if (options.logoDataUrl) {
+    try {
+      doc.addImage(
+        options.logoDataUrl,
+        imageFormatFromDataUrl(options.logoDataUrl),
+        pageWidth / 2 - 12,
+        y,
+        24,
+        24,
+      );
+      y += 28;
+    } catch {
+      y += 2;
+    }
+  }
+
+  doc.setFillColor(...C.brand);
+  doc.rect(margin, y, pageWidth - margin * 2, 1.2, 'F');
+  y += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...C.brand);
+  doc.text(schoolName.toUpperCase(), pageWidth / 2, y, { align: 'center' });
+  y += 5;
+  if (schoolCode) {
+    doc.setFontSize(8);
+    doc.text(`CODE ÉTABLISSEMENT : ${schoolCode}`, pageWidth / 2, y, { align: 'center' });
+    y += 5;
   }
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setTextColor(...C.ink);
-  doc.text("DOSSIER D'INSCRIPTION ÉLÈVE", pageWidth / 2, y, { align: 'center' });
-  y += 8;
+  doc.text("DOSSIER D'INSCRIPTION DÉFINITIVE", pageWidth / 2, y, { align: 'center' });
+  y += 7;
 
   const fullName = [payload.user.lastName, payload.user.firstName].filter(Boolean).join(' ').trim();
   doc.setFontSize(12);
-  doc.text(fullName, pageWidth / 2, y, { align: 'center' });
+  doc.text(fullName.toUpperCase(), pageWidth / 2, y, { align: 'center' });
   y += 6;
 
   doc.setFont('helvetica', 'normal');
@@ -201,7 +271,7 @@ export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDo
   const metaLines = [
     `Matricule : ${payload.student.studentId}`,
     payload.admission?.reference ? `Réf. pré-inscription : ${payload.admission.reference}` : null,
-    `Date d'inscription : ${formatDate(payload.student.enrollmentDate)}`,
+    `Date d'inscription définitive : ${formatDate(payload.student.enrollmentDate)}`,
     `Statut : ${ENROLLMENT_STATUS_LABELS[payload.student.enrollmentStatus as EnrollmentStatusValue] ?? payload.student.enrollmentStatus}`,
     `Document généré le ${format(new Date(payload.generatedAt), "dd MMMM yyyy 'à' HH:mm", { locale: fr })}`,
   ].filter(Boolean) as string[];
@@ -209,7 +279,11 @@ export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDo
     doc.text(line, pageWidth / 2, y, { align: 'center' });
     y += 4.5;
   }
-  y += 4;
+  y += 3;
+
+  doc.setFillColor(...C.gold);
+  doc.rect(margin, y, pageWidth - margin * 2, 0.8, 'F');
+  y += 5;
 
   doc.setDrawColor(...C.line);
   doc.setLineWidth(0.2);
@@ -219,12 +293,14 @@ export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDo
   const identityBody = [
     `Nom complet : ${fullName}`,
     `Date de naissance : ${formatDate(payload.student.dateOfBirth)}`,
+    `Lieu de naissance : ${val(payload.student.birthPlace)}`,
     `Genre : ${GENDER_LABELS[payload.student.gender] ?? payload.student.gender}`,
+    `Doublant (e) : ${payload.student.isRepeating ? 'Oui' : 'Non'}`,
     `E-mail : ${val(payload.user.email)}`,
     `Téléphone : ${val(payload.user.phone)}`,
     `Adresse : ${val(payload.student.address)}`,
   ].join('\n');
-  y = writeSection(doc, 'Identité', identityBody, margin, y, maxWidth, pageWidth, pageHeight);
+  y = writeSection(doc, 'Identité de l\'élève', identityBody, margin, y, maxWidth, pageWidth, pageHeight);
 
   const classLine = payload.class
     ? [
@@ -372,6 +448,8 @@ export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDo
     y += 44;
   }
 
+  y = drawSignaturesBlock(doc, margin, pageWidth, y, pageHeight);
+
   if (payload.school) {
     const footerParts = [
       payload.school.address ? payload.school.address : null,
@@ -403,6 +481,34 @@ export function downloadStudentEnrollmentDossierPdf(payload: StudentEnrollmentDo
     { align: 'center' },
   );
 
+  return doc;
+}
+
+export function downloadStudentEnrollmentDossierPdf(
+  payload: StudentEnrollmentDossierPayload,
+  options?: EnrollmentDossierRenderOptions,
+): void {
+  const doc = buildStudentEnrollmentDossierDoc(payload, options);
+  const fullName = [payload.user.lastName, payload.user.firstName].filter(Boolean).join(' ').trim();
   const fileName = `dossier-inscription-${slugifyFilename(payload.student.studentId || fullName)}.pdf`;
   doc.save(fileName);
+}
+
+export function printStudentEnrollmentDossierPdf(
+  payload: StudentEnrollmentDossierPayload,
+  options?: EnrollmentDossierRenderOptions,
+): void {
+  const doc = buildStudentEnrollmentDossierDoc(payload, options);
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const printWindow = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!printWindow) {
+    URL.revokeObjectURL(url);
+    throw new Error('Impossible d\'ouvrir la fenêtre d\'impression. Autorisez les pop-ups.');
+  }
+  printWindow.addEventListener('load', () => {
+    printWindow.focus();
+    printWindow.print();
+  });
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

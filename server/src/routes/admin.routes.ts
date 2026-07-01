@@ -9,7 +9,8 @@ import {
 import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import prisma from '../utils/prisma';
 import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
-import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
+import { reportCardClientPhotoUrl } from '../utils/report-card-photo-url.util';
+import { fetchBrandingLogoDataUrl } from '../utils/image-data-url.util';
 import { computeClassBulletinRanks, enrichReportCardsWithTermHistory, getCurrentAcademicYear, getPeriodDates, getPeriodLabel, gradePeriodWhere, inferReportingPeriod } from '../utils/report-card.util';
 import {
   parseGradingCoefficient,
@@ -4719,6 +4720,7 @@ router.get('/dashboard/kpis', async (req: SchoolContextRequest, res) => {
 // Générer les données pour les bulletins
 router.get('/report-cards/generate-data', async (req, res) => {
   try {
+    const schoolReq = req as SchoolContextRequest;
     const { classId, period, academicYear } = req.query;
 
     if (!classId || !period || !academicYear) {
@@ -4764,6 +4766,19 @@ router.get('/report-cards/generate-data', async (req, res) => {
         },
       },
     });
+
+    const studentIds = students.map((s) => s.id);
+    const photoIdentityDocs = await prisma.identityDocument.findMany({
+      where: { studentId: { in: studentIds }, type: 'PHOTO_ID' },
+      orderBy: { createdAt: 'desc' },
+      select: { studentId: true, fileUrl: true },
+    });
+    const photoUrlByStudentId = new Map<string, string>();
+    for (const doc of photoIdentityDocs) {
+      if (!photoUrlByStudentId.has(doc.studentId)) {
+        photoUrlByStudentId.set(doc.studentId, doc.fileUrl);
+      }
+    }
 
     // Pour chaque élève, calculer les moyennes par matière
     const reportCardData = await Promise.all(
@@ -4844,8 +4859,13 @@ router.get('/report-cards/generate-data', async (req, res) => {
           studentIdNumber: student.studentId,
           gender: student.gender,
           dateOfBirth: student.dateOfBirth,
+          birthPlace: student.birthPlace,
+          repeating: student.isRepeating ?? false,
           address: student.address,
           user: student.user,
+          photoUrl: reportCardClientPhotoUrl(
+            student.user.avatar || photoUrlByStudentId.get(student.id) || null,
+          ),
           class: student.class,
           grades,
           courseAverages,
@@ -4878,7 +4898,12 @@ router.get('/report-cards/generate-data', async (req, res) => {
       reportCardData,
     );
 
-    res.json(reportCardData);
+    const logoDataUrl = await fetchBrandingLogoDataUrl(schoolReq.schoolId);
+
+    res.json({
+      students: reportCardData,
+      logoDataUrl,
+    });
   } catch (error: any) {
     console.error('Erreur lors de la génération des données de bulletins:', error);
     res.status(500).json({ 
@@ -4909,9 +4934,11 @@ router.post('/report-cards/save', async (req: AuthRequest, res) => {
 
     const changeRequests: Awaited<ReturnType<typeof createReportCardChangeRequest>>[] = [];
     let skippedUnchanged = 0;
+    let skippedPending = 0;
 
     await Promise.all(
       students.map(async (student) => {
+        try {
         const grades = await prisma.grade.findMany({
           where: {
             studentId: student.id,
@@ -5028,16 +5055,40 @@ router.post('/report-cards/save', async (req: AuthRequest, res) => {
           });
           changeRequests.push(request);
         }
+        } catch (err: unknown) {
+          const statusCode = (err as { statusCode?: number }).statusCode;
+          if (statusCode === 409) {
+            skippedPending += 1;
+            return;
+          }
+          throw err;
+        }
       })
     );
 
+    const parts: string[] = [];
+    if (changeRequests.length > 0) {
+      parts.push(
+        `${changeRequests.length} demande(s) de bulletin soumise(s) au circuit de validation (prof principal → éducateur → directeur des études).`,
+      );
+    }
+    if (skippedUnchanged > 0) {
+      parts.push(`${skippedUnchanged} bulletin(s) inchangé(s) (aucune nouvelle demande).`);
+    }
+    if (skippedPending > 0) {
+      parts.push(
+        `${skippedPending} élève(s) ignoré(s) : une demande de validation est déjà en cours pour cette période.`,
+      );
+    }
+
     res.json({
       message:
-        changeRequests.length > 0
-          ? `${changeRequests.length} demande(s) de bulletin soumise(s) au circuit de validation (prof principal → éducateur → directeur des études).`
+        parts.length > 0
+          ? parts.join(' ')
           : 'Aucune modification de moyenne à soumettre.',
       count: changeRequests.length,
       skippedUnchanged,
+      skippedPending,
       requests: changeRequests.map((r) => ({
         id: r.id,
         studentId: r.studentId,

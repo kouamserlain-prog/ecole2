@@ -74,7 +74,7 @@ function formatDateFr(d: string | Date | undefined | null) {
 }
 
 const StudentProfile = ({ searchQuery = '' }: { searchQuery?: string }) => {
-  const { user: currentUser } = useAuth();
+  const { refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const { data: profile, isLoading } = useQuery({
     queryKey: ['student-profile'],
@@ -121,15 +121,21 @@ const StudentProfile = ({ searchQuery = '' }: { searchQuery?: string }) => {
     );
   }, [profile, identity, contacts]);
 
-  const updateAvatarMutation = useMutation({
-    mutationFn: (avatar: string) => authApi.updateMe({ avatar }),
-    onSuccess: () => {
+  const handleAvatarUpload = async (url: string) => {
+    if (url) {
+      await refreshUser();
       queryClient.invalidateQueries({ queryKey: ['student-profile'] });
-      queryClient.invalidateQueries({ queryKey: ['auth-me'] });
-      toast.success('Photo de profil mise à jour');
-    },
-    onError: () => toast.error('Erreur lors de la mise à jour de la photo'),
-  });
+      return;
+    }
+    try {
+      await authApi.updateMe({ avatar: null });
+      await refreshUser();
+      queryClient.invalidateQueries({ queryKey: ['student-profile'] });
+      toast.success('Photo supprimée');
+    } catch {
+      toast.error('Impossible de supprimer la photo');
+    }
+  };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -154,10 +160,6 @@ const StudentProfile = ({ searchQuery = '' }: { searchQuery?: string }) => {
       toast.error(e.response?.data?.error || 'Enregistrement impossible');
     },
   });
-
-  const handleAvatarUpload = (url: string) => {
-    updateAvatarMutation.mutate(url);
-  };
 
   const profileMatchesSearch = useMemo(() => {
     if (!searchQuery || !profile) return true;
@@ -262,15 +264,17 @@ const StudentProfile = ({ searchQuery = '' }: { searchQuery?: string }) => {
                 name={`${profile?.user.firstName} ${profile?.user.lastName}`}
                 size="xl"
               />
-              {currentUser?.id === profile?.user.id && (
-                <div className="mt-4 w-full max-w-[220px]">
-                  <ImageUpload
-                    currentImage={profile?.user.avatar}
-                    onUpload={handleAvatarUpload}
-                    type="avatar"
-                  />
-                </div>
-              )}
+              <div className="mt-4 w-full max-w-[240px]">
+                <ImageUpload
+                  currentImage={profile?.user.avatar}
+                  onUpload={handleAvatarUpload}
+                  type="avatar"
+                  label="Photo de l'élève"
+                />
+                <p className="mt-2 text-xs text-stone-500 leading-relaxed">
+                  Cette photo apparaît sur votre profil et sur les bulletins scolaires.
+                </p>
+              </div>
             </div>
 
             <div className="flex-1 space-y-8">

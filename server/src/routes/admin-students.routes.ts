@@ -2,6 +2,7 @@ import express from 'express';
 import type { Prisma } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
+import { upload } from '../middleware/upload.middleware';
 import {
   inviteNewUserToSetPassword,
   resolveAdminProvidedOrInvitePassword,
@@ -9,7 +10,7 @@ import {
 import { optionalPasswordPolicyValidator, PASSWORD_POLICY_HINT } from '../utils/password.util';
 import { generateDigitalCardPublicId } from '../utils/digital-card.util';
 import { buildStudentEnrollmentDossierPayload } from '../utils/student-enrollment-dossier.util';
-import { deleteStoredUploadUrl } from '../utils/upload-persist.util';
+import { deleteStoredUploadUrl, discardUploadedFile, persistUploadedFile } from '../utils/upload-persist.util';
 import { resolveStoredFileAccessUrl } from '../utils/upload-access-token.util';
 import QRCode from 'qrcode';
 import type { SchoolContextRequest } from '../utils/school-context.util';
@@ -177,6 +178,8 @@ router.post(
         phone,
         studentId,
         dateOfBirth,
+        birthPlace,
+        isRepeating,
         gender,
         address,
         emergencyContact,
@@ -249,6 +252,8 @@ router.post(
             create: {
               studentId,
               dateOfBirth: new Date(dateOfBirth),
+              birthPlace: typeof birthPlace === 'string' && birthPlace.trim() ? birthPlace.trim() : undefined,
+              isRepeating: Boolean(isRepeating),
               gender,
               address,
               emergencyContact,
@@ -755,6 +760,56 @@ router.delete('/students/:studentId/identity-documents/:docId', async (req, res)
   }
 });
 
+// Photo de profil élève (administration)
+router.post('/students/:id/avatar', upload.single('avatar'), async (req: SchoolContextRequest, res) => {
+  try {
+    if (!isObjectId(req.params.id)) {
+      discardUploadedFile(req.file);
+      return res.status(400).json({ error: 'Identifiant élève invalide' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier fourni' });
+    }
+
+    const schoolId = req.schoolId!;
+    const student = await prisma.student.findFirst({
+      where: {
+        id: req.params.id,
+        ...studentScopeWhere(schoolId, req.school?.isDefault),
+      },
+      select: { id: true, userId: true, user: { select: { avatar: true } } },
+    });
+
+    if (!student) {
+      discardUploadedFile(req.file);
+      return res.status(404).json({ error: 'Élève non trouvé' });
+    }
+
+    const fullUrl = await persistUploadedFile(req.file, 'avatars', { req });
+    const previousAvatar = student.user?.avatar;
+
+    await prisma.user.update({
+      where: { id: student.userId },
+      data: { avatar: fullUrl },
+    });
+
+    if (previousAvatar && previousAvatar !== fullUrl) {
+      await deleteStoredUploadUrl(previousAvatar).catch(() => undefined);
+    }
+
+    res.json({
+      message: 'Photo de l\'élève mise à jour',
+      url: fullUrl,
+    });
+  } catch (error: unknown) {
+    discardUploadedFile(req.file);
+    console.error('POST /admin/students/:id/avatar:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Erreur serveur',
+    });
+  }
+});
+
 // Mettre à jour un élève
 router.put('/students/:id', async (req, res) => {
   try {
@@ -763,6 +818,7 @@ router.put('/students/:id', async (req, res) => {
       firstName,
       lastName,
       phone,
+      avatar,
       address,
       emergencyContact,
       emergencyPhone,
@@ -771,10 +827,16 @@ router.put('/students/:id', async (req, res) => {
       medicalInfo,
       allergies,
       specialNeeds,
+      birthPlace,
+      isRepeating,
+      dateOfBirth,
+      gender,
       classId,
+      classGroupId: classGroupIdRaw,
       isActive,
       nfcId,
       enrollmentStatus,
+      stateAssignment,
       subjectOptionIds,
     } = body;
 
@@ -804,7 +866,7 @@ router.put('/students/:id', async (req, res) => {
     }
 
     // Mettre à jour l'utilisateur
-    if (firstName || lastName || phone !== undefined) {
+    if (firstName || lastName || phone !== undefined || avatar !== undefined) {
       await prisma.user.update({
         where: { id: student.userId },
         data: {
@@ -812,6 +874,12 @@ router.put('/students/:id', async (req, res) => {
           ...(typeof lastName === 'string' && lastName.trim() && { lastName: lastName.trim() }),
           ...(phone !== undefined && {
             phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
+          }),
+          ...(avatar !== undefined && {
+            avatar:
+              avatar === null || (typeof avatar === 'string' && avatar.trim() === '')
+                ? null
+                : String(avatar),
           }),
         },
       });
@@ -827,10 +895,38 @@ router.put('/students/:id', async (req, res) => {
     if (medicalInfo !== undefined) studentData.medicalInfo = emptyToNull(medicalInfo) ?? null;
     if (allergies !== undefined) studentData.allergies = emptyToNull(allergies) ?? null;
     if (specialNeeds !== undefined) studentData.specialNeeds = emptyToNull(specialNeeds) ?? null;
+    if (birthPlace !== undefined) studentData.birthPlace = emptyToNull(birthPlace) ?? null;
+    if (isRepeating !== undefined) studentData.isRepeating = Boolean(isRepeating);
+    if (dateOfBirth !== undefined && typeof dateOfBirth === 'string' && dateOfBirth.trim()) {
+      studentData.dateOfBirth = new Date(dateOfBirth);
+    }
+    if (
+      gender !== undefined &&
+      typeof gender === 'string' &&
+      ['MALE', 'FEMALE', 'OTHER'].includes(gender)
+    ) {
+      studentData.gender = gender as 'MALE' | 'FEMALE' | 'OTHER';
+    }
 
     if (classId !== undefined) {
       studentData.classId =
         typeof classId === 'string' && classId.trim().length > 0 ? classId.trim() : null;
+    }
+    if (classGroupIdRaw !== undefined) {
+      const classGroupId =
+        typeof classGroupIdRaw === 'string' && classGroupIdRaw.trim()
+          ? classGroupIdRaw.trim()
+          : null;
+      if (classGroupId && !isObjectId(classGroupId)) {
+        return res.status(400).json({ error: 'Identifiant de groupe invalide' });
+      }
+      studentData.classGroupId = classGroupId;
+    }
+    if (
+      stateAssignment !== undefined &&
+      (stateAssignment === 'STATE_ASSIGNED' || stateAssignment === 'NOT_STATE_ASSIGNED')
+    ) {
+      studentData.stateAssignment = stateAssignment;
     }
     if (isActive !== undefined) studentData.isActive = Boolean(isActive);
     if (nfcId !== undefined) {
